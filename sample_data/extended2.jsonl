@@ -1,0 +1,30 @@
+{"idx": 99050, "problem": "设 $\\varphi$ 为欧拉函数，求 $\\varphi(30)$ 的值。", "answer": "8", "subject": "数论", "source": "extended2"}
+{"idx": 99051, "problem": "求函数 $f(z) = \\frac{1}{z^2+4}$ 在极点 $z = 2i$ 处的留数。", "answer": "\\frac{1}{4i}", "subject": "复分析", "source": "extended2"}
+{"idx": 99052, "problem": "求极限 $\\lim_{n \\to \\infty} n \\sin\\frac{\\pi}{n}$。", "answer": "\\pi", "subject": "实分析", "source": "extended2"}
+{"idx": 99053, "problem": "求矩阵 $A = \\begin{pmatrix} 1 & 2 & 3 \\\\ 0 & 1 & 4 \\\\ 0 & 0 & 1 \\end{pmatrix}$ 的行列式 $\\det(A)$。", "answer": "1", "subject": "线性代数", "source": "extended2"}
+{"idx": 99054, "problem": "设 $S_4$ 为 4 元对称群，求 $S_4$ 中阶为 3 的元素个数。", "answer": "8", "subject": "群论", "source": "extended2"}
+{"idx": 99055, "problem": "计算复积分 $\\oint_{|z|=2} \\frac{e^z}{(z-1)^2}\\,dz$。", "answer": "2\\pi i e", "subject": "复分析", "source": "extended2"}
+{"idx": 99056, "problem": "抛一枚均匀硬币 3 次，求恰好出现 2 次正面的概率。", "answer": "\\frac{3}{8}", "subject": "概率", "source": "extended2"}
+{"idx": 99057, "problem": "求解同余方程 $3x \\equiv 5 \\pmod{7}$，给出最小正整数解。", "answer": "4", "subject": "数论", "source": "extended2"}
+{"idx": 99058, "problem": "求极限 $\\lim_{x \\to 0} \\frac{e^{2x} - 1}{\\sin x}$。", "answer": "2", "subject": "实分析", "source": "extended2"}
+{"idx": 99059, "problem": "计算定积分 $\\int_0^{\\pi} \\cos^2 x \\, dx$。", "answer": "\\frac{\\pi}{2}", "subject": "微积分", "source": "extended2"}
+{"idx": 99060, "problem": "求极限 $\\lim_{z \\to 0} \\frac{1 - \\cos z}{z^2}$。", "answer": "\\frac{1}{2}", "subject": "复分析", "source": "extended2"}
+{"idx": 99061, "problem": "求矩阵 $A = \\begin{pmatrix} 1 & 2 & 1 \\\\ 2 & 4 & 2 \\\\ 1 & 1 & 1 \\end{pmatrix}$ 的秩。", "answer": "2", "subject": "线性代数", "source": "extended2"}
+{"idx": 99062, "problem": "设 $F(x) = \\int_0^{x^2} \\sin(t^2)\\,dt$，求 $F'(x)$。", "answer": "2x \\sin(x^4)", "subject": "微积分", "source": "extended2"}
+{"idx": 99063, "problem": "计算 $2^{10} \\bmod 11$。", "answer": "1", "subject": "数论", "source": "extended2"}
+{"idx": 99064, "problem": "求级数 $\\sum_{n=1}^{\\infty} \\frac{1}{n(n+2)}$ 的和。", "answer": "\\frac{3}{4}", "subject": "级数", "source": "extended2"}
+{"idx": 99065, "problem": "设 $X \\sim \\text{Poisson}(2)$，求 $P(X = 0)$。", "answer": "e^{-2}", "subject": "概率", "source": "extended2"}
+{"idx": 99066, "problem": "在群 $\\mathbb{Z}_2 \\times \\mathbb{Z}_3$ 中，求元素 $(1,2)$ 的阶。", "answer": "6", "subject": "群论", "source": "extended2"}
+{"idx": 99067, "problem": "求函数 $f(z) = \\frac{1}{z^2+1}$ 在极点 $z = i$ 处的留数。", "answer": "\\frac{1}{2i}", "subject": "复分析", "source": "extended2"}
+{"idx": 99068, "problem": "求矩阵 $A = \\begin{pmatrix} 0 & 1 \\\\ 1 & 0 \\end{pmatrix}$ 的特征值。", "answer": "1, -1", "subject": "线性代数", "source": "extended2"}
+{"idx": 99069, "problem": "求极限 $\\lim_{x \\to \\infty} \\frac{x^2 + 3x}{2x^2 - x}$。", "answer": "\\frac{1}{2}", "subject": "实分析", "source": "extended2"}
+{"idx": 99070, "problem": "求 $\\left(\\frac{2}{7}\\right)$ 的勒让德符号值。", "answer": "1", "subject": "数论", "source": "extended2"}
+{"idx": 99071, "problem": "求 4 元对称群 $S_4$ 中元素的个数（即 $S_4$ 的阶）。", "answer": "24", "subject": "群论", "source": "extended2"}
+{"idx": 99072, "problem": "求级数 $\\sum_{n=0}^{\\infty} \\frac{1}{2^n}$ 的和。", "answer": "2", "subject": "级数", "source": "extended2"}
+{"idx": 99073, "problem": "求函数 $f(z) = \\frac{1}{1-z}$ 在 $z=0$ 处的 Taylor 展开中 $z^4$ 项的系数。", "answer": "1", "subject": "复分析", "source": "extended2"}
+{"idx": 99074, "problem": "求微分方程 $y' + 2xy = 0$ 满足 $y(0)=1$ 的特解。", "answer": "e^{-x^2}", "subject": "微分方程", "source": "extended2"}
+{"idx": 99075, "problem": "求矩阵 $A = \\begin{pmatrix} 1 & 0 & 2 \\\\ 0 & 3 & 0 \\\\ 2 & 0 & 1 \\end{pmatrix}$ 的迹 $\\operatorname{tr}(A)$。", "answer": "5", "subject": "线性代数", "source": "extended2"}
+{"idx": 99076, "problem": "设随机变量 $Z \\sim N(0,1)$，求 $P(Z > 0)$。", "answer": "\\frac{1}{2}", "subject": "概率", "source": "extended2"}
+{"idx": 99077, "problem": "求 7 在模 13 下的乘法逆元（最小正整数）。", "answer": "2", "subject": "数论", "source": "extended2"}
+{"idx": 99078, "problem": "计算定积分 $\\int_0^1 \\frac{x}{1+x^2}\\,dx$。", "answer": "\\frac{1}{2}\\ln 2", "subject": "微积分", "source": "extended2"}
+{"idx": 99079, "problem": "求交错群 $A_4$ 的阶。", "answer": "12", "subject": "群论", "source": "extended2"}
