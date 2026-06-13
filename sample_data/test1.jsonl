@@ -1,0 +1,5 @@
+{"idx": 200, "problem": "设函数 f(x) = \\int_0^{x^2} e^{-t^2} dt，求 \\lim_{x \\to 0} \\frac{f(x)}{x^4}", "answer": "+\\infty", "subject": "微积分", "source": "test"}
+{"idx": 201, "problem": "判断级数 \\sum_{n=2}^\\infty \\frac{(-1)^n}{\\sqrt{n} + (-1)^n} 是绝对收敛、条件收敛还是发散？", "answer": "\\text{发散}", "subject": "微积分", "source": "test"}
+{"idx": 202, "problem": "设 f(x) = \\ln(1+x^2)，求 f^{(n)}(0)（n 阶导数在 0 处的值）的表达式", "answer": "f^{(n)}(0) = 0 \\ (n\\text{为奇数}), \\quad f^{(n)}(0) = 2 \\cdot (-1)^{\\frac{n}{2}-1} (n-1)! \\ (n\\text{为偶数})", "subject": "微积分", "source": "test"}
+{"idx": 203, "problem": "求幂级数 \\sum_{n=1}^\\infty \\frac{(-1)^{n-1}}{n(n+1)} x^{2n+1} 的和函数", "answer": "\\frac{x^2+1}{x} \\ln(1+x^2) - x \\quad (x \\neq 0), \\quad 0 \\ (x=0)", "subject": "微积分", "source": "test"}
+{"idx": 204, "problem": "计算三重积分 \\iiint_{\\Omega} \\frac{dx\\,dy\\,dz}{(1+x+y+z)^3}，其中 \\Omega 是由 x=0, y=0, z=0, x+y+z=1 所围成的四面体", "answer": "\\frac{1}{2}\\ln 2 - \\frac{5}{16}", "subject": "微积分", "source": "test"}

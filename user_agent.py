@@ -17,7 +17,7 @@ POLICY_PROMPT = """你是一个严谨的数学推理智能体。请解决以下�
 2. 给出完整、清晰的逐步推导过程。
 3. 在最后单独一行，用「【最终答案】<答案>」的格式明确写出最终答案。
 
-注意：最终答案必须放在【最终答案】之后，不要包含额外解释。"""
+注意：请全程使用中文推导，不要输出英文思考过程。最终答案必须放在【最终答案】之后。"""
 
 STAGE_PROMPTS = [
     "请分析以下数学问题，列出已知条件、求解目标、约束条件。不需要计算。",
@@ -31,9 +31,18 @@ VERIFIER_PROMPT = """你是一个数学答案验证器。请先独立求解下�
 用以下格式输出（严格按此格式，每行一个标签）：
 SELF_ANSWER: <你的答案>
 MATCH: YES 或 NO
-CONFIDENCE: <0-10的整数，10为非常确定>"""
+CONFIDENCE: <0-10的整数，10为非常确定>
 
-EXTRACTION_PROMPT = """从以下数学解答中提取最终答案。用 ANSWER: <答案> 的格式输出，不要输出任何其他内容。找不到答案则输出 ANSWER: NO_ANSWER"""
+注意：不要输出任何思考过程。第一行必须是 SELF_ANSWER:。"""
+
+EXTRACTION_PROMPT = """从以下数学解答中提取最终答案。用 ANSWER: <答案> 的格式输出。如果解答不完整或截断，输出 ANSWER: TRUNCATED。不要输出其他内容。"""
+
+FALLBACK_POLICY_PROMPT = """你是一个数学求解器。直接计算并给出最终答案，跳过分析过程。
+严格用一行输出：【最终答案】<答案>
+不要输出英文思考。"""
+
+FALLBACK2_POLICY_PROMPT = """直接输出答案。
+【最终答案】<答案>"""
 
 
 @dataclass
@@ -42,7 +51,7 @@ class AgentConfig:
     verifier_voting_times: int = 2
     policy_temperature: float = 0.6
     verifier_temperature: float = 0.0
-    max_tokens: int = 8192
+    max_tokens: int = 12288
     consistency_bonus_weight: float = 0.15
     use_llm_extraction: bool = True
     extraction_max_tokens: int = 1024
@@ -72,6 +81,9 @@ class ReasoningAgent:
             template=EXTRACTION_PROMPT,
             name="extraction_agent",
         )
+        self._fallback_agent = Agent(
+            llm=client, template=FALLBACK_POLICY_PROMPT, name="fallback_policy",
+        )
 
     # ---------- public API ----------
 
@@ -81,89 +93,129 @@ class ReasoningAgent:
         # Phase 1: generate multiple candidate solutions
         candidates, trace = self._generate_candidates(problem, idx)
 
+        # Guard: all candidates truncated after retries
+        if not candidates:
+            trace.append({"step": "all_truncated", "content": "All candidates truncated after retries"})
+            return {"final_response": "TRUNCATED_ALL", "trace": trace}
+
         # Phase 2: extract answers from each candidate (LLM + regex fallback)
         extracted_answers = []
+        is_garbage = []
         for i, c in enumerate(candidates):
             ans, method, raw = self._extract_answer(c, idx, i)
             extracted_answers.append(ans)
+            is_garbage.append(ans == "GARBAGE")
             trace.append({
                 "step": f"extract_answer_{i}",
                 "content": {"method": method, "answer": ans, "raw_response": raw},
             })
         normalized_answers = [self._normalize_answer(a) for a in extracted_answers]
 
-        # Phase 3: try majority voting first
-        policy_answer_counts: Dict[str, int] = {}
-        for ans in normalized_answers:
-            policy_answer_counts[ans] = policy_answer_counts.get(ans, 0) + 1
-        max_count = max(policy_answer_counts.values())
-        max_fraction = max_count / len(candidates)
+        # Filter to valid (non-garbage) candidates
+        valid_ids = [i for i in range(len(candidates)) if not is_garbage[i]]
+        if not valid_ids:
+            trace.append({"step": "all_garbage", "content": "All extracted answers are garbage"})
+            return {"final_response": "ALL_GARBAGE", "trace": trace}
 
-        if max_count >= 2 and max_fraction >= self.config.majority_vote_threshold:
-            # Majority consensus — skip verifier
-            majority_answer = next(a for a, c in policy_answer_counts.items() if c == max_count)
-            best_id = next(i for i, a in enumerate(normalized_answers) if a == majority_answer)
+        # Phase 3: try majority voting (only among valid answers)
+        valid_counts: Dict[str, int] = {}
+        for i in valid_ids:
+            ans = normalized_answers[i]
+            valid_counts[ans] = valid_counts.get(ans, 0) + 1
+        max_count = max(valid_counts.values())
+        total_valid = len(valid_ids)
+
+        if max_count >= 2 and max_count / total_valid >= self.config.majority_vote_threshold:
+            majority_answer = next(a for a, c in valid_counts.items() if c == max_count)
+            best_id = next(i for i in valid_ids if normalized_answers[i] == majority_answer)
             trace.append({
                 "step": "majority_vote",
                 "content": {
                     "answer": majority_answer,
                     "count": max_count,
-                    "total": len(candidates),
+                    "total": total_valid,
+                    "garbage_skipped": len(candidates) - total_valid,
                     "selected_candidate": best_id,
                 },
             })
         else:
-            # Phase 4 (no majority): verify each candidate and score
-            scored_candidates = []
-            for candidate_id, candidate in enumerate(candidates):
-                verifier_score, verify_trace = self._verify_candidate(
-                    problem, candidate, idx, candidate_id,
-                )
-                consistency = policy_answer_counts[normalized_answers[candidate_id]] - 1
-                consistency_bonus = consistency * self.config.consistency_bonus_weight
-                total_score = verifier_score + consistency_bonus
-
-                scored_candidates.append({
-                    "id": candidate_id,
-                    "content": candidate,
-                    "extracted_answer": extracted_answers[candidate_id],
-                    "normalized_answer": normalized_answers[candidate_id],
-                    "verifier_score": round(verifier_score, 4),
-                    "consistency_bonus": round(consistency_bonus, 4),
-                    "total_score": round(total_score, 4),
+            # Phase 4: only 1 valid candidate → skip verifier, use directly
+            if total_valid == 1:
+                best_id = valid_ids[0]
+                trace.append({
+                    "step": "single_valid",
+                    "content": {
+                        "candidate": best_id,
+                        "garbage_skipped": len(candidates) - 1,
+                    },
                 })
-                trace.extend(verify_trace)
+            else:
+                # Phase 4b: verify each candidate and score
+                scored_candidates = []
+                for candidate_id, candidate in enumerate(candidates):
+                    if is_garbage[candidate_id]:
+                        scored_candidates.append({
+                            "id": candidate_id,
+                            "content": candidate,
+                            "extracted_answer": extracted_answers[candidate_id],
+                            "normalized_answer": "GARBAGE",
+                            "verifier_score": 0.0,
+                            "consistency_bonus": 0.0,
+                            "total_score": -1.0,
+                        })
+                        trace.append({
+                            "step": f"verifier_skip_{candidate_id}",
+                            "content": {"reason": "extracted answer is garbage"},
+                        })
+                        continue
+                    verifier_score, verify_trace = self._verify_candidate(
+                        problem, candidate, idx, candidate_id,
+                    )
+                    consistency = valid_counts.get(normalized_answers[candidate_id], 1) - 1
+                    consistency_bonus = consistency * self.config.consistency_bonus_weight
+                    total_score = verifier_score + consistency_bonus
 
-            best = max(scored_candidates, key=lambda item: item["total_score"])
-            best_id = best["id"]
-            score_lines = " | ".join([
-                f"#{s['id']} ans={s['extracted_answer'][:40]} score={s['total_score']:.3f}(v={s['verifier_score']:.3f}+c={s['consistency_bonus']:.3f})"
-                for s in scored_candidates
-            ])
-            trace.append({
-                "step": "score_summary",
-                "content": f"{score_lines} | selected=#{best_id}",
-            })
-            trace.append({
-                "step": "select_final_response",
-                "content": {
-                    "method": "verifier_confidence + answer_consistency",
-                    "candidates": [
-                        {
-                            "id": s["id"],
-                            "extracted_answer": s["extracted_answer"],
-                            "verifier": s["verifier_score"],
-                            "consistency": s["consistency_bonus"],
-                            "total": s["total_score"],
-                        }
-                        for s in scored_candidates
-                    ],
-                    "selected": best_id,
-                },
-            })
+                    scored_candidates.append({
+                        "id": candidate_id,
+                        "content": candidate,
+                        "extracted_answer": extracted_answers[candidate_id],
+                        "normalized_answer": normalized_answers[candidate_id],
+                        "verifier_score": round(verifier_score, 4),
+                        "consistency_bonus": round(consistency_bonus, 4),
+                        "total_score": round(total_score, 4),
+                    })
+                    trace.extend(verify_trace)
+
+                best = max(scored_candidates, key=lambda item: item["total_score"])
+                best_id = best["id"]
+                score_lines = " | ".join([
+                    f"#{s['id']} ans={s['extracted_answer'][:40]} score={s['total_score']:.3f}(v={s['verifier_score']:.3f}+c={s['consistency_bonus']:.3f})"
+                    for s in scored_candidates
+                ])
+                trace.append({
+                    "step": "score_summary",
+                    "content": f"{score_lines} | selected=#{best_id}",
+                })
+                trace.append({
+                    "step": "select_final_response",
+                    "content": {
+                        "method": "verifier_confidence + answer_consistency",
+                        "candidates": [
+                            {
+                                "id": s["id"],
+                                "extracted_answer": s["extracted_answer"],
+                                "verifier": s["verifier_score"],
+                                "consistency": s["consistency_bonus"],
+                                "total": s["total_score"],
+                            }
+                            for s in scored_candidates
+                        ],
+                        "selected": best_id,
+                    },
+                })
 
         return {
-            "final_response": extracted_answers[best_id],
+            "final_response": self._normalize_answer(extracted_answers[best_id]),
             "trace": trace,
         }
 
@@ -175,31 +227,54 @@ class ReasoningAgent:
         return self._generate_candidates_oneshot(problem, idx)
 
     def _generate_candidates_oneshot(self, problem: str, idx: int) -> Tuple[List[str], List[Dict]]:
+        """Generate candidates with truncation retry (1 fallback) and 2/2 early exit."""
         candidates = []
         trace = []
+        agents = [self.policy_agent, self._fallback_agent]  # 1 normal + 1 fallback
         for sample_id in range(self.config.policy_sample_times):
-            user_message = AgentMessage(
-                sender="user",
-                content=(
-                    "题目：\n"
-                    f"{problem}\n\n"
-                    "请在推理结束后，单独一行用【最终答案】<答案>的格式给出最终答案。"
-                ),
-            )
-            response = self.policy_agent(
-                user_message,
-                session_id=f"{idx}:policy:{sample_id}",
-                temperature=self.config.policy_temperature,
-                max_tokens=self.config.max_tokens,
-            )
-            candidates.append(response.content)
-            trace.append({
-                "step": f"policy_call_{sample_id}",
-                "content": {
-                    "message": user_message.content,
-                    "response": response.content,
-                },
-            })
+            for attempt, agent in enumerate(agents):
+                user_message = AgentMessage(
+                    sender="user",
+                    content=(
+                        "题目：\n"
+                        f"{problem}\n\n"
+                        "请在推理结束后，单独一行用【最终答案】<答案>的格式给出最终答案。"
+                    ),
+                )
+                response = agent(
+                    user_message,
+                    session_id=f"{idx}:policy:{sample_id}:a{attempt}",
+                    temperature=self.config.policy_temperature,
+                    max_tokens=self.config.max_tokens,
+                )
+                step_name = f"policy_call_{sample_id}" + (f"_fb" if attempt > 0 else "")
+                trace.append({
+                    "step": step_name,
+                    "content": {
+                        "message": user_message.content,
+                        "response": response.content,
+                        "attempt": attempt,
+                    },
+                })
+                if "【最终答案】" in response.content:
+                    candidates.append(response.content)
+                    break
+            else:
+                trace.append({
+                    "step": f"policy_call_{sample_id}_failed",
+                    "content": {"reason": "all attempts truncated"},
+                })
+
+            # Early exit: 2 candidates agree on fast regex → skip 3rd
+            if sample_id == 1 and len(candidates) == 2:
+                a1 = self._regex_fast_extract(candidates[0])
+                a2 = self._regex_fast_extract(candidates[1])
+                if a1 is not None and a2 is not None and self._normalize_answer(a1) == self._normalize_answer(a2):
+                    trace.append({
+                        "step": "early_exit",
+                        "content": {"reason": "first 2 candidates agree", "answer": a1},
+                    })
+                    break
         return candidates, trace
 
     def _generate_candidates_staged(self, problem: str, idx: int) -> Tuple[List[str], List[Dict]]:
@@ -287,20 +362,23 @@ class ReasoningAgent:
     # ---------- answer extraction ----------
 
     def _extract_answer(self, text: str, idx: int, candidate_id: int) -> Tuple[str, str, str | None]:
-        """Extract final answer. Returns (answer, method, raw_response).
-        raw_response is the LLM extraction agent's raw output, for debugging."""
+        """Extract final answer. Regex-fastpath → LLM → regex fallback → GARBAGE."""
+        # Fast path: regex catches 95% of 【最终答案】 cases, zero API cost
+        fast = self._regex_fast_extract(text)
+        if fast and not self._looks_like_garbage(fast):
+            return fast, "regex", None
+
         if self.config.use_llm_extraction:
             llm_answer, raw = self._llm_extract_answer(text, idx, candidate_id)
             if llm_answer:
                 return llm_answer, "llm", raw
-            # If LLM gave None, raw might still be useful for debugging
-            regex_answer = self._regex_extract_answer(text)
-            return regex_answer, "regex", raw
         regex_answer = self._regex_extract_answer(text)
-        return regex_answer, "regex", None
+        if self._looks_like_garbage(regex_answer):
+            return "GARBAGE", "regex", raw if self.config.use_llm_extraction else None
+        return regex_answer, "regex", raw if self.config.use_llm_extraction else None
 
     def _llm_extract_answer(self, text: str, idx: int, candidate_id: int) -> Tuple[str | None, str]:
-        """Use LLM to extract answer. Matches ANSWER: marker (defense against thinking text).
+        """Use LLM to extract answer. TRUNCATED/NO_ANSWER → return None (caller regex fallback).
         Returns (answer, raw_llm_response)."""
         user_message = AgentMessage(
             sender="user",
@@ -319,20 +397,50 @@ class ReasoningAgent:
             matches = re.findall(r"ANSWER\s*[:：]\s*(.+?)(?:\n|$)", raw, re.IGNORECASE)
             if matches:
                 ans = matches[-1].strip()
-                # Strip trailing punctuation/garbage from answer
                 ans = re.sub(r"[`'\".,;:!?）\]】\s]+$", "", ans).strip()
-                # Check if it's a NO_ANSWER variant (hyphen, underscore, dot, etc.)
-                if ans and not re.match(r"^NO[_\-\s]*ANSWER", ans, re.IGNORECASE):
+                # Reject garbage: literal placeholders, prompt instructions, too long
+                if self._looks_like_garbage(ans):
+                    return None, raw
+                # TRUNCATED or NO_ANSWER → bail out, let caller regex original text
+                if re.match(r"^(?:TRUNCATED|NO[_\-\s]*ANSWER)", ans, re.IGNORECASE):
+                    return None, raw
+                if ans:
                     return ans, raw
-            # Fallback: try regex extraction on LLM response
-            regex_ans = self._regex_extract_answer(raw)
-            if regex_ans:
-                regex_ans = re.sub(r"[`'\".,;:!?）\]】\s]+$", "", regex_ans).strip()
-                if regex_ans:
-                    return regex_ans, raw
         except Exception:
             pass
         return None, raw
+
+    @staticmethod
+    def _looks_like_garbage(text: str) -> bool:
+        """Detect prompt template text masquerading as an answer."""
+        if not text or len(text) > 120:
+            return True
+        # Single digits/symbols are valid (e.g. "3", "-1", "0")
+        if re.search(r"<答案>|<answer>", text, re.IGNORECASE):
+            return True
+        # Chinese instruction keywords
+        if re.search(r"[后面格式输出不要答案值跟]", text):
+            return True
+        # Thinking text patterns
+        if re.match(r"^(\*|#|\d+[.)]|`|\|The user wants|Let me|Wait[,;])", text):
+            return True
+        # ANSWER: captured thinking text (English prose)
+        if len(text) > 40 and re.search(r"\b(is often|preferred|context|should|I will|usually|looking at|based on|want[s]? to)\b", text, re.I):
+            return True
+        if "`" in text and len(text) > 30:
+            return True
+        return False
+
+    @staticmethod
+    def _regex_fast_extract(text: str) -> str | None:
+        """Fast regex: only 【最终答案】 marker. Returns None if not found."""
+        matches = re.findall(r"【最终答案】\s*(.+?)(?:\n|$)", text)
+        if matches:
+            return matches[-1].strip()
+        matches = re.findall(r"\\boxed\{([^}]+)\}", text)
+        if matches:
+            return matches[-1].strip()
+        return None
 
     @staticmethod
     def _normalize_answer(answer: str) -> str:
@@ -344,6 +452,17 @@ class ReasoningAgent:
         ans = re.sub(r"\s+", " ", ans)
         # Normalize Chinese/English punctuation
         ans = ans.replace("，", ",").replace("。", ".")
+        # Strip LaTeX text wrapper: \text{发散} → 发散
+        ans = re.sub(r"^\\text\{([^}]+)\}$", r"\1", ans)
+        # Strip LaTeX sizing qualifiers: \left, \right, \big, etc.
+        ans = re.sub(r"\\(?:left|right|big|Big|bigg|Bigg)\b\s*", "", ans)
+        # Strip LaTeX spacing commands: \, \; \ 
+        ans = ans.replace(r"\,", "").replace(r"\;", "").replace(r"\ ", " ")
+        ans = re.sub(r"\\displaystyle\s*", "", ans)
+        # Strip function-definition prefixes: "S(x) = ", "f'(x) = ", "f^{(n)}(0) = " etc.
+        ans = re.sub(r"^[a-zA-Z\\'']+\s*\([^)]*\)\s*=\s*", "", ans)
+        # Strip variable-assignment prefixes: "y = ", "z = ", "dz = "
+        ans = re.sub(r"^[a-zA-Z]{1,3}\s*=\s*", "", ans)
         return ans
 
     @staticmethod
@@ -388,18 +507,26 @@ class ReasoningAgent:
 
     @staticmethod
     def _parse_verdict(verdict_text: str) -> Tuple[bool, float, str | None]:
-        """Parse verifier output using SELF_ANSWER/MATCH/CONFIDENCE markers.
-        Takes LAST match of each marker to skip Intern-S thinking text."""
+        """Parse verifier output. Filters template text, takes first valid match."""
         self_answer = None
         is_match = False
         confidence = 0.0
 
-        # Parse SELF_ANSWER — take LAST match
+        # Helper: filter out prompt template text
+        def _valid_sa(text: str) -> bool:
+            text = text.strip()
+            if not text or text.upper() == "NONE":
+                return False
+            if re.search(r"[你的答案]|<|>|格式|输出|MATCH|CONFIDENCE", text):
+                return False
+            return True
+
+        # Parse SELF_ANSWER — take LAST match that passes validation
         sa_matches = re.findall(r"SELF_ANSWER\s*[:：]\s*(.+?)(?:\n|$)", verdict_text, re.IGNORECASE)
-        if sa_matches:
-            raw = sa_matches[-1].strip()
-            if raw and raw.upper() != "NONE":
-                self_answer = raw
+        for raw in reversed(sa_matches):
+            if _valid_sa(raw):
+                self_answer = raw.strip()
+                break
 
         # Parse MATCH — take LAST match
         match_matches = re.findall(r"MATCH\s*[:：]\s*(YES|NO)", verdict_text, re.IGNORECASE)
@@ -408,8 +535,11 @@ class ReasoningAgent:
 
         # Parse CONFIDENCE — take LAST match
         conf_matches = re.findall(r"CONFIDENCE\s*[:：]\s*(\d+)", verdict_text, re.IGNORECASE)
-        if conf_matches:
-            confidence = min(int(conf_matches[-1]), 10) / 10.0
+        for raw in reversed(conf_matches):
+            val = int(raw)
+            if 0 <= val <= 10:
+                confidence = val / 10.0
+                break
 
         return is_match, confidence, self_answer
 

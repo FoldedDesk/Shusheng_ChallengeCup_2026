@@ -1,0 +1,50 @@
+{"idx": 99000, "problem": "求极限 $\\lim_{x \\to 0} \\frac{\\sin 2x}{x}$", "answer": "2", "subject": "极限", "source": "extended"}
+{"idx": 99001, "problem": "求函数 $f(x) = x^3 + 2x - 5$ 的导数", "answer": "3x^2 + 2", "subject": "导数", "source": "extended"}
+{"idx": 99002, "problem": "计算不定积分 $\\int (2x + 3) \\, dx$", "answer": "x^2 + 3x + C", "subject": "不定积分", "source": "extended"}
+{"idx": 99003, "problem": "计算定积分 $\\int_0^1 x^2 \\, dx$", "answer": "\\frac{1}{3}", "subject": "定积分", "source": "extended"}
+{"idx": 99004, "problem": "求极限 $\\lim_{x \\to \\infty} \\frac{2x+1}{x+3}$", "answer": "2", "subject": "极限", "source": "extended"}
+{"idx": 99005, "problem": "求函数 $f(x) = e^x \\sin x$ 的导数", "answer": "e^x(\\sin x + \\cos x)", "subject": "导数", "source": "extended"}
+{"idx": 99006, "problem": "计算不定积分 $\\int \\cos 3x \\, dx$", "answer": "\\frac{1}{3}\\sin 3x + C", "subject": "不定积分", "source": "extended"}
+{"idx": 99007, "problem": "求函数 $f(x,y) = x^2 y + x y^2$ 关于 $x$ 的偏导数 $\\frac{\\partial f}{\\partial x}$", "answer": "2xy + y^2", "subject": "偏导数", "source": "extended"}
+{"idx": 99008, "problem": "求极限 $\\lim_{x \\to 0} \\frac{e^x - 1}{x}$", "answer": "1", "subject": "极限", "source": "extended"}
+{"idx": 99009, "problem": "计算定积分 $\\int_0^\\pi \\sin x \\, dx$", "answer": "2", "subject": "定积分", "source": "extended"}
+{"idx": 99010, "problem": "求函数 $f(x) = \\ln(x^2+1)$ 的导数", "answer": "\\frac{2x}{x^2+1}", "subject": "导数", "source": "extended"}
+{"idx": 99011, "problem": "计算不定积分 $\\int x e^x \\, dx$", "answer": "x e^x - e^x + C", "subject": "不定积分", "source": "extended"}
+{"idx": 99012, "problem": "求极限 $\\lim_{x \\to 0} \\frac{\\tan x - x}{x^3}$", "answer": "\\frac{1}{3}", "subject": "极限", "source": "extended"}
+{"idx": 99013, "problem": "计算不定积分 $\\int \\frac{1}{x^2+1} \\, dx$", "answer": "\\arctan x + C", "subject": "不定积分", "source": "extended"}
+{"idx": 99014, "problem": "求极限 $\\lim_{n \\to \\infty} \\left(1 + \\frac{1}{n}\\right)^n$", "answer": "e", "subject": "极限", "source": "extended"}
+{"idx": 99015, "problem": "求函数 $f(x) = x^x \\ (x>0)$ 的导数", "answer": "x^x(\\ln x + 1)", "subject": "导数", "source": "extended"}
+{"idx": 99016, "problem": "计算定积分 $\\int_0^1 x e^x \\, dx$", "answer": "1", "subject": "定积分", "source": "extended"}
+{"idx": 99017, "problem": "求极限 $\\lim_{x \\to 0} \\frac{1 - \\cos x}{x^2}$", "answer": "\\frac{1}{2}", "subject": "极限", "source": "extended"}
+{"idx": 99018, "problem": "计算不定积分 $\\int \\sin^2 x \\, dx$", "answer": "\\frac{x}{2} - \\frac{\\sin 2x}{4} + C", "subject": "不定积分", "source": "extended"}
+{"idx": 99019, "problem": "求函数 $f(x) = \\arctan(\\ln x)$ 的导数", "answer": "\\frac{1}{x(1+(\\ln x)^2)}", "subject": "导数", "source": "extended"}
+{"idx": 99020, "problem": "求幂级数 $\\sum_{n=0}^{\\infty} \\frac{x^n}{n!}$ 的和函数", "answer": "e^x", "subject": "级数", "source": "extended"}
+{"idx": 99021, "problem": "求函数 $z = x^y \\ (x>0)$ 的全微分 $dz$", "answer": "y x^{y-1}dx + x^y \\ln x \\, dy", "subject": "全微分", "source": "extended"}
+{"idx": 99022, "problem": "求极限 $\\lim_{x \\to 0} \\frac{\\sin x - x}{x^3}$", "answer": "-\\frac{1}{6}", "subject": "极限", "source": "extended"}
+{"idx": 99023, "problem": "求矩阵 $A = \\begin{pmatrix} 2 & 1 \\\\ 1 & 2 \\end{pmatrix}$ 的特征值", "answer": "1, 3", "subject": "线性代数", "source": "extended"}
+{"idx": 99024, "problem": "计算不定积分 $\\int \\frac{x}{x^2+1} \\, dx$", "answer": "\\frac{1}{2}\\ln(x^2+1) + C", "subject": "不定积分", "source": "extended"}
+{"idx": 99025, "problem": "求级数 $\\sum_{n=1}^{\\infty} \\frac{1}{n^2+n}$ 的和", "answer": "1", "subject": "级数", "source": "extended"}
+{"idx": 99026, "problem": "计算二重积分 $\\iint_D xy \\, dxdy$，其中 $D$ 由 $0 \\le x \\le 1,\\ 0 \\le y \\le x$ 围成", "answer": "\\frac{1}{8}", "subject": "重积分", "source": "extended"}
+{"idx": 99027, "problem": "求函数 $f(x,y) = x^2 + y^2$ 在点 $(1,1)$ 处沿方向 $\\vec{v}=(1,2)$ 的方向导数", "answer": "\\frac{6}{\\sqrt{5}}", "subject": "方向导数", "source": "extended"}
+{"idx": 99028, "problem": "计算定积分 $\\int_0^1 \\frac{1}{\\sqrt{1-x^2}} \\, dx$", "answer": "\\frac{\\pi}{2}", "subject": "定积分", "source": "extended"}
+{"idx": 99029, "problem": "设随机变量 $X$ 在 $[0,1]$ 上均匀分布，求期望 $E[X]$", "answer": "\\frac{1}{2}", "subject": "概率", "source": "extended"}
+{"idx": 99030, "problem": "计算不定积分 $\\int \\frac{1}{x \\ln x} \\, dx \\ (x>0, x \\neq 1)$", "answer": "\\ln|\\ln x| + C", "subject": "不定积分", "source": "extended"}
+{"idx": 99031, "problem": "判断级数 $\\sum_{n=2}^{\\infty} \\frac{1}{n \\ln n}$ 的敛散性", "answer": "\\text{发散}", "subject": "级数", "source": "extended"}
+{"idx": 99032, "problem": "求极限 $\\lim_{x \\to 0^+} x \\ln x$", "answer": "0", "subject": "极限", "source": "extended"}
+{"idx": 99033, "problem": "求微分方程 $y'' + y = 0$ 在初始条件 $y(0)=1, y'(0)=0$ 下的特解", "answer": "\\cos x", "subject": "微分方程", "source": "extended"}
+{"idx": 99034, "problem": "求 $Z_{12}$（模 12 的剩余类加群）中生成元的个数", "answer": "4", "subject": "抽象代数", "source": "extended"}
+{"idx": 99035, "problem": "求极限 $\\lim_{x \\to 0} \\frac{\\tan x - \\sin x}{x^3}$", "answer": "\\frac{1}{2}", "subject": "极限", "source": "extended"}
+{"idx": 99036, "problem": "计算定积分 $\\int_0^1 \\ln(1+x) \\, dx$", "answer": "2\\ln 2 - 1", "subject": "定积分", "source": "extended"}
+{"idx": 99037, "problem": "求 $\\Gamma\\left(\\frac{1}{2}\\right)$ 的值", "answer": "\\sqrt{\\pi}", "subject": "特殊函数", "source": "extended"}
+{"idx": 99038, "problem": "求函数 $f(x,y) = e^{xy}$ 在点 $(1,0)$ 处的梯度 $\\nabla f$", "answer": "(0, 1)", "subject": "梯度", "source": "extended"}
+{"idx": 99039, "problem": "计算曲线积分 $\\oint_C (x\\,dy - y\\,dx)$，其中 $C$ 为单位圆 $x^2+y^2=1$ 正向一周", "answer": "2\\pi", "subject": "曲线积分", "source": "extended"}
+{"idx": 99040, "problem": "求矩阵 $A = \\begin{pmatrix} 1 & 1 \\\\ 0 & 2 \\end{pmatrix}$ 的特征值", "answer": "1, 2", "subject": "线性代数", "source": "extended"}
+{"idx": 99041, "problem": "求幂级数 $\\sum_{n=1}^{\\infty} \\frac{n}{2^n} x^n$ 的收敛半径", "answer": "2", "subject": "级数", "source": "extended"}
+{"idx": 99042, "problem": "求极限 $\\lim_{n \\to \\infty} \\sqrt[n]{n}$", "answer": "1", "subject": "极限", "source": "extended"}
+{"idx": 99043, "problem": "计算不定积分 $\\int \\frac{e^x}{1+e^{2x}} \\, dx$", "answer": "\\arctan(e^x) + C", "subject": "不定积分", "source": "extended"}
+{"idx": 99044, "problem": "设 $X \\sim N(0,1)$ 为标准正态分布，求 $E[X^2]$", "answer": "1", "subject": "概率", "source": "extended"}
+{"idx": 99045, "problem": "求函数 $f(x) = x \\ln x - x$ 的导数", "answer": "\\ln x", "subject": "导数", "source": "extended"}
+{"idx": 99046, "problem": "求微分方程 $y' = xy$ 满足 $y(0)=1$ 的特解", "answer": "e^{\\frac{x^2}{2}}", "subject": "微分方程", "source": "extended"}
+{"idx": 99047, "problem": "计算 $\\sin x$ 在 $x=0$ 处的三阶泰勒多项式", "answer": "x - \\frac{x^3}{6}", "subject": "泰勒展开", "source": "extended"}
+{"idx": 99048, "problem": "计算三重积分 $\\iiint_{\\Omega} z \\, dxdydz$，其中 $\\Omega$ 为单位立方体 $[0,1]^3$", "answer": "\\frac{1}{2}", "subject": "重积分", "source": "extended"}
+{"idx": 99049, "problem": "判断级数 $\\sum_{n=1}^{\\infty} \\frac{(-1)^{n-1}}{\\sqrt{n}}$ 的敛散性（绝对收敛、条件收敛或发散）", "answer": "\\text{条件收敛}", "subject": "级数", "source": "extended"}

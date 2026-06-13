@@ -9,7 +9,7 @@ from llm_client import InternChatClient
 from user_agent import ReasoningAgent
 
 
-LOCAL_MAX_CONCURRENCY = int(os.environ.get("LOCAL_MAX_CONCURRENCY", "8"))
+LOCAL_MAX_CONCURRENCY = int(os.environ.get("LOCAL_MAX_CONCURRENCY", "4"))
 
 
 def load_jsonl(path: Path) -> List[Dict]:
