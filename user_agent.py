@@ -1,11 +1,11 @@
+from __future__ import annotations
+
 import re
 from dataclasses import dataclass
-from typing import Dict, List, Tuple
+from typing import Dict, List, Optional, Tuple
 
 from lagent.agents import Agent
 from lagent.schema import AgentMessage
-
-from llm_client import InternChatClient
 
 
 # ==================== PARTICIPANT DESIGN AREA START ====================
@@ -41,9 +41,6 @@ FALLBACK_POLICY_PROMPT = """你是一个数学求解器。直接计算并给出�
 严格用一行输出：【最终答案】<答案>
 不要输出英文思考。"""
 
-FALLBACK2_POLICY_PROMPT = """直接输出答案。
-【最终答案】<答案>"""
-
 
 @dataclass
 class AgentConfig:
@@ -63,7 +60,7 @@ class AgentConfig:
 class ReasoningAgent:
     """A generate-verify-select agent with answer extraction and consistency scoring."""
 
-    def __init__(self, client: InternChatClient, config: AgentConfig | None = None) -> None:
+    def __init__(self, client, config: Optional[AgentConfig] = None) -> None:
         self.config = config or AgentConfig()
         self.client = client
         self.policy_agent = Agent(
