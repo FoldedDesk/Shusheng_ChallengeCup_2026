@@ -413,16 +413,16 @@ class ReasoningAgent:
     @staticmethod
     def _looks_like_garbage(text: str) -> bool:
         """Detect prompt template text masquerading as an answer."""
-        if not text or len(text) > 120:
+        if not text or len(text) > 500:
             return True
         # Single digits/symbols are valid (e.g. "3", "-1", "0")
         if re.search(r"<答案>|<answer>", text, re.IGNORECASE):
             return True
-        # Chinese instruction keywords
-        if re.search(r"[后面格式输出不要答案值跟]", text):
+        # Chinese instruction keywords (full phrases, not single chars)
+        if re.search(r"(?:后面跟|格式输出|不要输出|答案值|你的答案|ANSWER.*TRUNCATED)", text):
             return True
         # Thinking text patterns
-        if re.match(r"^(\*|#|\d+[.)]|`|\|The user wants|Let me|Wait[,;])", text):
+        if re.match(r"^(\* |#+ |\d+[.)、]\s|\|The user wants|Let me|Wait[,;])", text):
             return True
         # ANSWER: captured thinking text (English prose)
         if len(text) > 40 and re.search(r"\b(is often|preferred|context|should|I will|usually|looking at|based on|want[s]? to)\b", text, re.I):
