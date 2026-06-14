@@ -1,0 +1,50 @@
+{"idx": 1000, "problem": "证明：$\\lim_{x \\to 0} \\frac{\\sin x}{x} = 1$。要求给出完整证明过程，并在末尾用【最终答案】给出结论。", "answer": "1", "subject": "证明/极限", "source": "mixed"}
+{"idx": 1001, "problem": "证明：调和级数 $\\sum_{n=1}^{\\infty} \\frac{1}{n}$ 发散。要求给出完整证明过程。", "answer": "发散", "subject": "证明/级数", "source": "mixed"}
+{"idx": 1002, "problem": "证明：$\\lim_{n \\to \\infty} \\sqrt[n]{n} = 1$。要求给出完整证明过程。", "answer": "1", "subject": "证明/极限", "source": "mixed"}
+{"idx": 1003, "problem": "证明：方程 $z^n = 1$（$n \\ge 2$）的所有复数根之和为 0。", "answer": "0", "subject": "证明/复分析", "source": "mixed"}
+{"idx": 1004, "problem": "证明：$\\int_0^{\\pi} \\sin^2 x \\, dx = \\frac{\\pi}{2}$。要求给出完整推导过程。", "answer": "\\frac{\\pi}{2}", "subject": "证明/积分", "source": "mixed"}
+{"idx": 1005, "problem": "求函数 $f(z) = \\frac{e^z}{z^2+1}$ 在极点 $z = i$ 处的留数。", "answer": "\\frac{e^i}{2i}", "subject": "复分析", "source": "mixed"}
+{"idx": 1006, "problem": "求极限 $\\lim_{x \\to 0} \\frac{x - \\sin x}{x - \\tan x}$。", "answer": "-\\frac{1}{2}", "subject": "极限", "source": "mixed"}
+{"idx": 1007, "problem": "在环 $\\mathbb{Z}_{15}$ 中，求可逆元的个数。", "answer": "8", "subject": "数论", "source": "mixed"}
+{"idx": 1008, "problem": "求矩阵 $A = \\begin{pmatrix} 1 & 2 & 2 \\\\ 2 & 1 & 2 \\\\ 2 & 2 & 1 \\end{pmatrix}$ 的特征值。", "answer": "-1, 5", "subject": "线性代数", "source": "mixed"}
+{"idx": 1009, "problem": "求幂级数 $\\sum_{n=1}^{\\infty} n x^{n-1}$ 的和函数（$|x|<1$）。", "answer": "\\frac{1}{(1-x)^2}", "subject": "级数", "source": "mixed"}
+{"idx": 1010, "problem": "同时掷两枚均匀的六面骰子，求点数之和为 7 的概率。", "answer": "\\frac{1}{6}", "subject": "概率", "source": "mixed"}
+{"idx": 1011, "problem": "求微分方程 $y'' - 3y' + 2y = 0$ 的通解。", "answer": "y = C_1 e^x + C_2 e^{2x}", "subject": "微分方程", "source": "mixed"}
+{"idx": 1012, "problem": "计算 $3^{100} \\bmod 7$ 的值。", "answer": "4", "subject": "数论", "source": "mixed"}
+{"idx": 1013, "problem": "求函数 $f(z) = \\frac{1}{z^2+1}$ 在 $z=0$ 处的留数。", "answer": "0", "subject": "复分析", "source": "mixed"}
+{"idx": 1014, "problem": "判断广义积分 $\\int_1^{\\infty} \\frac{1}{x^p}\\,dx$ 收敛时 $p$ 的取值范围。", "answer": "p > 1", "subject": "积分", "source": "mixed"}
+{"idx": 1015, "problem": "求矩阵 $A = \\begin{pmatrix} 0 & 1 & 0 \\\\ 0 & 0 & 1 \\\\ 1 & 0 & 0 \\end{pmatrix}$ 的迹 $\\operatorname{tr}(A)$。", "answer": "0", "subject": "线性代数", "source": "mixed"}
+{"idx": 1016, "problem": "求曲线 $y = x^3 - 3x$ 的拐点坐标。", "answer": "(0, 0)", "subject": "微积分", "source": "mixed"}
+{"idx": 1017, "problem": "设 $f: \\mathbb{R} \\to \\mathbb{R}$ 连续且满足 $f(x+y)=f(x)+f(y)$，已知 $f(1)=1$。求 $f(2026)$。", "answer": "2026", "subject": "实分析", "source": "mixed"}
+{"idx": 1018, "problem": "将 $10!$ 分解质因数，求质因数 2 的指数。", "answer": "8", "subject": "数论", "source": "mixed"}
+{"idx": 1019, "problem": "求微分方程 $y' + y = e^x$ 满足 $y(0)=1$ 的特解。", "answer": "y = \\frac{1}{2}e^x + \\frac{1}{2}e^{-x}", "subject": "微分方程", "source": "mixed"}
+{"idx": 1020, "problem": "从 10 个球（4 个红球、3 个蓝球、3 个绿球）中随机取 2 个，求两球同色的概率。", "answer": "\\frac{4}{15}", "subject": "概率", "source": "mixed"}
+{"idx": 1021, "problem": "求极限 $\\lim_{x \\to \\infty} (x^2+1)^{\\frac{1}{x}}$。", "answer": "1", "subject": "极限", "source": "mixed"}
+{"idx": 1022, "problem": "求矩阵 $A = \\begin{pmatrix} 1 & 2 \\\\ 2 & 1 \\end{pmatrix}$ 的逆矩阵 $A^{-1}$。", "answer": "\\begin{pmatrix} -\\frac{1}{3} & \\frac{2}{3} \\\\ \\frac{2}{3} & -\\frac{1}{3} \\end{pmatrix}", "subject": "线性代数", "source": "mixed"}
+{"idx": 1023, "problem": "计算复积分 $\\oint_{|z|=1} \\frac{1}{z}\\,dz$。", "answer": "2\\pi i", "subject": "复分析", "source": "mixed"}
+{"idx": 1024, "problem": "设 $F(x) = \\int_x^{x^2} e^{t^2}\\,dt$，求 $F'(x)$。", "answer": "2x e^{x^4} - e^{x^2}", "subject": "微积分", "source": "mixed"}
+{"idx": 1025, "problem": "某工厂生产 A、B 两种产品。每件 A 获利 40 元，需机器工时 1h 和人工 3h；每件 B 获利 30 元，需机器工时 2h 和人工 1h。每天机器可用 100h，人工可用 120h。求最大利润及对应的产量。", "answer": "生产 A 28 件、B 36 件，最大利润 2200 元。", "subject": "应用题/优化", "source": "mixed"}
+{"idx": 1026, "problem": "一质点沿直线运动，加速度 $a(t) = 6t - 2$（m/s²），初速度 $v(0) = 3$ m/s，初始位置 $s(0) = 0$。求 $t=2$ 时的速度和位移。", "answer": "t=2s 时速度 11 m/s，位移 10 m。", "subject": "应用题/物理", "source": "mixed"}
+{"idx": 1027, "problem": "用一块边长为 12cm 的正方形铁皮，在四角各剪去一个相同的小正方形，然后折成一个开口向上的无盖长方体盒子。问剪去的小正方形边长为多少时盒子容积最大？最大容积是多少？", "answer": "剪去边长 2cm，最大容积 128 cm³。", "subject": "应用题/优化", "source": "mixed"}
+{"idx": 1028, "problem": "某商店每年销售某商品 5000 件，每批订货费 200 元，每件年存储费为单价的 10%。该商品单价 100 元。求最优订货批量（EOQ）及最小年总费用。", "answer": "最优订货批量约 447 件，最小年总费用约 4472 元。", "subject": "应用题/经济学", "source": "mixed"}
+{"idx": 1029, "problem": "一物体从地面以初速度 50 m/s、仰角 30° 斜抛。不计空气阻力，g=10 m/s²。求最大高度和水平射程。", "answer": "最大高度 31.25 m，水平射程约 216.5 m。", "subject": "应用题/物理", "source": "mixed"}
+{"idx": 1030, "problem": "一个坛子中有 5 个红球和 3 个白球，每次取后放回。连续取 4 次，求恰好 2 次取到红球的概率。", "answer": "\\frac{675}{2048}", "subject": "应用题/概率", "source": "mixed"}
+{"idx": 1031, "problem": "设计一个容积为 1000 cm³ 的圆柱形易拉罐（有盖）。求使表面积最小的底面半径和高度。", "answer": "底面半径约为 5.42 cm，高度约为 10.84 cm，最小表面积约 553.6 cm²。", "subject": "应用题/优化", "source": "mixed"}
+{"idx": 1032, "problem": "某商品的需求量 Q 与价格 P 的关系为 Q = 1000 - 5P，成本函数 C(Q) = 2000 + 20Q。求利润最大的价格和最大利润。", "answer": "价格 P = 110，最大利润 38500 元。", "subject": "应用题/经济学", "source": "mixed"}
+{"idx": 1033, "problem": "求椭圆 $\\frac{x^2}{a^2} + \\frac{y^2}{b^2} = 1$ 内接矩形的最大面积（矩形边平行于坐标轴）。用 a 和 b 表示。", "answer": "最大面积 2ab。", "subject": "应用题/几何", "source": "mixed"}
+{"idx": 1034, "problem": "一个力 $F(x) = 3x^2 + 2x$（牛顿）作用在物体上，物体从 x=0 移动到 x=4（米）。求力做的功。", "answer": "做功 80 J。", "subject": "应用题/物理", "source": "mixed"}
+{"idx": 1035, "problem": "从一副标准的 52 张扑克牌中随机抽取 2 张，已知第一张是红桃，求第二张也是红桃的概率。", "answer": "\\frac{12}{51}", "subject": "应用题/概率", "source": "mixed"}
+{"idx": 1036, "problem": "某农场有 100 米篱笆，要围一个矩形区域并中间加一道平行于宽的分隔栏，分成两个相等的小区域。求使总面积最大的长和宽。", "answer": "长 25m，宽 50/3 m，最大面积 1250/3 m²。", "subject": "应用题/优化", "source": "mixed"}
+{"idx": 1037, "problem": "一个水箱呈倒圆锥形，高 10m，底面半径 4m。现以 2 m³/min 的速度向水箱注水。当水深 5m 时，水面上升的速度是多少？", "answer": "水面上升速度约为 0.159 m/min。", "subject": "应用题/物理", "source": "mixed"}
+{"idx": 1038, "problem": "某公司的边际收益函数为 MR(Q) = 100 - 0.4Q，边际成本函数为 MC(Q) = 20 + 0.2Q。求利润最大时的产量 Q 和对应的总利润（固定成本为 500）。", "answer": "最优产量 Q = 133.33，最大利润约 4833.3 元。", "subject": "应用题/经济学", "source": "mixed"}
+{"idx": 1039, "problem": "求曲线 $y = \\ln x$ 上到原点距离最短的点。", "answer": "点坐标约为 (0.6529, -0.4263)。", "subject": "应用题/几何", "source": "mixed"}
+{"idx": 1040, "problem": "设随机变量 X 的概率密度为 $f(x) = 2x$（$0 \\le x \\le 1$），求 $P(0.25 < X < 0.75)$。", "answer": "0.5", "subject": "应用题/概率", "source": "mixed"}
+{"idx": 1041, "problem": "一条长为 L 的绳子，剪成两段，一段围成正方形，另一段围成圆形。问如何分配使正方形和圆的面积之和最小？", "answer": "正方形用绳长约 0.44L，圆形用绳长约 0.56L 时面积最小。", "subject": "应用题/优化", "source": "mixed"}
+{"idx": 1042, "problem": "某商品的需求价格弹性恒为 -2。当价格从 10 元降到 9 元时，需求量从 100 件变为多少？", "answer": "需求量变为 120 件。", "subject": "应用题/经济学", "source": "mixed"}
+{"idx": 1043, "problem": "一弹簧满足胡克定律，弹簧系数 k=200 N/m。将弹簧从自然长度压缩 0.1m 需要做多少功？", "answer": "做功 1 J。", "subject": "应用题/物理", "source": "mixed"}
+{"idx": 1044, "problem": "甲乙两人射击，甲命中率 0.7，乙命中率 0.6。两人各射一枪，求至少一人命中的概率。", "answer": "0.88", "subject": "应用题/概率", "source": "mixed"}
+{"idx": 1045, "problem": "从半径为 R 的圆形铁皮上剪下一个扇形做成一个圆锥。问扇形的圆心角为多少时圆锥的体积最大？", "answer": "圆心角约为 294°，最大体积为 \\frac{2\\sqrt{3}\\pi}{27}R^3。", "subject": "应用题/优化", "source": "mixed"}
+{"idx": 1046, "problem": "某工厂年产量为 Q，总收益 R(Q)=300Q-0.5Q²，总成本 C(Q)=5000+100Q+0.3Q²。求盈亏平衡点和最大利润点。", "answer": "盈亏平衡点 Q≈28.2 和 Q≈221.8，最大利润 Q=125 时利润 7500 元。", "subject": "应用题/经济学", "source": "mixed"}
+{"idx": 1047, "problem": "一个质量为 2kg 的物体从 10m 高处自由落下，不计空气阻力，g=10 m/s²。求落地时的速度和动能。", "answer": "落地速度约 14.14 m/s，动能 200 J。", "subject": "应用题/物理", "source": "mixed"}
+{"idx": 1048, "problem": "求 $y = x^2$ 上到点 (3,0) 距离最短的点。", "answer": "点坐标为 (1, 1)，最短距离为 √5。", "subject": "应用题/几何", "source": "mixed"}
+{"idx": 1049, "problem": "一笔资金以年利率 5% 连续复利计算。问多少年后资金翻倍？", "answer": "约 13.86 年。", "subject": "应用题/金融", "source": "mixed"}

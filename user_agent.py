@@ -26,15 +26,6 @@ STAGE_PROMPTS = [
     "基于前面的推导，写出最终答案。严格使用【最终答案】<答案>的格式。",
 ]
 
-VERIFIER_PROMPT = """你是一个数学答案验证器。请先独立求解下面的数学问题，得出你自己的答案，然后与候选解答的答案进行对比。
-
-用以下格式输出（严格按此格式，每行一个标签）：
-SELF_ANSWER: <你的答案>
-MATCH: YES 或 NO
-CONFIDENCE: <0-10的整数，10为非常确定>
-
-注意：不要输出任何思考过程。第一行必须是 SELF_ANSWER:。"""
-
 EXTRACTION_PROMPT = """从以下数学解答中提取最终答案。用 ANSWER: <答案> 的格式输出。如果解答不完整或截断，输出 ANSWER: TRUNCATED。不要输出其他内容。"""
 
 FALLBACK_POLICY_PROMPT = """你是一个数学求解器。直接计算并给出最终答案，跳过分析过程。
@@ -67,11 +58,6 @@ class ReasoningAgent:
             llm=client,
             template=POLICY_PROMPT,
             name="policy_agent",
-        )
-        self.verifier_agent = Agent(
-            llm=client,
-            template=VERIFIER_PROMPT,
-            name="verifier_agent",
         )
         self.extraction_agent = Agent(
             llm=client,
@@ -136,80 +122,16 @@ class ReasoningAgent:
                 },
             })
         else:
-            # Phase 4: only 1 valid candidate → skip verifier, use directly
-            if total_valid == 1:
-                best_id = valid_ids[0]
-                trace.append({
-                    "step": "single_valid",
-                    "content": {
-                        "candidate": best_id,
-                        "garbage_skipped": len(candidates) - 1,
-                    },
-                })
-            else:
-                # Phase 4b: verify each candidate and score
-                scored_candidates = []
-                for candidate_id, candidate in enumerate(candidates):
-                    if is_garbage[candidate_id]:
-                        scored_candidates.append({
-                            "id": candidate_id,
-                            "content": candidate,
-                            "extracted_answer": extracted_answers[candidate_id],
-                            "normalized_answer": "GARBAGE",
-                            "verifier_score": 0.0,
-                            "consistency_bonus": 0.0,
-                            "total_score": -1.0,
-                        })
-                        trace.append({
-                            "step": f"verifier_skip_{candidate_id}",
-                            "content": {"reason": "extracted answer is garbage"},
-                        })
-                        continue
-                    verifier_score, verify_trace = self._verify_candidate(
-                        problem, candidate, idx, candidate_id,
-                    )
-                    consistency = valid_counts.get(normalized_answers[candidate_id], 1) - 1
-                    consistency_bonus = consistency * self.config.consistency_bonus_weight
-                    total_score = verifier_score + consistency_bonus
-
-                    scored_candidates.append({
-                        "id": candidate_id,
-                        "content": candidate,
-                        "extracted_answer": extracted_answers[candidate_id],
-                        "normalized_answer": normalized_answers[candidate_id],
-                        "verifier_score": round(verifier_score, 4),
-                        "consistency_bonus": round(consistency_bonus, 4),
-                        "total_score": round(total_score, 4),
-                    })
-                    trace.extend(verify_trace)
-
-                best = max(scored_candidates, key=lambda item: item["total_score"])
-                best_id = best["id"]
-                score_lines = " | ".join([
-                    f"#{s['id']} ans={s['extracted_answer'][:40]} score={s['total_score']:.3f}(v={s['verifier_score']:.3f}+c={s['consistency_bonus']:.3f})"
-                    for s in scored_candidates
-                ])
-                trace.append({
-                    "step": "score_summary",
-                    "content": f"{score_lines} | selected=#{best_id}",
-                })
-                trace.append({
-                    "step": "select_final_response",
-                    "content": {
-                        "method": "verifier_confidence + answer_consistency",
-                        "candidates": [
-                            {
-                                "id": s["id"],
-                                "extracted_answer": s["extracted_answer"],
-                                "verifier": s["verifier_score"],
-                                "consistency": s["consistency_bonus"],
-                                "total": s["total_score"],
-                            }
-                            for s in scored_candidates
-                        ],
-                        "selected": best_id,
-                    },
-                })
+            # No majority: use first valid candidate
+            best_id = valid_ids[0]
+            trace.append({
+                "step": "no_majority",
+                "content": {
+                    "candidate": best_id,
+                    "total_valid": total_valid,
+                    "garbage_skipped": len(candidates) - total_valid,
+                },
+            })
 
         return {
             "final_response": self._normalize_answer(extracted_answers[best_id]),
@@ -315,46 +237,6 @@ class ReasoningAgent:
             )
             candidates.append(combined)
         return candidates, trace
-
-    # ---------- verification ----------
-
-    def _verify_candidate(
-        self, problem: str, candidate: str, idx: int, candidate_id: int,
-    ) -> Tuple[float, List[Dict]]:
-        scores = []
-        trace = []
-        for vote_id in range(self.config.verifier_voting_times):
-            user_message = AgentMessage(
-                sender="user",
-                content=(
-                    "题目：\n"
-                    f"{problem}\n\n"
-                    "候选解答：\n"
-                    f"{candidate}"
-                ),
-            )
-            response = self.verifier_agent(
-                user_message,
-                session_id=f"{idx}:verify:{candidate_id}:{vote_id}",
-                temperature=self.config.verifier_temperature,
-                max_tokens=1024,
-            )
-            verdict_text = response.content
-            is_match, confidence, self_answer = self._parse_verdict(verdict_text)
-            scores.append(confidence if is_match else 0.0)
-            trace.append({
-                "step": f"verifier_call_{candidate_id}_{vote_id}",
-                "content": {
-                    "candidate_id": candidate_id,
-                    "verdict": verdict_text,
-                    "self_answer": self_answer,
-                    "parsed_match": is_match,
-                    "parsed_confidence": confidence,
-                },
-            })
-
-        avg_score = sum(scores) / len(scores) if scores else 0.0
-        return avg_score, trace
 
     # ---------- answer extraction ----------
 
@@ -499,46 +381,5 @@ class ReasoningAgent:
 
         # 6. Fallback
         return lines[-1] if lines else text.strip()
-
-    # ---------- verdict parsing ----------
-
-    @staticmethod
-    def _parse_verdict(verdict_text: str) -> Tuple[bool, float, str | None]:
-        """Parse verifier output. Filters template text, takes first valid match."""
-        self_answer = None
-        is_match = False
-        confidence = 0.0
-
-        # Helper: filter out prompt template text
-        def _valid_sa(text: str) -> bool:
-            text = text.strip()
-            if not text or text.upper() == "NONE":
-                return False
-            if re.search(r"[你的答案]|<|>|格式|输出|MATCH|CONFIDENCE", text):
-                return False
-            return True
-
-        # Parse SELF_ANSWER — take LAST match that passes validation
-        sa_matches = re.findall(r"SELF_ANSWER\s*[:：]\s*(.+?)(?:\n|$)", verdict_text, re.IGNORECASE)
-        for raw in reversed(sa_matches):
-            if _valid_sa(raw):
-                self_answer = raw.strip()
-                break
-
-        # Parse MATCH — take LAST match
-        match_matches = re.findall(r"MATCH\s*[:：]\s*(YES|NO)", verdict_text, re.IGNORECASE)
-        if match_matches:
-            is_match = match_matches[-1].upper() == "YES"
-
-        # Parse CONFIDENCE — take LAST match
-        conf_matches = re.findall(r"CONFIDENCE\s*[:：]\s*(\d+)", verdict_text, re.IGNORECASE)
-        for raw in reversed(conf_matches):
-            val = int(raw)
-            if 0 <= val <= 10:
-                confidence = val / 10.0
-                break
-
-        return is_match, confidence, self_answer
-
 
 # ===================== PARTICIPANT DESIGN AREA END =====================
