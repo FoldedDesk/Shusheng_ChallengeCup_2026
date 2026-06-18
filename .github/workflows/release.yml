@@ -5,6 +5,7 @@ on:
     branches: [main]
     paths:
       - 'changelogs/*.md'
+      - '.github/workflows/release.yml'
 
 permissions:
   contents: write
@@ -15,10 +16,13 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Find latest changelog
+      - name: Find changelog for this push
         id: meta
         run: |
-          LATEST=$(ls -t changelogs/*.md 2>/dev/null | head -1)
+          LATEST=$(git diff-tree --no-commit-id --name-only -r "$GITHUB_SHA" | grep '^changelogs/.*\.md$' | tail -1 || true)
+          if [ -z "$LATEST" ]; then
+            LATEST=$(find changelogs -maxdepth 1 -name 'FD*.md' | sort -V | tail -1)
+          fi
           if [ -z "$LATEST" ]; then
             echo "No changelog found, skipping."
             echo "skip=true" >> "$GITHUB_OUTPUT"
