@@ -1,0 +1,20 @@
+{"idx": 2000, "problem": "【计算题】计算极限 $\\lim_{x\\to 0}\\frac{\\tan 3x}{\\sin 2x}$。", "answer": "\\frac{3}{2}", "subject": "极限", "source": "fd_eval", "type": "计算题"}
+{"idx": 2001, "problem": "【计算题】求函数 $f(x)=x^4-4x^2+1$ 在区间 $[-2,2]$ 上的最大值和最小值。", "answer": "最大值 1，最小值 -3", "subject": "微积分", "source": "fd_eval", "type": "计算题"}
+{"idx": 2002, "problem": "【填空题】矩阵 $A=\\begin{pmatrix}2&1\\\\0&3\\end{pmatrix}$ 的特征值为____。", "answer": "2, 3", "subject": "线性代数", "source": "fd_eval", "type": "填空题"}
+{"idx": 2003, "problem": "【计算题】计算定积分 $\\int_0^1 x\\ln x\\,dx$。", "answer": "-\\frac{1}{4}", "subject": "积分", "source": "fd_eval", "type": "计算题"}
+{"idx": 2004, "problem": "【证明题】证明：若整数 $a,b$ 都是奇数，则 $a^2+b^2$ 被 $2$ 整除但不能被 $4$ 整除。最后用【最终答案】给出结论。", "answer": "a^2+b^2 \\equiv 2 \\pmod 4", "subject": "数论", "source": "fd_eval", "type": "证明题"}
+{"idx": 2005, "problem": "【计算题】求复函数 $f(z)=\\frac{z+1}{z^2+1}$ 在 $z=i$ 处的留数。", "answer": "\\frac{1+i}{2i}", "subject": "复分析", "source": "fd_eval", "type": "计算题"}
+{"idx": 2006, "problem": "【填空题】级数 $\\sum_{n=1}^{\\infty}\\frac{1}{n(n+1)}$ 的和为____。", "answer": "1", "subject": "级数", "source": "fd_eval", "type": "填空题"}
+{"idx": 2007, "problem": "【计算题】求不定积分 $\\int x\\cos x\\,dx$。", "answer": "x\\sin x+\\cos x+C", "subject": "不定积分", "source": "fd_eval", "type": "计算题"}
+{"idx": 2008, "problem": "【证明题】证明：任意实数 $x$ 都有 $x^2+1>0$。最后用【最终答案】给出结论。", "answer": "x^2+1>0", "subject": "实分析", "source": "fd_eval", "type": "证明题"}
+{"idx": 2009, "problem": "【填空题】在群 $\\mathbb{Z}_{12}$ 中，元素 $8$ 的阶为____。", "answer": "3", "subject": "群论", "source": "fd_eval", "type": "填空题"}
+{"idx": 2010, "problem": "【计算题】求微分方程 $y''-3y'+2y=0$ 的通解。", "answer": "y=C_1e^x+C_2e^{2x}", "subject": "微分方程", "source": "fd_eval", "type": "计算题"}
+{"idx": 2011, "problem": "【计算题】计算 $\\det\\begin{pmatrix}1&2&3\\\\0&1&4\\\\5&6&0\\end{pmatrix}$。", "answer": "1", "subject": "线性代数", "source": "fd_eval", "type": "计算题"}
+{"idx": 2012, "problem": "【填空题】若 $X\\sim \\operatorname{Binomial}(4,\\frac12)$，则 $P(X=2)=____。", "answer": "\\frac{3}{8}", "subject": "概率", "source": "fd_eval", "type": "填空题"}
+{"idx": 2013, "problem": "【计算题】求 $\\lim_{n\\to\\infty} n\\left(\\sqrt[n]{2}-1\\right)$。", "answer": "\\ln 2", "subject": "极限", "source": "fd_eval", "type": "计算题"}
+{"idx": 2014, "problem": "【证明题】证明：若数列 $a_n\\to a$ 且 $b_n\\to b$，则 $a_n+b_n\\to a+b$。最后用【最终答案】给出结论。", "answer": "a_n+b_n\\to a+b", "subject": "实分析", "source": "fd_eval", "type": "证明题"}
+{"idx": 2015, "problem": "【计算题】求函数 $z=x^2y+\\sin y$ 的全微分 $dz$。", "answer": "dz=2xy\\,dx+(x^2+\\cos y)\\,dy", "subject": "多元微积分", "source": "fd_eval", "type": "计算题"}
+{"idx": 2016, "problem": "【填空题】多项式 $x^4-1$ 的所有复根之和为____。", "answer": "0", "subject": "代数", "source": "fd_eval", "type": "填空题"}
+{"idx": 2017, "problem": "【计算题】计算曲线 $y=x^3$ 在点 $(1,1)$ 处的切线方程。", "answer": "y=3x-2", "subject": "解析几何", "source": "fd_eval", "type": "计算题"}
+{"idx": 2018, "problem": "【证明题】证明：若 $A$ 是可逆矩阵，则 $\\det(A^{-1})=\\frac{1}{\\det A}$。最后用【最终答案】给出结论。", "answer": "\\det(A^{-1})=\\frac{1}{\\det A}", "subject": "线性代数", "source": "fd_eval", "type": "证明题"}
+{"idx": 2019, "problem": "【计算题】求 $\\int_0^{\\pi/2}\\sin^3 x\\,dx$。", "answer": "\\frac{2}{3}", "subject": "积分", "source": "fd_eval", "type": "计算题"}
