@@ -240,7 +240,7 @@ class ReasoningAgent:
 
     # ---------- answer extraction ----------
 
-    def _extract_answer(self, text: str, idx: int, candidate_id: int) -> Tuple[str, str, str | None]:
+    def _extract_answer(self, text: str, idx: int, candidate_id: int) -> Tuple[str, str, Optional[str]]:
         """Extract final answer. Regex-fastpath → LLM → regex fallback → GARBAGE."""
         # Fast path: regex catches 95% of 【最终答案】 cases, zero API cost
         fast = self._regex_fast_extract(text)
@@ -256,7 +256,7 @@ class ReasoningAgent:
             return "GARBAGE", "regex", raw if self.config.use_llm_extraction else None
         return regex_answer, "regex", raw if self.config.use_llm_extraction else None
 
-    def _llm_extract_answer(self, text: str, idx: int, candidate_id: int) -> Tuple[str | None, str]:
+    def _llm_extract_answer(self, text: str, idx: int, candidate_id: int) -> Tuple[Optional[str], str]:
         """Use LLM to extract answer. TRUNCATED/NO_ANSWER → return None (caller regex fallback).
         Returns (answer, raw_llm_response)."""
         user_message = AgentMessage(
@@ -311,15 +311,50 @@ class ReasoningAgent:
         return False
 
     @staticmethod
-    def _regex_fast_extract(text: str) -> str | None:
+    def _regex_fast_extract(text: str) -> Optional[str]:
         """Fast regex: only 【最终答案】 marker. Returns None if not found."""
         matches = re.findall(r"【最终答案】\s*(.+?)(?:\n|$)", text)
         if matches:
             return matches[-1].strip()
-        matches = re.findall(r"\\boxed\{([^}]+)\}", text)
-        if matches:
-            return matches[-1].strip()
-        return None
+        return ReasoningAgent._extract_last_braced_latex(text, r"\boxed")
+
+    @staticmethod
+    def _extract_last_braced_latex(text: str, command: str) -> Optional[str]:
+        """Extract the last command{...}, preserving nested braces."""
+        last = None
+        start = 0
+        marker = command + "{"
+        while True:
+            pos = text.find(marker, start)
+            if pos < 0:
+                break
+            i = pos + len(marker)
+            depth = 1
+            while i < len(text) and depth > 0:
+                if text[i] == "{":
+                    depth += 1
+                elif text[i] == "}":
+                    depth -= 1
+                i += 1
+            if depth == 0:
+                last = text[pos + len(marker): i - 1].strip()
+                start = i
+            else:
+                break
+        return last
+
+    @staticmethod
+    def _normalize_numeric_frac(ans: str) -> str:
+        """Convert simple integer LaTeX fractions to slash form for judger-friendly output."""
+        pattern = r"^(-?)\\(?:dfrac|tfrac|frac)\{(-?\d+)\}\{(-?\d+)\}$"
+        match = re.match(pattern, ans)
+        if not match:
+            return ans
+        sign, numerator, denominator = match.groups()
+        if numerator.startswith("-"):
+            sign = "-" if not sign else ""
+            numerator = numerator[1:]
+        return f"{sign}{numerator}/{denominator}"
 
     @staticmethod
     def _normalize_answer(answer: str) -> str:
@@ -338,6 +373,7 @@ class ReasoningAgent:
         # Strip LaTeX spacing commands: \, \; \ 
         ans = ans.replace(r"\,", "").replace(r"\;", "").replace(r"\ ", " ")
         ans = re.sub(r"\\displaystyle\s*", "", ans)
+        ans = ReasoningAgent._normalize_numeric_frac(ans)
         # Strip function-definition prefixes: "S(x) = ", "f'(x) = ", "f^{(n)}(0) = " etc.
         ans = re.sub(r"^[a-zA-Z\\'']+\s*\([^)]*\)\s*=\s*", "", ans)
         # Strip variable-assignment prefixes: "y = ", "z = ", "dz = "
@@ -355,9 +391,9 @@ class ReasoningAgent:
             return matches[-1].strip()
 
         # 2. \\boxed{...} (last match)
-        matches = re.findall(r"\\boxed\{([^}]+)\}", text)
-        if matches:
-            return matches[-1].strip()
+        boxed = ReasoningAgent._extract_last_braced_latex(text, r"\boxed")
+        if boxed:
+            return boxed
 
         # 3. 最终答案： or 答案： (last match)
         matches = re.findall(r"(?:最终答案|答案)[：:]\s*(.+?)(?:\n|$)", text)
