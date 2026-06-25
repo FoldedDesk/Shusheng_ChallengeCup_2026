@@ -4,10 +4,6 @@ import re
 from dataclasses import dataclass
 from typing import Dict, List, Optional, Tuple
 
-from lagent.agents import Agent
-from lagent.schema import AgentMessage
-
-
 # ==================== PARTICIPANT DESIGN AREA START ====================
 
 POLICY_PROMPT = """你是一个严谨的数学推理智能体。请解决以下数学问题。
@@ -45,6 +41,39 @@ FALLBACK_POLICY_PROMPT = """你是一个数学求解器。直接计算并给出�
 
 
 @dataclass
+class AgentMessage:
+    sender: str
+    content: str
+
+
+class _PromptAgent:
+    """Minimal prompt wrapper compatible with the subset of lagent used here."""
+
+    def __init__(self, client, template: str, name: str) -> None:
+        self.client = client
+        self.template = template
+        self.name = name
+
+    def __call__(
+        self,
+        message: AgentMessage,
+        session_id: str,
+        temperature: float,
+        max_tokens: int,
+    ) -> AgentMessage:
+        del session_id
+        content = self.client.chat(
+            messages=[
+                {"role": "system", "content": self.template},
+                {"role": "user", "content": message.content},
+            ],
+            temperature=temperature,
+            max_tokens=max_tokens,
+        )
+        return AgentMessage(sender=self.name, content=content)
+
+
+@dataclass
 class AgentConfig:
     policy_sample_times: int = 3
     verifier_voting_times: int = 2
@@ -66,23 +95,25 @@ class ReasoningAgent:
     def __init__(self, client, config: Optional[AgentConfig] = None) -> None:
         self.config = config or AgentConfig()
         self.client = client
-        self.policy_agent = Agent(
-            llm=client,
+        self.policy_agent = _PromptAgent(
+            client=client,
             template=POLICY_PROMPT,
             name="policy_agent",
         )
-        self.extraction_agent = Agent(
-            llm=client,
+        self.extraction_agent = _PromptAgent(
+            client=client,
             template=EXTRACTION_PROMPT,
             name="extraction_agent",
         )
-        self.finalizer_agent = Agent(
-            llm=client,
+        self.finalizer_agent = _PromptAgent(
+            client=client,
             template=FINALIZER_PROMPT,
             name="finalizer_agent",
         )
-        self._fallback_agent = Agent(
-            llm=client, template=FALLBACK_POLICY_PROMPT, name="fallback_policy",
+        self._fallback_agent = _PromptAgent(
+            client=client,
+            template=FALLBACK_POLICY_PROMPT,
+            name="fallback_policy",
         )
 
     # ---------- public API ----------

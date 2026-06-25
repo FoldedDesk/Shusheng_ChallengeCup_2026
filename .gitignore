@@ -1,7 +1,11 @@
 __pycache__/
 *.py[cod]
 sample_outputs/
+sample_outputs_*/
 outputs/
 *.tmp
 .DS_Store
 prompt.txt
+.rtk/
+requirements-shusheng.txt
+vim
