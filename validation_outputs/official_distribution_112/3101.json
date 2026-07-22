@@ -1,0 +1,10 @@
+{
+  "idx": 3101,
+  "status": "error",
+  "final_response": "",
+  "error": {
+    "type": "RuntimeError",
+    "message": "Chat completion failed after 3 attempts: HTTPSConnectionPool(host='chat.intern-ai.org.cn', port=443): Max retries exceeded with url: /api/v1/chat/completions (Caused by ProxyError('Unable to connect to proxy', NewConnectionError('<urllib3.connection.HTTPSConnection object at 0x106801950>: Failed to establish a new connection: [Errno 1] Operation not permitted')))"
+  },
+  "trace": []
+}

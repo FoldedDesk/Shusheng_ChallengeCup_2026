@@ -1,0 +1,64 @@
+{
+  "idx": 3103,
+  "status": "success",
+  "final_response": "抛物型",
+  "trace": [
+    {
+      "step": "policy_call_0",
+      "content": {
+        "message": "题目：\n热方程u_t=u_{xx}属于什么类型偏微分方程？\n\n请在推理结束后，单独一行用【最终答案】<答案>的格式给出最终答案。",
+        "response": "\n\n## 分析过程\n\n### 1. 写出热方程的标准形式\n热方程为：\n$$u_t = u_{xx}$$\n\n整理为：\n$$u_{xx} - u_t = 0$$\n\n### 2. 考虑二阶线性偏微分方程的一般形式\n对于二元二阶线性偏微分方程，一般形式为：\n$$A u_{xx} + B u_{xy} + C u_{yy} + D u_x + E u_y + F u = G$$\n\n其中 $x$ 和 $y$ 是自变量。在热方程中，自变量为 $x$ 和 $t$。\n\n### 3. 确定系数\n将热方程 $u_{xx} - u_t = 0$ 与一般形式对比：\n- $A = 1$（$u_{xx}$ 的系数）\n- $B = 0$（$u_{xt}$ 的系数，不存在交叉导数项）\n- $C = 0$（$u_{tt}$ 的系数，无二阶时间导数）\n\n### 4. 计算判别式\n二阶偏微分方程的分类依据判别式 $\\Delta = B^2 - 4AC$：\n\n$$\\Delta = 0^2 - 4 \\times 1 \\times 0 = 0$$\n\n### 5. 分类规则\n根据判别式的值：\n- $\\Delta < 0$：椭圆型（如拉普拉斯方程）\n- $\\Delta = 0$：**抛物型**（如热方程）\n- $\\Delta > 0$：双曲型（如波动方程）\n\n由于 $\\Delta = 0$，热方程属于**抛物型偏微分方程**。\n\n【最终答案】抛物型",
+        "attempt": 0
+      }
+    },
+    {
+      "step": "policy_call_1",
+      "content": {
+        "message": "题目：\n热方程u_t=u_{xx}属于什么类型偏微分方程？\n\n请在推理结束后，单独一行用【最终答案】<答案>的格式给出最终答案。",
+        "response": "\n\n【题意分析】\n题目要求判断热方程 $u_t = u_{xx}$ 属于哪种类型的偏微分方程。已知条件为热传导方程的具体形式，求解目标为其数学分类（椭圆型、抛物型或双曲型）。\n\n【推导过程】\n1.  **回顾偏微分方程的分类标准**：\n    对于含有两个自变量（通常记为 $x$ 和 $y$，此处对应空间 $x$ 和时间 $t$）的二阶线性偏微分方程，其一般形式为：\n    $$A \\frac{\\partial^2 u}{\\partial x^2} + B \\frac{\\partial^2 u}{\\partial x \\partial t} + C \\frac{\\partial^2 u}{\\partial t^2} + D \\frac{\\partial u}{\\partial x} + E \\frac{\\partial u}{\\partial t} + F u = G$$\n    该方程的类型由二阶导数项的系数决定的判别式 $\\Delta = B^2 - 4AC$ 确定：\n    *   若 $\\Delta < 0$，方程为**椭圆型**（Elliptic）；\n    *   若 $\\Delta = 0$，方程为**抛物型**（Parabolic）；\n    *   若 $\\Delta > 0$，方程为**双曲型**（Hyperbolic）。\n\n2.  **分析热方程的系数**：\n    将热方程 $u_t = u_{xx}$ 改写为：\n    $$u_{xx} - u_t = 0$$\n    在此方程中，考察二阶导数项：\n    *   $u_{xx}$ 的系数 $A = 1$；\n    *   $u_{xt}$（混合导数）不存在，故系数 $B = 0$；\n    *   $u_{tt}$（时间的二阶导数）不存在，故系数 $C = 0$。\n\n3.  **计算判别式**：\n    代入系数计算判别式：\n    $$\\Delta = B^2 - 4AC = 0^2 - 4 \\times 1 \\times 0 = 0$$\n\n4.  **得出结论**：\n    由于判别式 $\\Delta = 0$，根据分类标准，该方程属于抛物型偏微分方程。虽然热方程关于时间变量是一阶的，但在偏微分方程的分类体系中，它被归类为典型的抛物型方程，用于描述扩散或耗散过程。\n\n【最终答案】抛物型",
+        "attempt": 0
+      }
+    },
+    {
+      "step": "early_exit",
+      "content": {
+        "reason": "first 2 candidates agree",
+        "answer": "抛物型"
+      }
+    },
+    {
+      "step": "extract_answer_0",
+      "content": {
+        "method": "regex",
+        "answer": "抛物型",
+        "raw_response": null
+      }
+    },
+    {
+      "step": "extract_answer_1",
+      "content": {
+        "method": "regex",
+        "answer": "抛物型",
+        "raw_response": null
+      }
+    },
+    {
+      "step": "majority_vote",
+      "content": {
+        "answer": "抛物型",
+        "count": 2,
+        "total": 2,
+        "garbage_skipped": 0,
+        "selected_candidate": 0
+      }
+    },
+    {
+      "step": "finalizer",
+      "content": {
+        "input_answer": "抛物型",
+        "final_answer": "抛物型",
+        "raw_response": "Thinking Process:\n\n1.  **Analyze the Request:**\n    *   Input: A question about the type of partial differential equation (PDE) the heat equation $u_t = u_{xx}$ belongs to, along with two candidate answers and their supporting reasoning snippets.\n    *   Task: Act as a final answer organizer.\n    *   Constraints:\n        1.  Do not solve the problem anew; do not introduce new values not supported by the candidates.\n        2.  If the current answer is short and clear, return it as is.\n        3.  For proof questions, output the specific proposition/formula proven, not \"proven\" or \"conclusion holds\".\n        4.  If the question asks for multiple quantities, list them all.\n        5.  Output format: One line starting with \"FINAL: \", followed directly by the answer itself. No angle brackets or placeholders.\n\n2.  **Evaluate the Input:**\n    *   Question: 热方程 u_t=u_{xx} 属于什么类型偏微分方程？ (What type of PDE does the heat equation u_t=u_{xx} belong to?)\n    *   Current Answer (in prompt): 抛物型 (Parabolic)\n    *   Candidate 0 Answer: 抛物型 (Parabolic)\n    *   Candidate 0 Reasoning: Uses discriminant $\\Delta = B^2 - 4AC = 0^2 - 4 \\times 1 \\times 0 = 0$, concludes parabolic.\n    *   Candidate 1 Answer: 抛物型 (Parabolic)\n    *   Candidate 1 Reasoning: Analyzes coefficients ($A=1, B=0, C=0$), calculates discriminant $\\Delta = 0$, concludes parabolic.\n\n3.  **Determine the Final Answer:**\n    *   Both candidates agree on the answer: \"抛物型\".\n    *   The question asks for the type.\n    *   The answer is short and clear.\n    *   According to constraint 2 (\"If the current answer is short and clear, return it as is\"), I should output the answer clearly.\n    *   According to constraint 5 (\"Output format: One line starting with 'FINAL: '...\"), I need to format it correctly.\n\n4.  **Draft the Output:**\n    *   Content: 抛物型\n    *   Format: FINAL: 抛物型\n\n5.  **Check Constraints:**\n    *   No new values? Yes.\n    *   Short and clear? Yes.\n    *   Proof question? No, it's a classification question.\n    *   Multiple quantities? No.\n    *   Format: One line, starts with \"FINAL: \".\n\n6.  **Final Decision:**\n    FINAL: 抛物型\n\n    Wait, I need to check if I should include the reasoning or just the answer. The instruction says \"整理最终答案\" (organize the final answer) and \"只输出一行，以 FINAL: 开头，后面直接写答案本身\" (Only output one line, starting with FINAL:, followed directly by the answer itself). It also says \"如果当前答案已经短且明确，原样返回\" (If the current answer is already short and clear, return it as is). The \"current answer\" in the prompt text is \"抛物型\". The candidates also say \"抛物型\". So the final answer string should be just \"抛物型\".\n\n    So the output should be: FINAL: 抛物型\n\n    Let's double check constraint 4: \"If the question"
+      }
+    }
+  ]
+}
