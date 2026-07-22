@@ -574,7 +574,9 @@ class ReasoningAgent:
         # Thinking text patterns
         if re.match(r"^(\* |#+ |\d+[.)、]\s|\|The user wants|Let me|Wait[,;])", text):
             return True
-        if re.match(r"^[\"'\[]", text):
+        if re.match(r"^[\"']", text):
+            return True
+        if re.match(r"^\[\s*[\"']", text):
             return True
         if re.search(r"\b(final answer|answer itself|Answer)\b|答案本身|尖括号", text, re.IGNORECASE):
             return True

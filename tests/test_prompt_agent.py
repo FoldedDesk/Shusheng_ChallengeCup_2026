@@ -111,5 +111,16 @@ class FullSolutionFlowTest(unittest.TestCase):
         self.assertEqual(audit["content"]["selected_candidate"], 1)
 
 
+class GarbageDetectionTest(unittest.TestCase):
+    def test_accepts_bracketed_mathematical_intervals(self):
+        self.assertFalse(ReasoningAgent._looks_like_garbage("[1, 1.5]"))
+        self.assertFalse(ReasoningAgent._looks_like_garbage("[0, 1]"))
+        self.assertFalse(ReasoningAgent._looks_like_garbage("[-1, 1]"))
+
+    def test_rejects_quoted_bracketed_placeholder(self):
+        self.assertTrue(ReasoningAgent._looks_like_garbage('["placeholder"]'))
+        self.assertTrue(ReasoningAgent._looks_like_garbage("['placeholder']"))
+
+
 if __name__ == "__main__":
     unittest.main()
