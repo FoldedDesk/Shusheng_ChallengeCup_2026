@@ -7,5 +7,6 @@ outputs/
 .DS_Store
 prompt.txt
 .rtk/
+.worktrees/
 requirements-shusheng.txt
 vim
