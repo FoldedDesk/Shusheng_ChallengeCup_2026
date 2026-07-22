@@ -1,0 +1,65 @@
+{
+  "idx": 3101,
+  "status": "success",
+  "final_response": "最小二乘估计",
+  "trace": [
+    {
+      "step": "policy_call_0",
+      "content": {
+        "message": "题目：\n简单线性回归残差平方和最小时采用什么估计？\n\n请在推理结束后，单独一行用【最终答案】<答案>的格式给出最终答案。",
+        "response": "\n\n【题意分析】\n本题考察的是简单线性回归分析中参数估计的基本原理。已知条件是在简单线性回归模型中，目标是使残差平方和（Sum of Squared Residuals, SSE）最小。求解目标是确定在这种条件下采用的估计方法或估计名称。\n\n【推导过程】\n1.  **建立模型**：简单线性回归模型通常表示为 $y_i = \\beta_0 + \\beta_1 x_i + \\epsilon_i$，其中 $y_i$ 是因变量，$x_i$ 是自变量，$\\beta_0$ 和 $\\beta_1$ 是待估参数，$\\epsilon_i$ 是随机误差项。\n2.  **定义残差**：对于给定的参数估计值 $\\hat{\\beta}_0$ 和 $\\hat{\\beta}_1$，第 $i$ 个观测值的预测值为 $\\hat{y}_i = \\hat{\\beta}_0 + \\hat{\\beta}_1 x_i$。残差 $e_i$ 定义为观测值与预测值之差，即 $e_i = y_i - \\hat{y}_i = y_i - (\\hat{\\beta}_0 + \\hat{\\beta}_1 x_i)$。\n3.  **构建目标函数**：残差平方和（SSE）是所有残差的平方之和，表达式为：\n    $$Q(\\hat{\\beta}_0, \\hat{\\beta}_1) = \\sum_{i=1}^{n} e_i^2 = \\sum_{i=1}^{n} (y_i - \\hat{\\beta}_0 - \\hat{\\beta}_1 x_i)^2$$\n4.  **最小化过程**：为了找到使 $Q$ 最小的参数估计值 $\\hat{\\beta}_0$ 和 $\\hat{\\beta}_1$，我们需要对 $Q$ 分别关于 $\\hat{\\beta}_0$ 和 $\\hat{\\beta}_1$ 求偏导数，并令偏导数为零，从而建立正规方程组（Normal Equations）。解此方程组即可得到参数的估计值。\n5.  **确定估计方法**：这种通过最小化残差平方和来求解模型参数估计值的方法，在统计学中被称为**最小二乘法**（Least Squares Method）。相应的参数估计值被称为**最小二乘估计量**（Least Squares Estimators）。\n6.  **结论**：当简单线性回归中要求残差平方和最小时，所采用的估计方法即为最小二乘法（或称为最小二乘估计）。\n\n【最终答案】\n【最终答案】最小二乘法",
+        "attempt": 0
+      }
+    },
+    {
+      "step": "policy_call_1",
+      "content": {
+        "message": "题目：\n简单线性回归残差平方和最小时采用什么估计？\n\n请在推理结束后，单独一行用【最终答案】<答案>的格式给出最终答案。",
+        "response": "\n\n### 推理过程\n\n1.  **明确模型与定义**：\n    简单线性回归模型通常表示为 $y_i = \\beta_0 + \\beta_1 x_i + \\epsilon_i$，其中 $y_i$ 是观测值，$x_i$ 是自变量，$\\beta_0$ 和 $\\beta_1$ 是未知的回归参数，$\\epsilon_i$ 是随机误差项。\n    模型的拟合方程为 $\\hat{y}_i = \\hat{\\beta}_0 + \\hat{\\beta}_1 x_i$，其中 $\\hat{\\beta}_0$ 和 $\\hat{\\beta}_1$ 是参数的估计值。\n    残差（Residual）定义为观测值与拟合值之差，即 $e_i = y_i - \\hat{y}_i = y_i - (\\hat{\\beta}_0 + \\hat{\\beta}_1 x_i)$。\n\n2.  **构建目标函数**：\n    题目要求“残差平方和最小”，即最小化残差平方和（Sum of Squared Residuals, SSR）函数：\n    $$ Q(\\hat{\\beta}_0, \\hat{\\beta}_1) = \\sum_{i=1}^{n} e_i^2 = \\sum_{i=1}^{n} (y_i - \\hat{\\beta}_0 - \\hat{\\beta}_1 x_i)^2 $$\n    我们的目标是找到 $\\hat{\\beta}_0$ 和 $\\hat{\\beta}_1$ 的值，使得函数 $Q$ 取得最小值。\n\n3.  **求解估计方法**：\n    为了找到使 $Q$ 最小的参数值，通常采用微积分中的极值求解方法。具体步骤是：\n    *   对 $Q$ 关于 $\\hat{\\beta}_0$ 求偏导数，并令其为 0。\n    *   对 $Q$ 关于 $\\hat{\\beta}_1$ 求偏导数，并令其为 0。\n    *   联立这两个方程（称为正规方程组或 Normal Equations），解出 $\\hat{\\beta}_0$ 和 $\\hat{\\beta}_1$。\n\n    这种通过最小化误差的平方和来寻找数据的最佳函数匹配的方法，在统计学中被称为**最小二乘法**（Method of Least Squares）。因此，基于该方法得到的参数估计被称为**最小二乘估计**。\n\n4.  **结论**：\n    在简单线性回归中，当残差平方和最小时，所采用的估计方法是最小二乘估计。\n\n【最终答案】最小二乘估计",
+        "attempt": 0
+      }
+    },
+    {
+      "step": "policy_call_2",
+      "content": {
+        "message": "题目：\n简单线性回归残差平方和最小时采用什么估计？\n\n请在推理结束后，单独一行用【最终答案】<答案>的格式给出最终答案。",
+        "response": "\n\n【题意分析】\n本题考察的是简单线性回归分析中的参数估计方法。已知条件是回归模型的目标是使“残差平方和”达到最小值，需要求解的是在这种条件下所采用的估计方法的名称。\n\n【推导过程】\n1.  **建立模型**：设简单线性回归模型为 $y_i = \\beta_0 + \\beta_1 x_i + \\epsilon_i$，其中 $y_i$ 是因变量，$x_i$ 是自变量，$\\beta_0$ 和 $\\beta_1$ 是待估参数，$\\epsilon_i$ 是随机误差项。\n2.  **定义残差**：对于第 $i$ 个观测值，其预测值为 $\\hat{y}_i = \\hat{\\beta}_0 + \\hat{\\beta}_1 x_i$，残差（Residual）定义为观测值与预测值之差，即 $e_i = y_i - \\hat{y}_i = y_i - (\\hat{\\beta}_0 + \\hat{\\beta}_1 x_i)$。\n3.  **构建目标函数**：残差平方和（Sum of Squared Residuals, SSR）定义为所有观测值残差的平方和，即 $Q(\\hat{\\beta}_0, \\hat{\\beta}_1) = \\sum_{i=1}^{n} e_i^2 = \\sum_{i=1}^{n} (y_i - \\hat{\\beta}_0 - \\hat{\\beta}_1 x_i)^2$。\n4.  **求解估计值**：为了得到参数的估计值 $\\hat{\\beta}_0$ 和 $\\hat{\\beta}_1$，我们需要寻找一组值，使得目标函数 $Q(\\hat{\\beta}_0, \\hat{\\beta}_1)$ 达到最小。通常通过对 $Q$ 分别关于 $\\hat{\\beta}_0$ 和 $\\hat{\\beta}_1$ 求偏导数，并令偏导数为零，解正规方程组（Normal Equations）来获得。\n5.  **确定方法名称**：这种通过最小化残差平方和来估计回归模型参数的方法，在统计学中被标准地称为“最小二乘法”（Least Squares Method）。因此，所得到的参数估计被称为“最小二乘估计”（Least Squares Estimation）。\n\n【最终答案】\n【最终答案】最小二乘估计",
+        "attempt": 0
+      }
+    },
+    {
+      "step": "extract_answer_0",
+      "content": {
+        "method": "regex",
+        "answer": "【最终答案】最小二乘法",
+        "raw_response": null
+      }
+    },
+    {
+      "step": "extract_answer_1",
+      "content": {
+        "method": "regex",
+        "answer": "最小二乘估计",
+        "raw_response": null
+      }
+    },
+    {
+      "step": "extract_answer_2",
+      "content": {
+        "method": "regex",
+        "answer": "【最终答案】最小二乘估计",
+        "raw_response": null
+      }
+    },
+    {
+      "step": "majority_vote",
+      "content": {
+        "answer": "最小二乘估计",
+        "count": 2,
+        "total": 3,
+        "garbage_skipped": 0,
+        "selected_candidate": 1
+      }
+    }
+  ]
+}
