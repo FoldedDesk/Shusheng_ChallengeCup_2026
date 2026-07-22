@@ -1,0 +1,112 @@
+{"idx":4000,"problem":"设集合A有n个元素，求满足B⊆A且|B|为偶数的子集个数，并说明n≥1时为何两类子集数相等。","answer":"2^{n-1}","subject":"离散数学","source":"official_distribution_112_hard"}
+{"idx":4001,"problem":"求长度为10的二进制串中恰有4个1且不含相邻两个1的串数，要求先选取1的位置再计算。","answer":"35","subject":"离散数学","source":"official_distribution_112_hard"}
+{"idx":4002,"problem":"在完全二部图K_{4,5}中删去一条边后，求从左部指定顶点到右部指定非邻接顶点的长度为3的简单路径数。","answer":"12","subject":"离散数学","source":"official_distribution_112_hard"}
+{"idx":4003,"problem":"设简单图有8个顶点且每个顶点度数至少4，证明该图必含长度为3的路径，并给出所用度数条件。","answer":"图中必存在长度为3的简单路径","subject":"离散数学","source":"official_distribution_112_hard"}
+{"idx":4004,"problem":"求满足x_1+x_2+x_3+x_4=12且每个x_i为正整数、x_1≥3的解数，需通过变量平移化为隔板问题。","answer":"120","subject":"离散数学","source":"official_distribution_112_hard"}
+{"idx":4005,"problem":"给定命题(p→q)∧(q→r)∧p，写出其合取范式下必然推出的最简结论，并说明推理规则。","answer":"r","subject":"离散数学","source":"official_distribution_112_hard"}
+{"idx":4006,"problem":"在模12加法群Z_12中，求所有生成元并说明其个数为何等于欧拉函数φ(12)。","answer":"{1,5,7,11}","subject":"离散数学","source":"official_distribution_112_hard"}
+{"idx":4007,"problem":"设偏序集为正整数12的全部正因子并按整除关系排序，求该偏序集的极大元、极小元及最长链长度。","answer":"极大元12，极小元1，最长链长度4","subject":"离散数学","source":"official_distribution_112_hard"}
+{"idx":4008,"problem":"求递推a_n=3a_{n-1}-2且a_1=1的通项，并利用不动点平移验证结果。","answer":"a_n=2-1^{n-1}=1","subject":"离散数学","source":"official_distribution_112_hard"}
+{"idx":4009,"problem":"一棵有20个顶点的树恰有5个叶子，若其余非叶顶点度数都为2或3，求度数为3的顶点个数。","answer":"3","subject":"离散数学","source":"official_distribution_112_hard"}
+{"idx":4010,"problem":"在5个不同元素的排列中，求元素a在b之前且c不在首位的排列数，使用容斥或条件计数。","answer":"48","subject":"离散数学","source":"official_distribution_112_hard"}
+{"idx":4011,"problem":"设关系R定义为整数集合上aRb当且仅当a-b能被4整除，证明其为等价关系并写出[3]。","answer":"[3]={4k+3:k∈Z}","subject":"离散数学","source":"official_distribution_112_hard"}
+{"idx":4012,"problem":"求所有满足二项式系数C(n,2)=45的正整数n，并说明为何二次方程的另一根应舍去。","answer":"n=10","subject":"离散数学","source":"official_distribution_112_hard"}
+{"idx":4013,"problem":"一个连通平面简单图有10个顶点和16条边，若每个面边界长度至少为3，求其面数并验证欧拉公式。","answer":"8","subject":"离散数学","source":"official_distribution_112_hard"}
+{"idx":4014,"problem":"求从集合{1,2,3,4}到{a,b,c}的满射个数，要求使用容斥原理而非直接枚举。","answer":"36","subject":"离散数学","source":"official_distribution_112_hard"}
+{"idx":4015,"problem":"设G为6阶循环群，求其所有子群的个数并说明子群与6的正因子的对应关系。","answer":"4","subject":"离散数学","source":"official_distribution_112_hard"}
+{"idx":4016,"problem":"在集合{1,2,…,10}中任选4个元素，求其中不含相邻整数的选法数，并用位置压缩法计算。","answer":"35","subject":"离散数学","source":"official_distribution_112_hard"}
+{"idx":4017,"problem":"对命题“若n^2为偶数则n为偶数”，写出逆否命题并说明用其证明原命题的理由。","answer":"若n为奇数则n^2为奇数","subject":"离散数学","source":"official_distribution_112_hard"}
+{"idx":4018,"problem":"设有向图的邻接矩阵A满足(A^2)_{ij}=3，解释该数的组合意义，并给出从i到j长度为2道路数。","answer":"从i到j长度为2的有向路数为3","subject":"离散数学","source":"official_distribution_112_hard"}
+{"idx":4019,"problem":"求n=7时满足置换σ^2=id且σ恰有3个不动点的置换数，先将其余元素配对。","answer":"105","subject":"离散数学","source":"official_distribution_112_hard"}
+{"idx":4020,"problem":"设H为群G的指数为2的子群，证明H必为正规子群，并写出左右陪集数目。","answer":"H为正规子群，左右陪集均为2个","subject":"离散数学","source":"official_distribution_112_hard"}
+{"idx":4021,"problem":"求所有满足a+b+c=15、a≤b≤c且a,b,c为正整数的三元组个数，需要按a分类讨论。","answer":"19","subject":"离散数学","source":"official_distribution_112_hard"}
+{"idx":4022,"problem":"设布尔代数中x+y=1且xy=0，化简表达式(x+z)(y+z)，并使用分配律说明。","answer":"z","subject":"离散数学","source":"official_distribution_112_hard"}
+{"idx":4023,"problem":"证明任意含n≥2个顶点的锦标赛图存在哈密顿路径，并说明归纳插入步骤给出的结论。","answer":"任意锦标赛图存在哈密顿路径","subject":"离散数学","source":"official_distribution_112_hard"}
+{"idx":4024,"problem":"对f(x)=x^3-x-1在区间[1,2]作一次二分法迭代，求新区间并说明端点函数值异号。","answer":"[1,1.5]","subject":"数值分析","source":"official_distribution_112_hard"}
+{"idx":4025,"problem":"用牛顿法求方程x^2-3=0的迭代公式，并由x_0=2计算x_1。","answer":"x_{n+1}=(x_n+3/x_n)/2，x_1=7/4","subject":"数值分析","source":"official_distribution_112_hard"}
+{"idx":4026,"problem":"求二次插值多项式p(x)通过(0,1),(1,2),(2,5)，并验证p(2)与数据一致。","answer":"p(x)=x^2+1","subject":"数值分析","source":"official_distribution_112_hard"}
+{"idx":4027,"problem":"用复化梯形公式将[0,2]分为两段近似积分∫_0^2 x^2dx，求近似值并与精确值比较。","answer":"3，精确值为8/3","subject":"数值分析","source":"official_distribution_112_hard"}
+{"idx":4028,"problem":"设Jacobi迭代矩阵B的无穷范数为0.6，说明迭代是否收敛并给出所用充分条件。","answer":"收敛","subject":"数值分析","source":"official_distribution_112_hard"}
+{"idx":4029,"problem":"对方程x=cos x，取不动点迭代x_{n+1}=cos x_n，说明在[0,1]上收敛的导数判据。","answer":"|−sin x|≤sin1<1，故收敛","subject":"数值分析","source":"official_distribution_112_hard"}
+{"idx":4030,"problem":"用前向欧拉法步长h=0.1求y'=y,y(0)=1在x=0.2处的近似值，列出两步递推。","answer":"1.21","subject":"数值分析","source":"official_distribution_112_hard"}
+{"idx":4031,"problem":"设矩阵A为严格对角占优矩阵，说明高斯-赛德尔迭代的收敛性，并指出该结论是充分条件。","answer":"高斯-赛德尔迭代收敛","subject":"数值分析","source":"official_distribution_112_hard"}
+{"idx":4032,"problem":"求f(x)=ln(1+x)在x=0处三阶泰勒多项式，并写出截断到x^3的结果。","answer":"x-x^2/2+x^3/3","subject":"数值分析","source":"official_distribution_112_hard"}
+{"idx":4033,"problem":"对求积公式Q(f)=a f(0)+b f(1)，要求其对一次多项式精确，求a,b并说明列方程来源。","answer":"a=b=1/2","subject":"数值分析","source":"official_distribution_112_hard"}
+{"idx":4034,"problem":"用割线法近似求x^2-2=0，取x_0=1,x_1=2，计算x_2并保留分数形式。","answer":"4/3","subject":"数值分析","source":"official_distribution_112_hard"}
+{"idx":4035,"problem":"给定线性方程组Ax=b，若A的条件数很大，说明相对输入误差对解误差的影响趋势。","answer":"解的相对误差可能被显著放大","subject":"数值分析","source":"official_distribution_112_hard"}
+{"idx":4036,"problem":"求Chebyshev节点x_k=cos((2k-1)π/(2n))在n=2时的两个节点，并说明其关于原点对称。","answer":"±√2/2","subject":"数值分析","source":"official_distribution_112_hard"}
+{"idx":4037,"problem":"设E_n=[0,1/n]，求其勒贝格测度极限，并说明集合列单调递减但交集为何。","answer":"μ(E_n)→0，交集为{0}","subject":"测度积分","source":"official_distribution_112_hard"}
+{"idx":4038,"problem":"在[0,1]上令f_n(x)=x^n，求f_n的逐点极限及积分极限，并比较二者。","answer":"逐点极限在[0,1)为0且f(1)=1，积分极限为0","subject":"测度积分","source":"official_distribution_112_hard"}
+{"idx":4039,"problem":"设f=1_[0,2]+2·1_(2,3]，求其在实数上的勒贝格积分，需按不交集合分解。","answer":"4","subject":"测度积分","source":"official_distribution_112_hard"}
+{"idx":4040,"problem":"若f≥0可测且∫f dμ=0，证明对任意ε>0集合{f≥ε}为零测集，并写出结论。","answer":"f=0 几乎处处","subject":"测度积分","source":"official_distribution_112_hard"}
+{"idx":4041,"problem":"设A,B可测且μ(A)=3,μ(B)=5,μ(A∩B)=2，求μ(A∪B)并使用容斥公式。","answer":"6","subject":"测度积分","source":"official_distribution_112_hard"}
+{"idx":4042,"problem":"令f_n=n·1_(0,1/n)，说明f_n逐点收敛到何函数，并计算其积分以说明不可直接交换极限。","answer":"逐点极限为0，积分恒为1","subject":"测度积分","source":"official_distribution_112_hard"}
+{"idx":4043,"problem":"若f∈L^1且E_n可测并满足μ(E_n)→0，写出绝对连续性结论lim∫_{E_n}|f|dμ。","answer":"0","subject":"测度积分","source":"official_distribution_112_hard"}
+{"idx":4044,"problem":"设μ为计数测度，求函数f(k)=1/2^k在正整数集合上的积分，并化为级数计算。","answer":"1","subject":"测度积分","source":"official_distribution_112_hard"}
+{"idx":4045,"problem":"给定f(x)=x^{-1/2}定义在(0,1]上，判断其是否属于L^1[0,1]并计算积分。","answer":"属于L^1，积分为2","subject":"测度积分","source":"official_distribution_112_hard"}
+{"idx":4046,"problem":"设f_n≥0且f_n↑f，已知∫f_n=1-1/n，利用单调收敛定理求∫f。","answer":"1","subject":"测度积分","source":"official_distribution_112_hard"}
+{"idx":4047,"problem":"构造[0,1]上非负可测函数列f_n使其逐点趋于0而积分恒为1，并写出一个具体公式。","answer":"f_n(x)=n·1_(0,1/n)(x)","subject":"测度积分","source":"official_distribution_112_hard"}
+{"idx":4048,"problem":"设平面曲线γ(t)=(t,t^2)，求t=0处曲率，需先计算一阶和二阶导数。","answer":"2","subject":"微分几何","source":"official_distribution_112_hard"}
+{"idx":4049,"problem":"求半径为r的圆按弧长参数化后的曲率，并说明其与参数选择无关。","answer":"1/r","subject":"微分几何","source":"official_distribution_112_hard"}
+{"idx":4050,"problem":"对曲线γ(t)=(cos t,sin t,t)，求速度长度并判断该参数是否为弧长参数。","answer":"√2，不是弧长参数","subject":"微分几何","source":"official_distribution_112_hard"}
+{"idx":4051,"problem":"设曲面z=x^2+y^2，求原点处两条主曲率及高斯曲率，并写出二阶导数依据。","answer":"主曲率均为2，高斯曲率为4","subject":"微分几何","source":"official_distribution_112_hard"}
+{"idx":4052,"problem":"求单位球面上任一点的平均曲率与高斯曲率，并说明法向取向对前者符号的影响。","answer":"平均曲率绝对值为1，高斯曲率为1","subject":"微分几何","source":"official_distribution_112_hard"}
+{"idx":4053,"problem":"证明平面曲线在弧长参数下切向量T满足T·T'=0，并解释该正交关系。","answer":"T'与T正交","subject":"微分几何","source":"official_distribution_112_hard"}
+{"idx":4054,"problem":"设曲线曲率恒为0且连通，证明其像包含在一条直线中，写出关键微分几何结论。","answer":"曲线为直线的部分","subject":"微分几何","source":"official_distribution_112_hard"}
+{"idx":4055,"problem":"对参数曲面X(u,v)=(u,v,u+v)，计算第一基本形式系数E,F,G。","answer":"E=2，F=1，G=2","subject":"微分几何","source":"official_distribution_112_hard"}
+{"idx":4056,"problem":"设曲面为图形z=f(x,y)，且在一点∇f=0，写出高斯曲率用Hessian行列式表示的公式。","answer":"K=f_{xx}f_{yy}-f_{xy}^2","subject":"微分几何","source":"official_distribution_112_hard"}
+{"idx":4057,"problem":"连续掷两次公平骰子，求点数和为7条件下第一次为3的条件概率，列出条件样本空间。","answer":"1/6","subject":"概率论","source":"official_distribution_112_hard"}
+{"idx":4058,"problem":"设X服从参数p的伯努利分布，求E[(X-p)^2]并由定义识别其方差。","answer":"p(1-p)","subject":"概率论","source":"official_distribution_112_hard"}
+{"idx":4059,"problem":"从含3红2蓝球盒中不放回取2球，求恰取一红一蓝的概率，使用组合数计算。","answer":"3/5","subject":"概率论","source":"official_distribution_112_hard"}
+{"idx":4060,"problem":"若A,B独立且P(A)=1/2,P(B)=1/3，求P(A∪B)并说明独立性用在何处。","answer":"2/3","subject":"概率论","source":"official_distribution_112_hard"}
+{"idx":4061,"problem":"设X,Y独立且均服从标准正态分布，求X+Y的分布及其方差，并说明独立性的用途。","answer":"N(0,2)","subject":"概率论","source":"official_distribution_112_hard"}
+{"idx":4062,"problem":"公平硬币持续抛掷直到首次正面，求抛掷次数大于3的概率并说明几何分布。","answer":"1/8","subject":"概率论","source":"official_distribution_112_hard"}
+{"idx":4063,"problem":"设随机变量X取值1,2,3且概率分别为1/2,1/3,1/6，求E[X]与Var(X)。","answer":"E[X]=5/3，Var(X)=5/9","subject":"概率论","source":"official_distribution_112_hard"}
+{"idx":4064,"problem":"构造两个边缘均为Bernoulli(1/2)但不独立的随机变量，并给出P(X=Y)。","answer":"取Y=X，则P(X=Y)=1","subject":"概率论","source":"official_distribution_112_hard"}
+{"idx":4065,"problem":"在Z_15加法群中求元素[6]的阶，并用15与6的最大公因数计算。","answer":"5","subject":"抽象代数","source":"official_distribution_112_hard"}
+{"idx":4066,"problem":"设G为群且a的阶为6，求a^4的阶并说明阶公式中的最大公因数。","answer":"3","subject":"抽象代数","source":"official_distribution_112_hard"}
+{"idx":4067,"problem":"证明群同态φ:G→H的核为G的正规子群，并写出共轭封闭的计算式。","answer":"kerφ为G的正规子群","subject":"抽象代数","source":"official_distribution_112_hard"}
+{"idx":4068,"problem":"在多项式环F_2[x]中判断x^3+x+1是否不可约，说明只需检查何种次数的因子。","answer":"不可约","subject":"抽象代数","source":"official_distribution_112_hard"}
+{"idx":4069,"problem":"求商环Z[x]/(x^2+1)中x的平方，并将结果写成常数类。","answer":"x^2=-1","subject":"抽象代数","source":"official_distribution_112_hard"}
+{"idx":4070,"problem":"设域F上的多项式f次数为5，若f在F中有6个不同根，证明f为零多项式。","answer":"f=0","subject":"抽象代数","source":"official_distribution_112_hard"}
+{"idx":4071,"problem":"求有限域F_7乘法群的阶，并说明其任一非零元素满足的幂等式。","answer":"阶为6，a^6=1","subject":"抽象代数","source":"official_distribution_112_hard"}
+{"idx":4072,"problem":"设I为环R的极大理想，说明商环R/I具有什么代数结构，并给出理由。","answer":"R/I为域","subject":"抽象代数","source":"official_distribution_112_hard"}
+{"idx":4073,"problem":"简单对称随机游走S_n从0出发，求E[S_5]与Var(S_5)，利用独立增量性质。","answer":"E[S_5]=0，Var(S_5)=5","subject":"随机过程","source":"official_distribution_112_hard"}
+{"idx":4074,"problem":"泊松过程N(t)强度为λ，求给定N(2)=3时N(3)-N(2)的条件分布。","answer":"Poisson(λ)","subject":"随机过程","source":"official_distribution_112_hard"}
+{"idx":4075,"problem":"两状态马尔可夫链转移矩阵为[[1,0],[1/2,1/2]]，指出吸收态并求从状态2一步到状态1概率。","answer":"状态1为吸收态，概率为1/2","subject":"随机过程","source":"official_distribution_112_hard"}
+{"idx":4076,"problem":"设B(t)为标准布朗运动，求Cov(B(s),B(t))在s≤t时的值，并说明独立增量推导。","answer":"s","subject":"随机过程","source":"official_distribution_112_hard"}
+{"idx":4077,"problem":"更新过程的更新间隔均值为2，写出强大数律给出的N(t)/t极限。","answer":"1/2","subject":"随机过程","source":"official_distribution_112_hard"}
+{"idx":4078,"problem":"设平稳过程X_t均值为m，证明其协方差函数只依赖于时间差，并写出Cov(X_t,X_{t+h})。","answer":"只依赖h","subject":"随机过程","source":"official_distribution_112_hard"}
+{"idx":4079,"problem":"构造一个不可约但周期为2的两状态马尔可夫链，并写出其转移矩阵。","answer":"[[0,1],[1,0]]","subject":"随机过程","source":"official_distribution_112_hard"}
+{"idx":4080,"problem":"计算围道|z|=2上积分∮ dz/(z-1)，说明留数定理中极点是否位于围道内。","answer":"2πi","subject":"复分析","source":"official_distribution_112_hard"}
+{"idx":4081,"problem":"求函数f(z)=z^2的实部u(x,y)，并验证u满足拉普拉斯方程。","answer":"u=x^2-y^2","subject":"复分析","source":"official_distribution_112_hard"}
+{"idx":4082,"problem":"求1/(z(z-1))在z=0处的留数，先作部分分式分解并识别极点阶数。","answer":"-1","subject":"复分析","source":"official_distribution_112_hard"}
+{"idx":4083,"problem":"展开1/(1-z)在z=0邻域的幂级数，并给出其收敛半径及端点外的发散理由。","answer":"Σ_{n=0}∞z^n，收敛半径1","subject":"复分析","source":"official_distribution_112_hard"}
+{"idx":4084,"problem":"证明整函数在整个复平面有界时必为常数，并说明所使用的刘维尔经典定理名称。","answer":"由刘维尔定理f为常数","subject":"复分析","source":"official_distribution_112_hard"}
+{"idx":4085,"problem":"求函数f(z)=\bar z在z=0处是否复可导，直接使用差商极限判断。","answer":"在z=0处不可复可导","subject":"复分析","source":"official_distribution_112_hard"}
+{"idx":4086,"problem":"求∮_{|z|=1} z^2/(z-1/2) dz，使用柯西积分公式而非直接参数化。","answer":"πi/2","subject":"复分析","source":"official_distribution_112_hard"}
+{"idx":4087,"problem":"解初值问题y'+2y=e^{-2x},y(0)=0，使用积分因子并给出显式解。","answer":"y=xe^{-2x}","subject":"常微分方程","source":"official_distribution_112_hard"}
+{"idx":4088,"problem":"求方程y''-y=0且y(0)=1,y'(0)=0的解，先写特征方程。","answer":"y=cosh x","subject":"常微分方程","source":"official_distribution_112_hard"}
+{"idx":4089,"problem":"判断方程y'=y^2,y(0)=1的最大右侧存在区间，并通过分离变量求解。","answer":"y=1/(1-x)，区间x<1","subject":"常微分方程","source":"official_distribution_112_hard"}
+{"idx":4090,"problem":"对线性系统x'=x,y'=-y，给出平衡点及其稳定性类型，说明特征值符号。","answer":"原点为鞍点，不稳定","subject":"常微分方程","source":"official_distribution_112_hard"}
+{"idx":4091,"problem":"求Bernoulli方程y'+y=y^2的非零通解，令v=1/y化为线性方程。","answer":"y=1/(1+Ce^x)","subject":"常微分方程","source":"official_distribution_112_hard"}
+{"idx":4092,"problem":"正态总体方差已知为1，样本量n=4，求样本均值的方差并说明独立同分布假设。","answer":"1/4","subject":"统计推断","source":"official_distribution_112_hard"}
+{"idx":4093,"problem":"设X_1,…,X_n独立同分布且E[X_i]=μ，证明样本均值是μ的无偏估计。","answer":"E[\bar X]=μ","subject":"统计推断","source":"official_distribution_112_hard"}
+{"idx":4094,"problem":"在显著性水平0.05的双侧Z检验中，写出拒绝域临界值并说明标准正态分位数。","answer":"|Z|>1.96","subject":"统计推断","source":"official_distribution_112_hard"}
+{"idx":4095,"problem":"比较两个无偏估计量T_1,T_2，若Var(T_1)<Var(T_2)，说明通常应优先选择哪一个及原因。","answer":"优先T_1，因为其均方误差更小","subject":"统计推断","source":"official_distribution_112_hard"}
+{"idx":4096,"problem":"在C[0,1]配备一致范数，证明评价泛函L(f)=f(1/2)有界并求其算子范数。","answer":"||L||=1","subject":"泛函分析","source":"official_distribution_112_hard"}
+{"idx":4097,"problem":"设T:l^2→l^2为右移算子T(x_1,x_2,…)=(0,x_1,x_2,…)，求||T||并说明是否为等距。","answer":"||T||=1，T为等距算子","subject":"泛函分析","source":"official_distribution_112_hard"}
+{"idx":4098,"problem":"证明Hilbert空间中闭凸集上的最近点若存在则唯一，指出使用的严格凸性等式。","answer":"最近点唯一","subject":"泛函分析","source":"official_distribution_112_hard"}
+{"idx":4099,"problem":"设X为赋范空间，说明有限维子空间为何闭，并写出该结论对极限点的含义。","answer":"有限维子空间是闭集","subject":"泛函分析","source":"official_distribution_112_hard"}
+{"idx":4100,"problem":"简单线性回归含截距，若所有x_i同时加常数c，说明斜率估计是否改变并给出理由。","answer":"斜率估计不变","subject":"线性回归","source":"official_distribution_112_hard"}
+{"idx":4101,"problem":"在线性回归中，若残差与每个设计变量正交，写出残差平方和对截距的一阶正规方程。","answer":"Σe_i=0","subject":"线性回归","source":"official_distribution_112_hard"}
+{"idx":4102,"problem":"已知相关系数r=-0.8，在线性回归含截距情形求决定系数R^2并解释其含义。","answer":"0.64","subject":"线性回归","source":"official_distribution_112_hard"}
+{"idx":4103,"problem":"对热方程u_t=u_{xx}，验证u(x,t)=e^{-t}sin x是否为解，需分别求时间和空间导数。","answer":"是","subject":"偏微分方程","source":"official_distribution_112_hard"}
+{"idx":4104,"problem":"求拉普拉斯方程u_{xx}+u_{yy}=0中函数u=x^2-y^2是否调和，并进行二阶求导。","answer":"是","subject":"偏微分方程","source":"official_distribution_112_hard"}
+{"idx":4105,"problem":"对波动方程u_{tt}=u_{xx}，写出d'Alembert通解形式并说明两个任意函数的角色。","answer":"u=F(x+t)+G(x-t)","subject":"偏微分方程","source":"official_distribution_112_hard"}
+{"idx":4106,"problem":"设M为紧致黎曼流形，说明连续函数为何必取得最大值和最小值，并给出所用紧致性结论。","answer":"由紧致性和连续像紧致，必取到最大最小值","subject":"非基础及进阶课程","source":"official_distribution_112_hard"}
+{"idx":4107,"problem":"利用基本群的同伦不变性，说明圆S^1与单点空间不可能同胚，并比较其基本群。","answer":"π_1(S^1)=Z而单点基本群平凡","subject":"非基础及进阶课程","source":"official_distribution_112_hard"}
+{"idx":4108,"problem":"设A为3阶矩阵且特征值为1,1,2，求det(A)与tr(A)，并说明代数重数的作用。","answer":"det(A)=2，tr(A)=4","subject":"高等代数","source":"official_distribution_112_hard"}
+{"idx":4109,"problem":"在线性规划max x+y，约束x+y≤1,x≥0,y≥0中，求最优值并说明为何最优解可取在顶点。","answer":"最优值为1","subject":"运筹学","source":"official_distribution_112_hard"}
+{"idx":4110,"problem":"设f在[0,1]连续且∫_0^1 f(x)dx=0，若f(x)≥0，证明f恒为0，使用极值或连续性反证。","answer":"f≡0","subject":"数学分析","source":"official_distribution_112_hard"}
+{"idx":4111,"problem":"证明紧致空间的闭子集仍紧致，并说明开覆盖限制到闭子集的步骤。","answer":"紧致空间的闭子集紧致","subject":"拓扑学","source":"official_distribution_112_hard"}
