@@ -111,6 +111,116 @@ class FullSolutionFlowTest(unittest.TestCase):
         self.assertEqual(audit["content"]["selected_candidate"], 1)
 
 
+class CandidateSelectionTest(unittest.TestCase):
+    def _agent(self, responses, **config_overrides):
+        config = AgentConfig(use_llm_extraction=False, **config_overrides)
+        return ReasoningAgent(SequencedClient(responses), config)
+
+    def test_uses_three_short_candidates_before_majority_selection(self):
+        agent = self._agent(
+            ["【最终答案】7", "【最终答案】7", "【最终答案】8"],
+        )
+
+        result = agent.solve("计算 3+4。", {"idx": 10})
+
+        self.assertEqual(result["final_response"], "7")
+        self.assertEqual(len(agent.client.calls), 3)
+        self.assertTrue(any(item["step"] == "majority_vote" for item in result["trace"]))
+        self.assertTrue(all(call["max_tokens"] == 6144 for call in agent.client.calls))
+
+    def test_disagreement_uses_independent_verifier_to_select_matching_candidate(self):
+        agent = self._agent([
+            "【最终答案】1",
+            "【最终答案】2",
+            "【最终答案】3",
+            "ANSWER: 2\nCONFIDENCE: 95",
+            "FINAL: 2",
+        ])
+
+        result = agent.solve("计算 1+1。", {"idx": 11})
+
+        self.assertEqual(result["final_response"], "2")
+        verification = next(
+            item for item in result["trace"] if item["step"] == "independent_verification"
+        )
+        self.assertEqual(verification["content"]["selected_candidate"], 1)
+        verifier_call = agent.client.calls[3]
+        self.assertEqual(verifier_call["max_tokens"], 4096)
+        self.assertEqual(verifier_call["messages"][1]["content"], "题目：\n计算 1+1。")
+
+    def test_unparseable_verifier_response_keeps_deterministic_candidate_fallback(self):
+        agent = self._agent([
+            "【最终答案】1",
+            "【最终答案】2",
+            "【最终答案】3",
+            "无法确定",
+            "FINAL: 1",
+        ])
+
+        result = agent.solve("计算 1+1。", {"idx": 12})
+
+        self.assertEqual(result["final_response"], "1")
+        verification = next(
+            item for item in result["trace"] if item["step"] == "independent_verification"
+        )
+        self.assertIsNone(verification["content"]["verifier_answer"])
+
+    def test_parser_clamps_verifier_confidence(self):
+        self.assertEqual(
+            ReasoningAgent._parse_verifier_response("ANSWER: x=1\nCONFIDENCE: 120"),
+            ("x=1", 100),
+        )
+
+    def test_high_risk_majority_is_overridden_by_independent_solution(self):
+        agent = self._agent([
+            "【最终答案】84",
+            "【最终答案】84",
+            "【最终答案】84",
+            "ANSWER: 120\nCONFIDENCE: 100",
+        ])
+
+        result = agent.solve("求正整数解数，需用隔板法计数。", {"idx": 13})
+
+        self.assertEqual(result["final_response"], "120")
+        verification = next(
+            item for item in result["trace"] if item["step"] == "majority_verification"
+        )
+        self.assertTrue(verification["content"]["overrode_majority"])
+
+    def test_all_garbage_falls_back_to_independent_solution(self):
+        agent = self._agent([
+            "【最终答案】<final answer>",
+            "【最终答案】<final answer>",
+            "【最终答案】<final answer>",
+            "ANSWER: 取Y=X，P(X=Y)=1\nCONFIDENCE: 100",
+        ])
+
+        result = agent.solve("构造两个不独立的 Bernoulli(1/2) 变量。", {"idx": 14})
+
+        self.assertEqual(result["final_response"], "取Y=X,P(X=Y)=1")
+
+    def test_punctuation_only_finalizer_output_is_rejected(self):
+        agent = self._agent([
+            "【最终答案】速度长度为√2，不是弧长参数",
+            "【最终答案】速度长度为√2，不是弧长参数",
+            "【最终答案】速度长度为√2，不是弧长参数",
+        ])
+
+        self.assertFalse(ReasoningAgent._is_useful_final_answer(")."))
+        result = agent.solve("求速度长度并判断是否为弧长参数。", {"idx": 15})
+        self.assertEqual(result["final_response"], "速度长度为√2,不是弧长参数")
+
+    def test_construction_answer_preserves_the_constructed_variables(self):
+        self.assertEqual(
+            ReasoningAgent._normalize_construction_answer(
+                "构造边缘均为Bernoulli(1/2)但不独立的变量，并给出P(X=Y)。",
+                "1",
+                "令 Y = X，则两个变量不独立。",
+            ),
+            "取Y=X,P(X=Y)=1",
+        )
+
+
 class GarbageDetectionTest(unittest.TestCase):
     def test_accepts_bracketed_mathematical_intervals(self):
         self.assertFalse(ReasoningAgent._looks_like_garbage("[1, 1.5]"))

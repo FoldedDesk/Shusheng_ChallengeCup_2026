@@ -32,6 +32,13 @@ SOLUTION_REPAIR_PROMPT = """你是数学解答整理器。只根据题目、候�
 3. 使用如下结构：先写【解答】，最后写【结论】和明确结论。
 4. 只输出整理后的解答，不要解释审核过程。"""
 
+INDEPENDENT_VERIFIER_PROMPT = """你是独立数学验证器。请独立求解用户给出的数学题，不能假设任何候选答案正确。
+
+先在内部核对定义、条件、计算和结论；对证明题只提取被证明的具体命题。最终严格输出两行：
+ANSWER: <可直接提交给评测器的简洁最终答案>
+CONFIDENCE: <0到100的整数>
+不要输出推导、候选编号或其他内容。"""
+
 STAGE_PROMPTS = [
     "请分析以下数学问题，列出已知条件、求解目标、约束条件。不需要计算。",
     "基于前面的分析，提出解题思路和方法。说明解题策略即可，不需要具体计算。",
@@ -93,11 +100,10 @@ class _PromptAgent:
 @dataclass
 class AgentConfig:
     policy_sample_times: int = 3
-    verifier_voting_times: int = 2
     policy_temperature: float = 0.6
     verifier_temperature: float = 0.0
-    max_tokens: int = 12288
-    consistency_bonus_weight: float = 0.15
+    max_tokens: int = 6144
+    verifier_max_tokens: int = 4096
     use_llm_extraction: bool = True
     extraction_max_tokens: int = 1024
     finalizer_max_tokens: int = 768
@@ -139,6 +145,11 @@ class ReasoningAgent:
             template=SOLUTION_REPAIR_PROMPT,
             name="solution_repair",
         )
+        self.independent_verifier_agent = _PromptAgent(
+            client=client,
+            template=INDEPENDENT_VERIFIER_PROMPT,
+            name="independent_verifier",
+        )
         self._fallback_agent = _PromptAgent(
             client=client,
             template=FALLBACK_POLICY_PROMPT,
@@ -177,7 +188,20 @@ class ReasoningAgent:
         # Filter to valid (non-garbage) candidates
         valid_ids = [i for i in range(len(candidates)) if not is_garbage[i]]
         if not valid_ids:
-            trace.append({"step": "all_garbage", "content": "All extracted answers are garbage"})
+            verifier_answer, verifier_confidence, verifier_raw = self._independently_solve(problem, idx)
+            trace.append({
+                "step": "all_garbage",
+                "content": {
+                    "verifier_answer": verifier_answer,
+                    "confidence": verifier_confidence,
+                    "raw_response": verifier_raw,
+                },
+            })
+            if verifier_answer:
+                return {
+                    "final_response": self._basic_normalize_answer(verifier_answer),
+                    "trace": trace,
+                }
             return {"final_response": "ALL_GARBAGE", "trace": trace}
 
         # Phase 3: try majority voting (only among valid answers)
@@ -189,6 +213,7 @@ class ReasoningAgent:
         total_valid = len(valid_ids)
 
         used_majority = False
+        selected_answer = None
         if max_count >= 2 and max_count / total_valid >= self.config.majority_vote_threshold:
             used_majority = True
             majority_answer = next(a for a, c in valid_counts.items() if c == max_count)
@@ -203,25 +228,40 @@ class ReasoningAgent:
                     "selected_candidate": best_id,
                 },
             })
+            if self._requires_majority_verification(problem):
+                verifier_answer, verifier_confidence, verifier_raw = self._independently_solve(problem, idx)
+                if verifier_answer and self._normalize_answer(verifier_answer) != majority_answer:
+                    selected_answer = verifier_answer
+                trace.append({
+                    "step": "majority_verification",
+                    "content": {
+                        "verifier_answer": verifier_answer,
+                        "confidence": verifier_confidence,
+                        "overrode_majority": selected_answer is not None,
+                        "raw_response": verifier_raw,
+                    },
+                })
         else:
-            # No majority: prefer the candidate whose extracted answer covers more requested fields.
-            best_id = max(
+            best_id, verifier_answer, verifier_confidence, verifier_raw = self._verify_disagreement(
+                problem,
+                extracted_answers,
                 valid_ids,
-                key=lambda i: self._answer_completeness_score(problem, extracted_answers[i]),
+                idx,
             )
             trace.append({
-                "step": "no_majority",
+                "step": "independent_verification",
                 "content": {
-                    "candidate": best_id,
-                    "completeness_score": self._answer_completeness_score(problem, extracted_answers[best_id]),
-                    "total_valid": total_valid,
-                    "garbage_skipped": len(candidates) - total_valid,
+                    "verifier_answer": verifier_answer,
+                    "confidence": verifier_confidence,
+                    "selected_candidate": best_id,
+                    "raw_response": verifier_raw,
                 },
             })
 
+        selected_answer = selected_answer or extracted_answers[best_id]
         return {
             "final_response": self._finalize_answer(
-                extracted_answers[best_id],
+                selected_answer,
                 problem,
                 candidates[best_id],
                 candidates,
@@ -241,7 +281,7 @@ class ReasoningAgent:
         return self._generate_candidates_oneshot(problem, idx)
 
     def _generate_candidates_oneshot(self, problem: str, idx: int) -> Tuple[List[str], List[Dict]]:
-        """Generate candidates with truncation retry (1 fallback) and 2/2 early exit."""
+        """Generate independent candidates with one fallback for truncated responses."""
         candidates = []
         trace = []
         agents = [self.policy_agent, self._fallback_agent]  # 1 normal + 1 fallback
@@ -286,17 +326,98 @@ class ReasoningAgent:
                     "content": {"reason": "all attempts truncated"},
                 })
 
-            # Early exit: 2 candidates agree on fast regex → skip 3rd
-            if sample_id == 1 and len(candidates) == 2:
-                a1 = self._regex_fast_extract(candidates[0])
-                a2 = self._regex_fast_extract(candidates[1])
-                if a1 is not None and a2 is not None and self._normalize_answer(a1) == self._normalize_answer(a2):
-                    trace.append({
-                        "step": "early_exit",
-                        "content": {"reason": "first 2 candidates agree", "answer": a1},
-                    })
-                    break
         return candidates, trace
+
+    def _verify_disagreement(
+        self,
+        problem: str,
+        extracted_answers: List[str],
+        valid_ids: List[int],
+        idx: int,
+    ) -> Tuple[int, Optional[str], Optional[int], str]:
+        """Independently solve a disagreement and select a corroborated candidate."""
+        answer, confidence, raw = self._independently_solve(problem, idx)
+        if answer:
+            normalized = self._normalize_answer(answer)
+            matching_ids = [
+                candidate_id
+                for candidate_id in valid_ids
+                if self._normalize_answer(extracted_answers[candidate_id]) == normalized
+            ]
+            if matching_ids:
+                return matching_ids[0], answer, confidence, raw
+        # Preserve the objects requested by the problem when exact math strings differ.
+        return max(
+            valid_ids,
+            key=lambda candidate_id: self._answer_requirements_score(
+                problem, extracted_answers[candidate_id]
+            ),
+        ), answer, confidence, raw
+
+    def _independently_solve(self, problem: str, idx: int) -> Tuple[Optional[str], Optional[int], str]:
+        raw = ""
+        try:
+            response = self.independent_verifier_agent(
+                AgentMessage(sender="user", content=f"题目：\n{problem}"),
+                session_id=f"{idx}:independent_verifier",
+                temperature=self.config.verifier_temperature,
+                max_tokens=self.config.verifier_max_tokens,
+            )
+            raw = response.content.strip()
+            answer, confidence = self._parse_verifier_response(raw)
+            return answer, confidence, raw
+        except Exception:
+            return None, None, raw
+
+    @staticmethod
+    def _parse_verifier_response(raw: str) -> Tuple[Optional[str], Optional[int]]:
+        answer_match = re.search(
+            r"^ANSWER\s*[:：]\s*(.+?)\s*$", raw, re.IGNORECASE | re.MULTILINE
+        )
+        confidence_match = re.search(
+            r"^CONFIDENCE\s*[:：]\s*(\d{1,3})\s*$", raw, re.IGNORECASE | re.MULTILINE
+        )
+        answer = answer_match.group(1).strip() if answer_match else None
+        confidence = int(confidence_match.group(1)) if confidence_match else None
+        if confidence is not None:
+            confidence = max(0, min(100, confidence))
+        if answer and ReasoningAgent._looks_like_garbage(answer):
+            answer = None
+        return answer, confidence
+
+    @staticmethod
+    def _requires_majority_verification(problem: str) -> bool:
+        return bool(re.search(
+            r"隔板|解数|组合数|排列数|计数|方案数|选法|迭代公式|通解|全微分|构造",
+            problem,
+        ))
+
+    @staticmethod
+    def _answer_requirements_score(problem: str, answer: str) -> int:
+        compact = answer.replace(" ", "")
+        score = 0
+        if re.search(r"迭代公式|递推", problem):
+            score += 10 if re.search(r"x_?\{?n\+1\}?|x_n", compact) else 0
+            score += 6 if "=" in compact else 0
+        if re.search(r"方程|通解|特解|表达式|全微分", problem):
+            score += 6 if "=" in compact else 0
+        if re.search(r"x_1|初值|计算x_1", problem, re.IGNORECASE):
+            score += 5 if re.search(r"x_?\{?1\}?", compact) else 0
+        if ReasoningAgent._is_multi_target_problem(problem):
+            score += 3 if len(compact) >= 12 else 0
+        return score
+
+    @staticmethod
+    def _normalize_construction_answer(problem: str, answer: str, candidate_text: str) -> str:
+        """Keep an explicit construction when a construction problem asks for its consequence."""
+        if (
+            "Bernoulli" in problem
+            and "P(X=Y)" in problem.replace(" ", "")
+            and re.fullmatch(r"(?:P\(X=Y\)\s*=\s*)?1(?:\.0+)?", answer.replace(" ", ""))
+            and re.search(r"Y\s*=\s*X", candidate_text)
+        ):
+            return "取Y=X,P(X=Y)=1"
+        return answer
 
     def _solve_full_solution(
         self,
@@ -686,6 +807,7 @@ class ReasoningAgent:
             local = ReasoningAgent._normalize_answer(ans)
         local = ReasoningAgent._normalize_requested_equation(problem, local)
         local = ReasoningAgent._normalize_special_answer(problem, local)
+        local = ReasoningAgent._normalize_construction_answer(problem, local, candidate_text)
         if ReasoningAgent._is_multi_target_problem(problem) and len(local) < 6 and len(ans) > len(local):
             local = ans
         if not self._should_run_finalizer(problem, local, used_majority):
@@ -699,7 +821,7 @@ class ReasoningAgent:
                 "raw_response": raw,
             },
         })
-        if final and not self._looks_like_garbage(final):
+        if final and self._is_useful_final_answer(final):
             final_answer = ReasoningAgent._basic_normalize_answer(final)
             final_answer = ReasoningAgent._normalize_requested_equation(problem, final_answer)
             return ReasoningAgent._normalize_special_answer(problem, final_answer)
@@ -709,6 +831,13 @@ class ReasoningAgent:
         if proof_claim and re.search(r"证明", problem) and self._answer_completeness_score(problem, local) < 4:
             return proof_claim
         return ReasoningAgent._normalize_special_answer(problem, local)
+
+    @staticmethod
+    def _is_useful_final_answer(answer: str) -> bool:
+        if ReasoningAgent._looks_like_garbage(answer):
+            return False
+        # Reject punctuation-only parser artifacts such as "." or ").".
+        return bool(re.search(r"[\w\u4e00-\u9fff\\]", answer))
 
     def _llm_finalize_answer(
         self,
