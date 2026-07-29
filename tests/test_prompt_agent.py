@@ -77,6 +77,13 @@ class SubjectRoutingTest(unittest.TestCase):
             "证明函数几乎处处收敛": "测度积分",
             "构造 Bernoulli(1/2) 随机变量": "概率论",
             "求图的哈密顿路径个数": "离散数学",
+            "证明群同态的核是正规子群": "抽象代数",
+            "对热方程计算 u_t 与 u_xx": "偏微分方程",
+            "证明样本均值是无偏估计": "统计推断",
+            "计算决定系数 R^2": "线性回归",
+            "计算平稳过程的协方差函数": "随机过程",
+            "求评价泛函的算子范数": "泛函分析",
+            "证明紧致空间的闭子集紧致": "拓扑学",
         }
         for problem, subject in cases.items():
             self.assertEqual(ReasoningAgent._classify_subject(problem), subject)
@@ -135,7 +142,7 @@ class FullSolutionFlowTest(unittest.TestCase):
 
         result = agent.solve("请证明 x=1。", {"idx": 1})
 
-        self.assertEqual(result["final_response"], "x=1")
+        self.assertEqual(result["final_response"], candidate)
         self.assertEqual(len(agent.client.calls), 2)
         self.assertTrue(any(
             item["step"] == "full_solution_consensus" for item in result["trace"]
@@ -159,7 +166,7 @@ class FullSolutionFlowTest(unittest.TestCase):
 
         result = agent.solve("请推导结果", {"idx": 3})
 
-        self.assertEqual(result["final_response"], "2.")
+        self.assertEqual(result["final_response"], repaired)
         self.assertEqual(len(agent.client.calls), 4)
 
     def test_invalid_audit_choice_falls_back_to_highest_quality_candidate(self):
@@ -172,7 +179,7 @@ class FullSolutionFlowTest(unittest.TestCase):
 
         result = agent.solve("请证明该结论", {"idx": 4})
 
-        self.assertEqual(result["final_response"], "2")
+        self.assertEqual(result["final_response"], strong)
         audit = next(item for item in result["trace"] if item["step"] == "solution_audit")
         self.assertEqual(audit["content"]["selected_candidate"], 1)
 
@@ -182,7 +189,7 @@ class CandidateSelectionTest(unittest.TestCase):
         config = AgentConfig(use_llm_extraction=False, **config_overrides)
         return ReasoningAgent(SequencedClient(responses), config)
 
-    def test_uses_three_short_candidates_before_majority_selection(self):
+    def test_uses_two_short_candidates_for_low_risk_majority_selection(self):
         agent = self._agent(
             ["【最终答案】7", "【最终答案】7", "【最终答案】8"],
         )
@@ -190,9 +197,18 @@ class CandidateSelectionTest(unittest.TestCase):
         result = agent.solve("计算 3+4。", {"idx": 10})
 
         self.assertEqual(result["final_response"], "7")
-        self.assertEqual(len(agent.client.calls), 3)
+        self.assertEqual(len(agent.client.calls), 2)
         self.assertTrue(any(item["step"] == "majority_vote" for item in result["trace"]))
         self.assertTrue(all(call["max_tokens"] == 6144 for call in agent.client.calls))
+
+    def test_deterministic_decision_coefficient_bypasses_model_sampling(self):
+        agent = self._agent([])
+
+        result = agent.solve("已知相关系数r=-0.8，求决定系数R^2。", {"idx": 17})
+
+        self.assertEqual(result["final_response"], "R^2=0.64")
+        self.assertEqual(agent.client.calls, [])
+        self.assertEqual(result["trace"][0]["step"], "deterministic_solver")
 
     def test_disagreement_uses_independent_verifier_to_select_matching_candidate(self):
         agent = self._agent([
