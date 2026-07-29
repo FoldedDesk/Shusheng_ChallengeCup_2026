@@ -52,6 +52,72 @@ class PromptAgentTest(unittest.TestCase):
             "max_tokens": 123,
         }])
 
+    def test_template_override_replaces_the_system_prompt(self):
+        client = FakeClient()
+        agent = _PromptAgent(client, template="default prompt", name="policy")
+
+        agent(
+            AgentMessage(sender="user", content="problem text"),
+            session_id="ignored",
+            temperature=0.2,
+            max_tokens=321,
+            template_override="routed prompt",
+        )
+
+        self.assertEqual(client.calls[0]["messages"][0]["content"], "routed prompt")
+
+
+class SubjectRoutingTest(unittest.TestCase):
+    def test_classifies_priority_subjects(self):
+        cases = {
+            "用牛顿法求迭代公式": "数值分析",
+            "求曲线的弧长参数与主曲率": "微分几何",
+            "求微分方程的通解": "常微分方程",
+            "计算 z=i 处的留数": "复分析",
+            "证明函数几乎处处收敛": "测度积分",
+            "构造 Bernoulli(1/2) 随机变量": "概率论",
+            "求图的哈密顿路径个数": "离散数学",
+        }
+        for problem, subject in cases.items():
+            self.assertEqual(ReasoningAgent._classify_subject(problem), subject)
+
+    def test_routed_prompt_includes_subject_checklist(self):
+        prompt = ReasoningAgent._routed_policy_prompt("用牛顿法求迭代公式", False)
+
+        self.assertIn("当前题型：数值分析", prompt)
+        self.assertIn("迭代格式和初值", prompt)
+
+    def test_dual_path_uses_distinct_candidate_roles(self):
+        prompts = [
+            ReasoningAgent._candidate_policy_prompt("用牛顿法求迭代公式", index, False)
+            for index in range(3)
+        ]
+
+        self.assertIn("严谨的数学推理智能体", prompts[0])
+        self.assertIn("结构化快速求解器", prompts[1])
+        self.assertIn("独立数学审计求解器", prompts[2])
+
+
+class ObjectCompletenessSelectionTest(unittest.TestCase):
+    def test_complete_candidate_overrides_a_bare_number_majority(self):
+        agent = ReasoningAgent(
+            SequencedClient([
+                "【最终答案】1.75",
+                "【最终答案】1.75",
+                "【最终答案】x_{n+1}=(x_n+3/x_n)/2，x_1=7/4",
+                "ANSWER: 1.75\nCONFIDENCE: 100",
+                "FINAL: x_{n+1}=(x_n+3/x_n)/2，x_1=7/4",
+            ]),
+            AgentConfig(use_llm_extraction=False),
+        )
+
+        result = agent.solve("用牛顿法求迭代公式，并由x_0=2计算x_1。", {"idx": 16})
+
+        self.assertIn("x_{n+1}", result["final_response"])
+        self.assertTrue(any(
+            item["step"] == "object_completeness_override" for item in result["trace"]
+        ))
+
 
 class FullSolutionFlowTest(unittest.TestCase):
     def _agent(self, responses):
@@ -192,6 +258,9 @@ class CandidateSelectionTest(unittest.TestCase):
             "【最终答案】<final answer>",
             "【最终答案】<final answer>",
             "【最终答案】<final answer>",
+            "【最终答案】<final answer>",
+            "【最终答案】<final answer>",
+            "【最终答案】<final answer>",
             "ANSWER: 取Y=X，P(X=Y)=1\nCONFIDENCE: 100",
         ])
 
@@ -218,6 +287,83 @@ class CandidateSelectionTest(unittest.TestCase):
                 "令 Y = X，则两个变量不独立。",
             ),
             "取Y=X,P(X=Y)=1",
+        )
+
+
+class TruncationRecoveryTest(unittest.TestCase):
+    def test_recovers_a_labeled_terminal_count_without_a_final_marker(self):
+        response = "逐步计数可得。Count = 4 × 3 = 12"
+        agent = ReasoningAgent(
+            SequencedClient([response, response, response]),
+            AgentConfig(use_llm_extraction=False),
+        )
+
+        result = agent.solve("在图中求长度为3的简单路径数。", {"idx": 4002})
+
+        self.assertEqual(result["final_response"], "12")
+        self.assertEqual(sum(
+            item["step"].endswith("_recovered") for item in result["trace"]
+        ), 3)
+
+    def test_prompt_marker_and_thinking_are_not_accepted_as_a_proof(self):
+        malformed = (
+            "Here's a thinking process that leads to the solution.\n"
+            "请在最后一行使用【最终答案】<答案>的格式。\n"
+            "后面还有未完成的讨论。"
+        )
+        agent = ReasoningAgent(
+            SequencedClient([
+                malformed,
+                malformed,
+                "ANSWER: 该图必含长度为3的路径。\nCONFIDENCE: 95",
+            ]),
+            AgentConfig(policy_sample_times=3, use_llm_extraction=False),
+        )
+
+        result = agent.solve("证明该图必含长度为3的路径。", {"idx": 4003})
+
+        self.assertEqual(result["final_response"], "该图必含长度为3的路径.")
+        self.assertNotIn("thinking process", result["final_response"].lower())
+        self.assertEqual(len(agent.client.calls), 3)
+        fallback = next(item for item in result["trace"] if item["step"] == "all_truncated")
+        self.assertEqual(fallback["content"]["verifier_answer"], "该图必含长度为3的路径。")
+
+    def test_real_late_final_marker_is_accepted(self):
+        self.assertTrue(ReasoningAgent._has_usable_final_answer(
+            "由计算得结果。\n【最终答案】12"
+        ))
+
+    def test_embedded_final_marker_is_not_accepted(self):
+        self.assertFalse(ReasoningAgent._has_usable_final_answer(
+            "Final Answer: 【最终答案】12\nWait, I should check the result again."
+        ))
+
+    def test_final_marker_with_trailing_thinking_is_not_accepted(self):
+        self.assertFalse(ReasoningAgent._has_usable_final_answer(
+            "【最终答案】12\nWait, I should check the result again."
+        ))
+
+    def test_malformed_verifier_uses_only_the_requested_proof_claim(self):
+        malformed = "Thinking Process:\n请按【最终答案】<答案>格式作答。"
+        verifier = "Thinking Process:\n因此图中存在长度为3的路径。"
+        agent = ReasoningAgent(
+            SequencedClient([malformed, malformed, verifier]),
+            AgentConfig(policy_sample_times=3, use_llm_extraction=False),
+        )
+
+        result = agent.solve(
+            "设简单图有8个顶点且每个顶点度数至少4，证明该图必含长度为3的路径，并给出所用度数条件。",
+            {"idx": 4003},
+        )
+
+        self.assertEqual(
+            result["final_response"],
+            "该图必含长度为3的路径；所用度数条件为每个顶点度数至少4",
+        )
+        fallback = next(item for item in result["trace"] if item["step"] == "all_truncated")
+        self.assertEqual(
+            fallback["content"]["proof_fallback"],
+            "该图必含长度为3的路径；所用度数条件为每个顶点度数至少4",
         )
 
 

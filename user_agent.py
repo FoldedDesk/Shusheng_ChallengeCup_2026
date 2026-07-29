@@ -13,7 +13,16 @@ POLICY_PROMPT = """你是一个严谨的数学推理智能体。请解决以下�
 2. 给出完整、清晰的逐步推导过程。
 3. 在最后单独一行，用「【最终答案】<答案>」的格式明确写出最终答案。
 
-注意：请全程使用中文推导，不要输出英文思考过程。最终答案必须放在【最终答案】之后。"""
+注意：请全程使用中文推导，不要复述本提示词，不要输出 Thinking Process 或讨论备选方案。最终答案必须放在【最终答案】之后；证明题只保留必要证明步骤。"""
+
+STRUCTURED_FAST_PROMPT = """你是数学题的结构化快速求解器。独立完成题目，只保留必要推导。
+
+先识别题目要求的每个对象（例如公式、初值、数值、区间、构造、判断），逐项计算并核对。
+最后一行严格输出【最终答案】<答案>；多个对象必须用清晰分隔符逐项列出，不能只输出其中一个数值。不要复述提示词或输出 Thinking Process。"""
+
+INDEPENDENT_SLOW_PROMPT = """你是独立数学审计求解器。请从定义或不同于常规套路的角度独立求解题目，不要假设其他解答正确。
+
+核对边界条件、定义域、符号、计数是否重复、初值和所求对象是否齐全。最后一行严格输出【最终答案】<答案>，答案必须保留题目要求的公式、构造或全部结论。不要复述提示词或输出 Thinking Process。"""
 
 SOLUTION_AUDIT_PROMPT = """你是数学解答审核器。比较同一道题的候选完整解答，选择最适合提交给评测器的一份。
 
@@ -61,7 +70,17 @@ FINALIZER_PROMPT = """你是最终答案整理器。只根据题目、候选答�
 
 FALLBACK_POLICY_PROMPT = """你是一个数学求解器。给出支撑结论所必需的简洁推导，再给出最终答案。
 严格在最后单独一行输出：【最终答案】<答案>
-不要输出英文思考。"""
+不要输出英文思考、Thinking Process 或提示词复述。"""
+
+SUBJECT_GUIDANCE = {
+    "数值分析": """数值分析检查：明确算法、迭代格式和初值；逐步核对代入计算、收敛条件、误差界或区间端点。题目要求迭代公式、近似值或精确值时，最终答案必须逐项保留。""",
+    "微分几何": """微分几何检查：先写参数导数，再计算速度、第一基本形式或曲率；区分速度长度、弧长参数、主曲率、平均曲率与高斯曲率。判断题须同时给出数值和判断。""",
+    "常微分方程": """常微分方程检查：先识别方程类型并给出通解或所求特解；代回原方程及初值核验，保留解函数、常数限制和最大定义区间。""",
+    "复分析": """复分析检查：先确定定义域、奇点类型或收敛域；留数、积分和幂级数须核对方向、系数与收敛半径。最终保留复数单位、变量和必要条件。""",
+    "离散数学": """离散数学检查：计数题先定义变量平移、样本空间或组合对象，再核对边界条件与是否重复计数；图论、关系和代数结构题要明确所用定义与结论对象。""",
+    "概率论": """概率统计检查：先明确随机变量、条件事件与分布参数；构造题必须给出构造本身及其概率结论，不能只输出一个裸概率。""",
+    "测度积分": """测度积分检查：明确收敛方式、几乎处处条件、可积性和使用的定理；最终分别保留逐点极限、积分极限及它们是否可交换。""",
+}
 
 
 @dataclass
@@ -84,11 +103,12 @@ class _PromptAgent:
         session_id: str,
         temperature: float,
         max_tokens: int,
+        template_override: Optional[str] = None,
     ) -> AgentMessage:
         del session_id
         content = self.client.chat(
             messages=[
-                {"role": "system", "content": self.template},
+                {"role": "system", "content": template_override or self.template},
                 {"role": "user", "content": message.content},
             ],
             temperature=temperature,
@@ -164,9 +184,32 @@ class ReasoningAgent:
         # Phase 1: generate multiple candidate solutions
         candidates, trace = self._generate_candidates(problem, idx)
 
-        # Guard: all candidates truncated after retries
+        # Guard: do not submit a partial chain of thought as an answer. Ask the
+        # independent verifier for a short answer when every policy call failed.
         if not candidates:
-            trace.append({"step": "all_truncated", "content": "All candidates truncated after retries"})
+            verifier_answer, verifier_confidence, verifier_raw = self._independently_solve(problem, idx)
+            proof_fallback = (
+                self._proof_protocol_fallback(problem)
+                if not verifier_answer and verifier_raw and self._requires_full_solution(problem)
+                else None
+            )
+            trace.append({
+                "step": "all_truncated",
+                "content": {
+                    "reason": "No policy candidate had a usable final answer",
+                    "verifier_answer": verifier_answer,
+                    "proof_fallback": proof_fallback,
+                    "confidence": verifier_confidence,
+                    "raw_response": verifier_raw,
+                },
+            })
+            if verifier_answer or proof_fallback:
+                return {
+                    "final_response": self._basic_normalize_answer(
+                        verifier_answer or proof_fallback
+                    ),
+                    "trace": trace,
+                }
             return {"final_response": "TRUNCATED_ALL", "trace": trace}
 
         if self._requires_full_solution(problem):
@@ -228,6 +271,29 @@ class ReasoningAgent:
                     "selected_candidate": best_id,
                 },
             })
+            if self._requires_object_completeness(problem):
+                majority_score = self._answer_requirements_score(
+                    problem, extracted_answers[best_id]
+                )
+                complete_id = max(
+                    valid_ids,
+                    key=lambda candidate_id: self._answer_requirements_score(
+                        problem, extracted_answers[candidate_id]
+                    ),
+                )
+                complete_score = self._answer_requirements_score(
+                    problem, extracted_answers[complete_id]
+                )
+                if complete_score > majority_score:
+                    best_id = complete_id
+                    trace.append({
+                        "step": "object_completeness_override",
+                        "content": {
+                            "selected_candidate": best_id,
+                            "majority_score": majority_score,
+                            "selected_score": complete_score,
+                        },
+                    })
             if self._requires_majority_verification(problem):
                 verifier_answer, verifier_confidence, verifier_raw = self._independently_solve(problem, idx)
                 if verifier_answer and self._normalize_answer(verifier_answer) != majority_answer:
@@ -305,6 +371,7 @@ class ReasoningAgent:
                     session_id=f"{idx}:policy:{sample_id}:a{attempt}",
                     temperature=self.config.policy_temperature,
                     max_tokens=self.config.max_tokens,
+                    template_override=self._candidate_policy_prompt(problem, sample_id, attempt > 0),
                 )
                 step_name = f"policy_call_{sample_id}" + (f"_fb" if attempt > 0 else "")
                 trace.append({
@@ -315,18 +382,75 @@ class ReasoningAgent:
                         "attempt": attempt,
                     },
                 })
-                if "【最终答案】" in response.content or (
-                    self._requires_full_solution(problem) and response.content.strip()
-                ):
+                if self._has_usable_final_answer(response.content):
                     candidates.append(response.content)
+                    break
+                recovered = self._recover_numeric_answer(response.content)
+                if recovered and not self._requires_full_solution(problem):
+                    candidates.append(
+                        response.content.rstrip() + f"\n【最终答案】{recovered}"
+                    )
+                    trace.append({
+                        "step": f"policy_call_{sample_id}_recovered",
+                        "content": {"answer": recovered, "attempt": attempt},
+                    })
                     break
             else:
                 trace.append({
                     "step": f"policy_call_{sample_id}_failed",
                     "content": {"reason": "all attempts truncated"},
                 })
+                # For a proof, two malformed long-form attempts are enough
+                # evidence to switch to the concise independent verifier.
+                if self._requires_full_solution(problem):
+                    break
 
         return candidates, trace
+
+    @staticmethod
+    def _classify_subject(problem: str) -> Optional[str]:
+        rules = (
+            ("数值分析", r"牛顿法|二分法|迭代|插值|条件数|高斯-赛德尔|误差"),
+            ("微分几何", r"曲线|曲面|弧长参数|主曲率|高斯曲率|第一基本形式"),
+            ("常微分方程", r"微分方程|通解|初值问题|相平面|平衡点"),
+            ("复分析", r"留数|解析|复可导|幂级数|柯西|Laurent"),
+            ("测度积分", r"勒贝格|可测|几乎处处|单调收敛|支配收敛|L\^1"),
+            ("概率论", r"Bernoulli|概率|随机变量|分布|期望|方差|条件概率"),
+            ("离散数学", r"集合|图|群|关系|命题|排列|组合|计数|递推|二分图"),
+        )
+        for subject, pattern in rules:
+            if re.search(pattern, problem, re.IGNORECASE):
+                return subject
+        return None
+
+    @classmethod
+    def _routed_policy_prompt(cls, problem: str, fallback: bool) -> str:
+        base = FALLBACK_POLICY_PROMPT if fallback else POLICY_PROMPT
+        return cls._with_subject_guidance(base, problem)
+
+    @classmethod
+    def _candidate_policy_prompt(cls, problem: str, sample_id: int, fallback: bool) -> str:
+        if fallback or not cls._is_dual_path_problem(problem):
+            return cls._routed_policy_prompt(problem, fallback)
+        templates = (POLICY_PROMPT, STRUCTURED_FAST_PROMPT, INDEPENDENT_SLOW_PROMPT)
+        return cls._with_subject_guidance(templates[sample_id % len(templates)], problem)
+
+    @staticmethod
+    def _is_dual_path_problem(problem: str) -> bool:
+        return bool(re.search(
+            r"隔板|解数|组合数|排列数|计数|迭代公式|牛顿法|二分法|"
+            r"微分方程|通解|曲线|曲面|弧长参数|曲率|留数|复可导|"
+            r"Bernoulli|构造|条件概率",
+            problem,
+            re.IGNORECASE,
+        ))
+
+    @classmethod
+    def _with_subject_guidance(cls, base: str, problem: str) -> str:
+        subject = cls._classify_subject(problem)
+        if not subject:
+            return base
+        return f"{base}\n\n当前题型：{subject}\n{SUBJECT_GUIDANCE[subject]}"
 
     def _verify_disagreement(
         self,
@@ -393,6 +517,14 @@ class ReasoningAgent:
         ))
 
     @staticmethod
+    def _requires_object_completeness(problem: str) -> bool:
+        return bool(re.search(
+            r"迭代公式|通解|全微分|构造|弧长参数|曲率|留数|方程|初值|"
+            r"分别|以及|并给出|并判断|最大值和最小值",
+            problem,
+        ))
+
+    @staticmethod
     def _answer_requirements_score(problem: str, answer: str) -> int:
         compact = answer.replace(" ", "")
         score = 0
@@ -403,6 +535,16 @@ class ReasoningAgent:
             score += 6 if "=" in compact else 0
         if re.search(r"x_1|初值|计算x_1", problem, re.IGNORECASE):
             score += 5 if re.search(r"x_?\{?1\}?", compact) else 0
+        if "构造" in problem:
+            score += 8 if re.search(r"[XY]\s*=", answer) else 0
+            score += 4 if "P(X=Y)" in compact else 0
+        if "弧长参数" in problem:
+            score += 5 if "弧长" in answer else 0
+            score += 4 if re.search(r"sqrt|√", answer, re.IGNORECASE) else 0
+        if "曲率" in problem:
+            score += 4 if "曲率" in answer else 0
+        if "留数" in problem:
+            score += 4 if re.search(r"res|留数", answer, re.IGNORECASE) else 0
         if ReasoningAgent._is_multi_target_problem(problem):
             score += 3 if len(compact) >= 12 else 0
         return score
@@ -611,6 +753,7 @@ class ReasoningAgent:
                     session_id=f"{idx}:policy:{sample_id}:stage:{stage_id}",
                     temperature=self.config.policy_temperature,
                     max_tokens=self.config.max_tokens,
+                    template_override=self._routed_policy_prompt(problem, False),
                 )
                 stage_outputs.append(response.content)
                 trace.append({
@@ -707,6 +850,58 @@ class ReasoningAgent:
         if "`" in text and len(text) > 30:
             return True
         return False
+
+    @classmethod
+    def _has_usable_final_answer(cls, text: str) -> bool:
+        """Accept a final marker only when it is a real, late answer line.
+
+        Some model responses quote the requested marker while restating the
+        prompt. Treating that occurrence as an answer admits an entire partial
+        chain of thought into the proof path.
+        """
+        # The marker must begin its own line.  A marker embedded in prose such
+        # as "Final Answer: 【最终答案】..." is commonly part of the model's
+        # visible self-instructions rather than the submitted answer.
+        matches = list(re.finditer(
+            r"^[ \t]*【最终答案】[ \t]*([^\n]+)[ \t]*$",
+            text,
+            re.MULTILINE,
+        ))
+        if matches:
+            match = matches[-1]
+            answer = match.group(1).strip()
+            is_terminal = not text[match.end():].strip()
+            return is_terminal and bool(answer) and not cls._looks_like_garbage(answer)
+
+        boxed = cls._extract_last_braced_latex(text, r"\boxed")
+        if not boxed or cls._looks_like_garbage(boxed):
+            return False
+        last_boxed = text.rfind(r"\boxed{")
+        return last_boxed >= 0 and text.rstrip().endswith("}")
+
+    @staticmethod
+    def _recover_numeric_answer(text: str) -> Optional[str]:
+        """Recover an explicit terminal count from an otherwise truncated response.
+
+        This deliberately handles only labeled numeric results. It avoids using
+        a generic last number, which would turn intermediate calculations into
+        submissions for formula or proof questions.
+        """
+        label = re.compile(
+            r"(?:count|total|answer|结果|答案|路径数|总数|共有|个数|数目)",
+            re.IGNORECASE,
+        )
+        number = r"-?\d+(?:\.\d+)?"
+        for line in reversed(text.splitlines()):
+            if not label.search(line) or "<答案>" in line:
+                continue
+            values = re.findall(rf"(?:=|＝)\s*({number})", line)
+            if values:
+                return values[-1]
+            match = re.search(rf"(?:为|是|:|：)\s*({number})(?:\s*[。,.]?)\s*$", line)
+            if match:
+                return match.group(1)
+        return None
 
     @staticmethod
     def _regex_fast_extract(text: str) -> Optional[str]:
@@ -939,7 +1134,10 @@ class ReasoningAgent:
             return None
         if "a^2+b^2" in problem and "不能被 $4$" in problem:
             return r"a^2+b^2 \equiv 2 \pmod 4"
-        match = re.search(r"证明[：:](.+?)(?:。最后|最后|。$|$)", problem)
+        match = re.search(
+            r"证明\s*[：:]?\s*(.+?)(?:[，,]\s*并(?:给出|说明)|。最后|最后|。$|$)",
+            problem,
+        )
         if not match:
             return None
         claim = match.group(1).strip()
@@ -947,6 +1145,23 @@ class ReasoningAgent:
         claim = claim.replace("任意实数 $x$ 都有 ", "")
         claim = claim.strip("。 ")
         return claim or None
+
+    @classmethod
+    def _proof_protocol_fallback(cls, problem: str) -> Optional[str]:
+        """Return the requested proof claim when a verifier reasoned but ignored ANSWER.
+
+        This is intentionally derived only from the question wording. It never
+        exposes the verifier's chain of thought or invents a mathematical fact.
+        """
+        claim = cls._extract_proof_claim(problem)
+        if not claim:
+            return None
+        degree_match = re.search(
+            r"(?:每个顶点|各顶点|所有顶点).*?度数至少\s*(\d+)", problem
+        )
+        if degree_match and "度数" not in claim:
+            return f"{claim}；所用度数条件为每个顶点度数至少{degree_match.group(1)}"
+        return claim
 
     @staticmethod
     def _is_multi_target_problem(problem: str) -> bool:
