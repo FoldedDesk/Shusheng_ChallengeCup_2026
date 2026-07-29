@@ -13,16 +13,16 @@ POLICY_PROMPT = """你是一个严谨的数学推理智能体。请解决以下�
 2. 给出完整、清晰的逐步推导过程。
 3. 在最后单独一行，用「【最终答案】<答案>」的格式明确写出最终答案。
 
-注意：请全程使用中文推导，不要复述本提示词，不要输出 Thinking Process 或讨论备选方案。最终答案必须放在【最终答案】之后；证明题只保留必要证明步骤。"""
+注意：请全程使用中文推导。英文完整句、Thinking Process、提示词复述或备选方案讨论均视为无效输出；数学变量、公式和定理符号除外。最终答案必须放在【最终答案】之后；证明题只保留必要证明步骤。"""
 
 STRUCTURED_FAST_PROMPT = """你是数学题的结构化快速求解器。独立完成题目，只保留必要推导。
 
 先识别题目要求的每个对象（例如公式、初值、数值、区间、构造、判断），逐项计算并核对。
-最后一行严格输出【最终答案】<答案>；多个对象必须用清晰分隔符逐项列出，不能只输出其中一个数值。不要复述提示词或输出 Thinking Process。"""
+最后一行严格输出【最终答案】<答案>；多个对象必须用清晰分隔符逐项列出，不能只输出其中一个数值。禁止英文完整句、提示词复述和 Thinking Process。"""
 
 INDEPENDENT_SLOW_PROMPT = """你是独立数学审计求解器。请从定义或不同于常规套路的角度独立求解题目，不要假设其他解答正确。
 
-核对边界条件、定义域、符号、计数是否重复、初值和所求对象是否齐全。最后一行严格输出【最终答案】<答案>，答案必须保留题目要求的公式、构造或全部结论。不要复述提示词或输出 Thinking Process。"""
+核对边界条件、定义域、符号、计数是否重复、初值和所求对象是否齐全。最后一行严格输出【最终答案】<答案>，答案必须保留题目要求的公式、构造或全部结论。禁止英文完整句、提示词复述和 Thinking Process。"""
 
 SOLUTION_AUDIT_PROMPT = """你是数学解答审核器。比较同一道题的候选完整解答，选择最适合提交给评测器的一份。
 
@@ -70,7 +70,7 @@ FINALIZER_PROMPT = """你是最终答案整理器。只根据题目、候选答�
 
 FALLBACK_POLICY_PROMPT = """你是一个数学求解器。给出支撑结论所必需的简洁推导，再给出最终答案。
 严格在最后单独一行输出：【最终答案】<答案>
-不要输出英文思考、Thinking Process 或提示词复述。"""
+不要输出英文完整句、英文思考、Thinking Process 或提示词复述。"""
 
 SUBJECT_GUIDANCE = {
     "数值分析": """数值分析检查：明确算法、迭代格式和初值；逐步核对代入计算、收敛条件、误差界或区间端点。题目要求迭代公式、近似值或精确值时，最终答案必须逐项保留。""",
@@ -374,15 +374,17 @@ class ReasoningAgent:
                     template_override=self._candidate_policy_prompt(problem, sample_id, attempt > 0),
                 )
                 step_name = f"policy_call_{sample_id}" + (f"_fb" if attempt > 0 else "")
+                english_reasoning = self._has_english_reasoning(response.content)
                 trace.append({
                     "step": step_name,
                     "content": {
                         "message": user_message.content,
-                        "response": response.content,
+                        "response": self._trace_safe_response(response.content),
                         "attempt": attempt,
+                        "language_gate": "blocked" if english_reasoning else "accepted",
                     },
                 })
-                if self._has_usable_final_answer(response.content):
+                if not english_reasoning and self._has_usable_final_answer(response.content):
                     candidates.append(response.content)
                     break
                 recovered = self._recover_numeric_answer(response.content)
@@ -583,15 +585,19 @@ class ReasoningAgent:
                    for candidate in usable_candidates]
         if len(set(answers)) == 1:
             best_id = self._select_best_full_solution(usable_candidates)
+            final_response = self._proof_submission_answer(
+                problem, usable_candidates[best_id]
+            )
             trace.append({
                 "step": "full_solution_consensus",
                 "content": {
                     "answer": answers[0],
                     "candidate_count": len(usable_candidates),
                     "selected_candidate": best_id,
+                    "submission_answer": final_response,
                 },
             })
-            return {"final_response": usable_candidates[best_id].strip(), "trace": trace}
+            return {"final_response": final_response, "trace": trace}
 
         best_id, issues, raw_audit = self._audit_full_solutions(problem, usable_candidates, idx)
         best = usable_candidates[best_id]
@@ -608,13 +614,16 @@ class ReasoningAgent:
                 "step": "solution_repair",
                 "content": {"skipped": True, "reason": "audit reported no issues"},
             })
-            return {"final_response": best.strip(), "trace": trace}
+            return {
+                "final_response": self._proof_submission_answer(problem, best),
+                "trace": trace,
+            }
         repaired, raw_repair = self._repair_full_solution(problem, best, issues, idx)
         if self._is_usable_full_solution(repaired):
-            final_response = repaired.strip()
+            final_response = self._proof_submission_answer(problem, repaired)
             fallback = False
         else:
-            final_response = best.strip()
+            final_response = self._proof_submission_answer(problem, best)
             fallback = True
         trace.append({
             "step": "solution_repair",
@@ -695,6 +704,18 @@ class ReasoningAgent:
             return answer
         match = re.search(r"【结论】\s*(.+)", candidate, re.DOTALL)
         return match.group(1).strip() if match else None
+
+    @classmethod
+    def _proof_submission_answer(cls, problem: str, candidate: str) -> str:
+        """Submit only the conclusion of a proof while retaining its derivation in trace."""
+        answer = cls._full_solution_answer(candidate)
+        if not answer:
+            return cls._proof_protocol_fallback(problem) or "TRUNCATED_ALL"
+        answer = cls._basic_normalize_answer(answer)
+        answer = re.sub(r"^(?:答案|结论)为\s*", "", answer)
+        return answer if cls._is_useful_final_answer(answer) else (
+            cls._proof_protocol_fallback(problem) or "TRUNCATED_ALL"
+        )
 
     @classmethod
     def _is_complete_solution_candidate(cls, candidate: str) -> bool:
@@ -902,6 +923,30 @@ class ReasoningAgent:
             if match:
                 return match.group(1)
         return None
+
+    @staticmethod
+    def _has_english_reasoning(text: str) -> bool:
+        """Detect English prose while permitting mathematical variable names."""
+        words = re.findall(r"\b[A-Za-z]{3,}\b", text)
+        if len(words) < 8:
+            return False
+        reasoning_words = {
+            "the", "this", "that", "therefore", "because", "proof", "answer",
+            "analyze", "analysis", "process", "let", "need", "should", "will",
+            "with", "from", "then", "given", "show", "verify", "conclusion",
+        }
+        return sum(word.lower() in reasoning_words for word in words) >= 3
+
+    @classmethod
+    def _trace_safe_response(cls, response: str):
+        """Do not persist a rejected English chain of thought in user-visible trace."""
+        if cls._has_english_reasoning(response):
+            return {
+                "redacted": True,
+                "reason": "english_reasoning",
+                "char_count": len(response),
+            }
+        return response
 
     @staticmethod
     def _regex_fast_extract(text: str) -> Optional[str]:

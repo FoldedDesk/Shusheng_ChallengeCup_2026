@@ -126,16 +126,16 @@ class FullSolutionFlowTest(unittest.TestCase):
             AgentConfig(policy_sample_times=2, use_llm_extraction=False),
         )
 
-    def test_english_proof_with_agreeing_complete_candidates_skips_model_review(self):
+    def test_chinese_proof_with_agreeing_complete_candidates_skips_model_review(self):
         candidate = (
-            "设 x=1。由已知等式 x=x 可知该等式两端相等，"
-            "因此 x=1 满足题设并且推导完成。\n【最终答案】x=1"
+            "设 x=1。由已知等式两端相等可知该结论成立，"
+            "因此 x=1 满足题设。\n【最终答案】x=1"
         )
         agent = self._agent([candidate, candidate])
 
-        result = agent.solve("Prove that x = 1. Show all steps.", {"idx": 1})
+        result = agent.solve("请证明 x=1。", {"idx": 1})
 
-        self.assertEqual(result["final_response"], candidate)
+        self.assertEqual(result["final_response"], "x=1")
         self.assertEqual(len(agent.client.calls), 2)
         self.assertTrue(any(
             item["step"] == "full_solution_consensus" for item in result["trace"]
@@ -159,7 +159,7 @@ class FullSolutionFlowTest(unittest.TestCase):
 
         result = agent.solve("请推导结果", {"idx": 3})
 
-        self.assertEqual(result["final_response"], repaired)
+        self.assertEqual(result["final_response"], "2.")
         self.assertEqual(len(agent.client.calls), 4)
 
     def test_invalid_audit_choice_falls_back_to_highest_quality_candidate(self):
@@ -172,7 +172,7 @@ class FullSolutionFlowTest(unittest.TestCase):
 
         result = agent.solve("请证明该结论", {"idx": 4})
 
-        self.assertEqual(result["final_response"], strong)
+        self.assertEqual(result["final_response"], "2")
         audit = next(item for item in result["trace"] if item["step"] == "solution_audit")
         self.assertEqual(audit["content"]["selected_candidate"], 1)
 
@@ -365,6 +365,24 @@ class TruncationRecoveryTest(unittest.TestCase):
             fallback["content"]["proof_fallback"],
             "该图必含长度为3的路径；所用度数条件为每个顶点度数至少4",
         )
+
+    def test_english_reasoning_is_retried_and_redacted_from_trace(self):
+        english = (
+            "First analyze the problem. Then let us compute the result carefully.\n"
+            "【最终答案】12"
+        )
+        chinese = "由计算可得结果。\n【最终答案】12"
+        agent = ReasoningAgent(
+            SequencedClient([english, chinese]),
+            AgentConfig(policy_sample_times=1, use_llm_extraction=False),
+        )
+
+        result = agent.solve("计算 3+9。", {"idx": 99})
+
+        self.assertEqual(result["final_response"], "12")
+        first_call = next(item for item in result["trace"] if item["step"] == "policy_call_0")
+        self.assertEqual(first_call["content"]["language_gate"], "blocked")
+        self.assertTrue(first_call["content"]["response"]["redacted"])
 
 
 class GarbageDetectionTest(unittest.TestCase):
