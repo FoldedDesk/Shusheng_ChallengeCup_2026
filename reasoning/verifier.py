@@ -14,20 +14,19 @@ class Verifier:
         self.client_adapter = client
         self.prompt = prompt
 
-    def verify(self, state: MathState, candidates: List[str]) -> Dict:
+    def verify(
+        self,
+        state: MathState,
+        candidates: List[str],
+        critic_reviews: List[str] | None = None,
+        sympy_hints: List[str] | None = None,
+    ) -> Dict:
         if not candidates:
             return {
                 "correct": False,
                 "choice": None,
                 "final_answer": "",
                 "reason": "没有可用候选",
-            }
-        if len(candidates) == 1 and state.difficulty == "easy":
-            return {
-                "correct": True,
-                "choice": 0,
-                "final_answer": "",
-                "reason": "简单题单次求解",
             }
         # Long candidate derivations make the remote model spend its entire
         # response budget restating analysis. The verifier needs conclusions
@@ -36,10 +35,20 @@ class Verifier:
             f"候选{i}的最终结论：{Finalizer.extract(text)}"
             for i, text in enumerate(candidates)
         )
+        reviews = "\n".join(
+            f"候选{i}的批评意见：{review}"
+            for i, review in enumerate(critic_reviews or [])
+        )
+        tool_context = "\n".join(sympy_hints or [])
+        context = f"题目：\n{state.problem}\n\n{joined}"
+        if reviews:
+            context += f"\n\n{reviews}"
+        if tool_context:
+            context += f"\n\n本地 SymPy 核对：\n{tool_context}"
         response = retry_once(lambda: self.client_adapter.chat(
             messages=[
                 {"role": "system", "content": self.prompt},
-                {"role": "user", "content": f"题目：\n{state.problem}\n\n{joined}"},
+                {"role": "user", "content": context},
             ],
             temperature=0.0,
             # Intern may emit a long hidden-style thinking preamble before its
