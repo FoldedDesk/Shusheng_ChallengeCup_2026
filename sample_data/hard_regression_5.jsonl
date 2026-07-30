@@ -1,4 +1,4 @@
-{"idx":4004,"problem":"求满足x_1+x_2+x_3+x_4=12且每个x_i为正整数、x_1≥3的解数，需通过变量平移化为隔板问题。","answer":"120","subject":"离散数学","source":"official_distribution_112_hard"}
+{"idx":4004,"problem":"求满足x_1+x_2+x_3+x_4=13且每个x_i为正整数、x_1≥3的解数，需通过变量平移化为隔板问题。","answer":"120","subject":"离散数学","source":"official_distribution_112_hard"}
 {"idx":4025,"problem":"用牛顿法求方程x^2-3=0的迭代公式，并由x_0=2计算x_1。","answer":"x_{n+1}=(x_n+3/x_n)/2，x_1=7/4","subject":"数值分析","source":"official_distribution_112_hard"}
 {"idx":4031,"problem":"设矩阵A为严格对角占优矩阵，说明高斯-赛德尔迭代的收敛性，并指出该结论是充分条件。","answer":"高斯-赛德尔迭代收敛","subject":"数值分析","source":"official_distribution_112_hard"}
 {"idx":4050,"problem":"对曲线γ(t)=(cos t,sin t,t)，求速度长度并判断该参数是否为弧长参数。","answer":"√2，不是弧长参数","subject":"微分几何","source":"official_distribution_112_hard"}

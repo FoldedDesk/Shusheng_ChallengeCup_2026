@@ -1,0 +1,9 @@
+主题：曲面、曲率张量与测地线。
+
+正则曲面要求 X_u cross X_v 不为零。单位法向 N=(X_u cross X_v)/|X_u cross X_v|。第一基本形式 I=E du^2+2F du dv+G dv^2 描述内蕴长度。
+第二基本形式 II=e du^2+2f du dv+g dv^2，其中 e=X_uu dot N、f=X_uv dot N、g=X_vv dot N。形状算子特征值是主曲率。
+
+高斯曲率 K=(eg-f^2)/(EG-F^2)，平均曲率 H=(Eg-2Ff+Ge)/(2(EG-F^2))。曲面取反法向时 H 变号，K 不变。
+测地线局部长度极小，坐标中满足 Christoffel 符号给出的测地线方程。Gauss 曲率是内蕴不变量。
+
+曲线挠率仅对三维正则曲线定义；Frenet 标架需曲率非零。应用公式前检查参数正则、是否弧长参数及法向取向。

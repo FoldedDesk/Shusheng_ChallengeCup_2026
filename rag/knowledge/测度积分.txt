@@ -1,0 +1,10 @@
+主题：勒贝格测度、收敛定理与可积性。
+
+单调收敛定理：0<=f_n 上升到 f，则 integral f_n 上升到 integral f。Fatou 引理：integral liminf f_n <= liminf integral f_n。
+支配收敛定理：f_n 几乎处处收敛到 f，且 |f_n|<=g、g 属于 L1，则 integral f_n 收敛到 integral f。
+
+若 f>=0 且 integral f=0，则 f=0 几乎处处；证明可考察集合 {f>=epsilon}。若 f 属于 L1，积分对测度绝对连续：mu(E_n)->0 则 integral_{E_n}|f|->0。
+示性函数：integral 1_E dmu=mu(E)。简单函数按不交可测集合分解后逐项积分。计数测度下积分就是级数求和。
+
+逐点收敛不保证积分收敛；应检查支配条件或构造集中质量的函数列。区间 [0,1/n] 的测度趋于 0，交集为 {0}。幂函数 x^n 在 [0,1) 点态趋于 0，在 1 处为 1。
+判断 x^{-alpha} 在 (0,1] 的可积性：alpha<1 时属于 L1，积分为 1/(1-alpha)。

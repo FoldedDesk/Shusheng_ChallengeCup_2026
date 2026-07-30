@@ -1,0 +1,7 @@
+主题：复可导、幂级数、留数与积分。
+
+解析函数 f(z)=u+iv 的实部虚部满足 Cauchy-Riemann 方程，实部与虚部均调和。z^2=(x^2-y^2)+i(2xy)。共轭函数 zbar 在任何点均不可复可导。
+几何级数 1/(1-z)=sum_{n=0}^infty z^n 的收敛半径为 1。整函数有界则由 Liouville 定理为常数。
+
+若孤立奇点 a 在闭合围道内部，integral f(z) dz=2pi i sum Res(f,a)。简单极点的留数可取 lim_{z->a}(z-a)f(z)。
+Cauchy 积分公式：integral f(z)/(z-a) dz=2pi i f(a)。计算前先判断极点是否在围道内部并检查分母因子。
