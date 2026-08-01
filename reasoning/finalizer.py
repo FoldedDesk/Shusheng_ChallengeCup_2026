@@ -22,6 +22,11 @@ class Finalizer:
         return Finalizer._clean(candidate.strip())
 
     @staticmethod
+    def extract_solution(candidate: str) -> str:
+        """Keep a proof's reasoning while applying only display cleanup."""
+        return Finalizer._clean(candidate.strip())
+
+    @staticmethod
     def _clean(answer: str) -> str:
         value = normalize_latex(answer).strip().strip('"“”')
         # A dangling inline-math delimiter is a common model formatting error.

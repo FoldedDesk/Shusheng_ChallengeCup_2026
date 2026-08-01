@@ -1,0 +1,2 @@
+{"idx":4011,"problem":"在整数集上定义关系 aRb 当且仅当 4 整除 a-b。证明其为等价关系并写出[3]。","answer":"[3]={4k+3:k∈Z}","subject":"离散数学","source":"official_distribution_112_hard"}
+{"idx":4042,"problem":"设 f_n(x)=n·1_(0,1/n)(x)。求其逐点极限及积分，并说明极限与积分能否交换。","answer":"逐点极限为0，积分恒为1","subject":"测度积分","source":"official_distribution_112_hard"}

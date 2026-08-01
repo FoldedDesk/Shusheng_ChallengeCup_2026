@@ -7,9 +7,14 @@ from typing import Dict, List
 
 from llm_client import InternChatClient
 from user_agent import ReasoningAgent
+from core.execution_limits import MAX_CONCURRENCY
 
 
-LOCAL_MAX_CONCURRENCY = int(os.environ.get("LOCAL_MAX_CONCURRENCY", "4"))
+LOCAL_MAX_CONCURRENCY = max(
+    1,
+    min(int(os.environ.get("LOCAL_MAX_CONCURRENCY", str(MAX_CONCURRENCY))), MAX_CONCURRENCY),
+)
+FAILED_ANSWER = "本题未能在限定时间内生成可验证答案。"
 
 
 def load_jsonl(path: Path) -> List[Dict]:
@@ -65,7 +70,7 @@ def parse_args() -> argparse.Namespace:
 def solve_item(agent: ReasoningAgent, item: Dict) -> Dict:
     result = agent.solve(
         problem=item["problem"],
-        metadata={"idx": item["idx"]},
+        metadata={"idx": item["idx"], "source": item.get("source", "")},
     )
     return build_output_record(item, result)
 
@@ -88,7 +93,7 @@ async def process_item(
             record = {
                 "idx": item["idx"],
                 "status": "error",
-                "final_response": "",
+                "final_response": FAILED_ANSWER,
                 "error": {
                     "type": type(exc).__name__,
                     "message": str(exc),

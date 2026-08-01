@@ -1,0 +1,1 @@
+{"idx":4002,"problem":"在完全二部图K_{4,5}中删去一条边后，求从左部指定顶点到右部指定非邻接顶点的长度为3的简单路径数。","answer":"12","subject":"离散数学","source":"official_distribution_112_hard"}

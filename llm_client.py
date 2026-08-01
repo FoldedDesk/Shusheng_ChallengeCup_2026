@@ -5,6 +5,8 @@ from typing import Dict, List
 
 import requests
 
+from core.execution_limits import REQUEST_TIMEOUT_SECONDS
+
 
 DEFAULT_API_BASE = "https://chat.intern-ai.org.cn/api/v1/chat/completions"
 DEFAULT_MODEL = "intern-s2-preview"
@@ -15,8 +17,8 @@ class InternChatClient:
 
     def __init__(
         self,
-        timeout: int = 120,
-        retry: int = 3,
+        timeout: int = REQUEST_TIMEOUT_SECONDS,
+        retry: int = 1,
     ) -> None:
         raw_api_key = os.environ.get("INTERN_API_KEY")
         if not raw_api_key:
@@ -26,8 +28,10 @@ class InternChatClient:
         )
         self.api_base = os.environ.get("INTERN_API_BASE", DEFAULT_API_BASE)
         self.model = os.environ.get("INTERN_MODEL", DEFAULT_MODEL)
-        self.timeout = timeout
-        self.retry = retry
+        self.timeout = max(1, min(int(timeout), REQUEST_TIMEOUT_SECONDS))
+        # Stage-level retry is managed by retry_once so its budget remains
+        # visible in the end-to-end per-item limit.
+        self.retry = 1
 
     def chat(
         self,

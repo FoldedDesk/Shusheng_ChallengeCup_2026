@@ -1,0 +1,1 @@
+{"idx":4026,"problem":"求二次插值多项式p(x)通过(0,1),(1,2),(2,5)，并验证p(2)与数据一致。","answer":"p(x)=x^2+1","subject":"数值分析","source":"official_distribution_112_hard"}

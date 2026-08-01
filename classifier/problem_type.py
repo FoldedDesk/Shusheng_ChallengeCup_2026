@@ -8,7 +8,7 @@ def classify_problem_type(problem: str) -> str:
         return "proof"
     if re.search(r"推导|derive|derivation", problem, re.IGNORECASE):
         return "derivation"
-    if re.search(r"解释|说明理由|explain|justify", problem, re.IGNORECASE):
+    if re.search(r"解释|说明|explain|justify", problem, re.IGNORECASE):
         return "explanation"
     if re.search(r"选择题|选项|A[．.、]", problem):
         return "choice"

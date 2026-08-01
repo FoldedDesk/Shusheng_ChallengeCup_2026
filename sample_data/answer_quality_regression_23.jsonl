@@ -1,0 +1,23 @@
+{"idx":4002,"problem":"在完全二部图K_{4,5}中删去一条边后，求从左部指定顶点到右部指定非邻接顶点的长度为3的简单路径数。","answer":"12","subject":"离散数学","source":"official_distribution_112_hard"}
+{"idx":4003,"problem":"设简单图有8个顶点且每个顶点度数至少4，证明该图必含长度为3的路径，并给出所用度数条件。","answer":"图中必存在长度为3的简单路径","subject":"离散数学","source":"official_distribution_112_hard"}
+{"idx":4004,"problem":"求满足x_1+x_2+x_3+x_4=13且每个x_i为正整数、x_1≥3的解数，需通过变量平移化为隔板问题。","answer":"120","subject":"离散数学","source":"official_distribution_112_hard"}
+{"idx":4006,"problem":"在模12加法群Z_12中，求所有生成元并说明其个数为何等于欧拉函数φ(12)。","answer":"{1,5,7,11}","subject":"离散数学","source":"official_distribution_112_hard"}
+{"idx":4019,"problem":"求n=7时满足置换σ^2=id且σ恰有3个不动点的置换数，先将其余元素配对。","answer":"105","subject":"离散数学","source":"official_distribution_112_hard"}
+{"idx":4022,"problem":"设布尔代数中x+y=1且xy=0，化简表达式(x+z)(y+z)，并使用分配律说明。","answer":"z","subject":"离散数学","source":"official_distribution_112_hard"}
+{"idx":4025,"problem":"用牛顿法求方程x^2-3=0的迭代公式，并由x_0=2计算x_1。","answer":"x_{n+1}=(x_n+3/x_n)/2，x_1=7/4","subject":"数值分析","source":"official_distribution_112_hard"}
+{"idx":4026,"problem":"求二次插值多项式p(x)通过(0,1),(1,2),(2,5)，并验证p(2)与数据一致。","answer":"p(x)=x^2+1","subject":"数值分析","source":"official_distribution_112_hard"}
+{"idx":4029,"problem":"对方程x=cos x，取不动点迭代x_{n+1}=cos x_n，说明在[0,1]上收敛的导数判据。","answer":"|−sin x|≤sin1<1，故收敛","subject":"数值分析","source":"official_distribution_112_hard"}
+{"idx":4035,"problem":"给定线性方程组Ax=b，若A的条件数很大，说明相对输入误差对解误差的影响趋势。","answer":"解的相对误差可能被显著放大","subject":"数值分析","source":"official_distribution_112_hard"}
+{"idx":4042,"problem":"令f_n=n·1_(0,1/n)，说明f_n逐点收敛到何函数，并计算其积分以说明不可直接交换极限。","answer":"逐点极限为0，积分恒为1","subject":"测度积分","source":"official_distribution_112_hard"}
+{"idx":4045,"problem":"给定f(x)=x^{-1/2}定义在(0,1]上，判断其是否属于L^1[0,1]并计算积分。","answer":"属于L^1，积分为2","subject":"测度积分","source":"official_distribution_112_hard"}
+{"idx":4047,"problem":"构造[0,1]上非负可测函数列f_n使其逐点趋于0而积分恒为1，并写出一个具体公式。","answer":"f_n(x)=n·1_(0,1/n)(x)","subject":"测度积分","source":"official_distribution_112_hard"}
+{"idx":4049,"problem":"求半径为r的圆按弧长参数化后的曲率，并说明其与参数选择无关。","answer":"1/r","subject":"微分几何","source":"official_distribution_112_hard"}
+{"idx":4057,"problem":"连续掷两次公平骰子，求点数和为7条件下第一次为3的条件概率，列出条件样本空间。","answer":"1/6","subject":"概率论","source":"official_distribution_112_hard"}
+{"idx":4058,"problem":"设X服从参数p的伯努利分布，求E[(X-p)^2]并由定义识别其方差。","answer":"p(1-p)","subject":"概率论","source":"official_distribution_112_hard"}
+{"idx":4078,"problem":"设平稳过程X_t均值为m，证明其协方差函数只依赖于时间差，并写出Cov(X_t,X_{t+h})。","answer":"只依赖h","subject":"随机过程","source":"official_distribution_112_hard"}
+{"idx":4081,"problem":"求函数f(z)=z^2的实部u(x,y)，并验证u满足拉普拉斯方程。","answer":"u=x^2-y^2","subject":"复分析","source":"official_distribution_112_hard"}
+{"idx":4083,"problem":"展开1/(1-z)在z=0邻域的幂级数，并给出其收敛半径及端点外的发散理由。","answer":"Σ_{n=0}∞z^n，收敛半径1","subject":"复分析","source":"official_distribution_112_hard"}
+{"idx":4089,"problem":"判断方程y'=y^2,y(0)=1的最大右侧存在区间，并通过分离变量求解。","answer":"y=1/(1-x)，区间x<1","subject":"常微分方程","source":"official_distribution_112_hard"}
+{"idx":4098,"problem":"证明Hilbert空间中闭凸集上的最近点若存在则唯一，指出使用的严格凸性等式。","answer":"最近点唯一","subject":"泛函分析","source":"official_distribution_112_hard"}
+{"idx":4100,"problem":"简单线性回归含截距，若所有x_i同时加常数c，说明斜率估计是否改变并给出理由。","answer":"斜率估计不变","subject":"线性回归","source":"official_distribution_112_hard"}
+{"idx":4106,"problem":"设M为紧致黎曼流形，说明连续函数为何必取得最大值和最小值，并给出所用紧致性结论。","answer":"由紧致性和连续像紧致，必取到最大最小值","subject":"非基础及进阶课程","source":"official_distribution_112_hard"}

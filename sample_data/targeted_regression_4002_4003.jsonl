@@ -1,0 +1,2 @@
+{"idx":4002,"problem":"在完全二部图K_{4,5}中删去一条边后，求从左部指定顶点到右部指定非邻接顶点的长度为3的简单路径数。","answer":"12","subject":"离散数学","source":"official_distribution_112_hard"}
+{"idx":4003,"problem":"设简单图有8个顶点且每个顶点度数至少4，证明该图必含长度为3的路径，并给出所用度数条件。","answer":"图中必存在长度为3的简单路径","subject":"离散数学","source":"official_distribution_112_hard"}
