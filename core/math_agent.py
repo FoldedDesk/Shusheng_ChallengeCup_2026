@@ -22,7 +22,9 @@ class MathAgent:
 
     def __init__(self, client: ClientAdapter) -> None:
         self.client = client
-        prompt_dir = Path(__file__).resolve().parents[1] / "prompts"
+        # The evaluator starts from the repository root. Keep resource lookup
+        # relative so the submission is portable across evaluation machines.
+        prompt_dir = Path("prompts")
         self.solver = Solver(client, self._prompt(prompt_dir / "solver.txt"))
         self.decomposer = Decomposer(client, self._prompt(prompt_dir / "decomposer.txt"))
         self.critic = Critic(client, self._prompt(prompt_dir / "critic.txt"))

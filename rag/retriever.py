@@ -11,7 +11,7 @@ class LocalRetriever:
     """Tiny offline TF-IDF retriever over bundled mathematical notes."""
 
     def __init__(self, knowledge_dir: Path | None = None) -> None:
-        self.knowledge_dir = knowledge_dir or Path(__file__).resolve().parent / "knowledge"
+        self.knowledge_dir = knowledge_dir or Path("rag") / "knowledge"
         self.documents = self._load_documents()
 
     def retrieve(self, query: str, top_k: int = 5) -> List[str]:
