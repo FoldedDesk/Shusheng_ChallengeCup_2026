@@ -74,8 +74,22 @@ class SubmissionContractTest(unittest.TestCase):
 
         self.assertEqual(result["final_response"], "x=3")
 
+    def test_boxed_answer_wins_over_a_thinking_scratchpad(self):
+        client = RecordingClient("Thinking Process: lengthy scratchpad.\n\\boxed{x=\\frac{1}{2}}")
+
+        result = ReasoningAgent(client).solve("求 x。", {"idx": 5})
+
+        self.assertEqual(result["final_response"], r"x=\frac{1}{2}")
+
+    def test_proof_scratchpad_returns_its_boxed_conclusion_only(self):
+        client = RecordingClient("Analysis: hidden draft.\n\\boxed{闭子集紧致}")
+
+        result = ReasoningAgent(client).solve("证明紧致空间的闭子集紧致。", {"idx": 6})
+
+        self.assertEqual(result["final_response"], "闭子集紧致")
+
     def test_empty_model_response_has_an_explicit_fallback_trace(self):
-        result = ReasoningAgent(RecordingClient("")).solve("求 x。", {"idx": 5})
+        result = ReasoningAgent(RecordingClient("")).solve("求 x。", {"idx": 7})
 
         self.assertTrue(result["final_response"].strip())
         self.assertEqual(result["trace"][2]["content"]["source"], "fallback")

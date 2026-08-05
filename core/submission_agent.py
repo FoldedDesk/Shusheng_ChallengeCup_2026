@@ -50,9 +50,9 @@ class SubmissionAgent:
     @staticmethod
     def _load_prompt() -> str:
         try:
-            return (Path("prompts") / "solver.txt").read_text(encoding="utf-8")
+            return (Path("prompts") / "submission.txt").read_text(encoding="utf-8")
         except OSError:
-            return "请用中文解答数学题，给出必要推导，并在末尾写【最终答案】。"
+            return "直接给出简洁中文答案，不要输出思维草稿，最后写 \\boxed{最终答案}。"
 
     @staticmethod
     def _request(problem: str, problem_type: str, hints: list[str]) -> str:
@@ -62,17 +62,18 @@ class SubmissionAgent:
         if problem_type in {"proof", "derivation", "explanation"}:
             content += (
                 "请给出简洁、自洽的证明或推导：说明关键定义、定理或条件，展示必要步骤，"
-                "最后单独写【最终答案】。"
+                "最后一行写 \\boxed{最终结论}。"
             )
         else:
-            content += "请完整求解，覆盖题目全部所求对象，最后单独写【最终答案】。"
+            content += "请完整求解，覆盖题目全部所求对象，最后一行写 \\boxed{最终答案}。"
         return content
 
     @staticmethod
     def _finalize(response: str, problem_type: str, hints: list[str]) -> tuple[str, str]:
         if response.strip():
             if problem_type in {"proof", "derivation", "explanation"}:
-                answer = Finalizer.extract_solution(response)
+                explicit = SubmissionAgent._explicit_answer(response)
+                answer = explicit if SubmissionAgent._is_scratchpad(response) and explicit else Finalizer.extract_solution(response)
             else:
                 answer = SubmissionAgent._explicit_answer(response) or Finalizer.extract(response)
             if answer.strip():
@@ -86,9 +87,33 @@ class SubmissionAgent:
     @staticmethod
     def _explicit_answer(response: str) -> str:
         """Accept common final-answer labels used by public chat clients."""
+        boxed = SubmissionAgent._last_boxed(response)
+        if boxed:
+            return Finalizer.extract(boxed)
         matches = re.findall(
             r"(?:【最终答案】|(?:最终)?答案|结论|FINAL)\s*[:：]?\s*([^\n]+)",
             response,
             flags=re.IGNORECASE,
         )
         return Finalizer.extract(matches[-1]) if matches else ""
+
+    @staticmethod
+    def _last_boxed(response: str) -> str:
+        marker = r"\boxed{"
+        position = response.rfind(marker)
+        if position < 0:
+            return ""
+        start = position + len(marker)
+        depth = 1
+        for index in range(start, len(response)):
+            if response[index] == "{":
+                depth += 1
+            elif response[index] == "}":
+                depth -= 1
+                if depth == 0:
+                    return response[start:index].strip()
+        return ""
+
+    @staticmethod
+    def _is_scratchpad(response: str) -> bool:
+        return bool(re.search(r"(?im)^\s*(thinking process|analysis|drafting)", response))
