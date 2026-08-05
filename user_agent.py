@@ -1,7 +1,6 @@
 from __future__ import annotations
 
-from core.client_adapter import ClientAdapter
-from core.math_agent import MathAgent
+from core.submission_agent import SubmissionAgent
 
 
 class ReasoningAgent:
@@ -9,8 +8,7 @@ class ReasoningAgent:
 
     def __init__(self, client, *args, **kwargs) -> None:
         del args, kwargs
-        self.client = client
-        self.agent = MathAgent(ClientAdapter(client))
+        self.agent = SubmissionAgent(client)
 
     def solve(self, problem: str, metadata: dict) -> dict:
         return self.agent.solve(problem, metadata)
