@@ -41,6 +41,8 @@ class SubmissionContractTest(unittest.TestCase):
         self.assertEqual(len(client.calls), 1)
         self.assertEqual(client.calls[0]["temperature"], 0.2)
         self.assertEqual(client.calls[0]["max_tokens"], 4096)
+        self.assertEqual(result["trace"][1]["content"]["status"], "completed")
+        self.assertEqual(result["trace"][2]["content"]["source"], "model")
         json.dumps(result, ensure_ascii=False)
 
     def test_proof_keeps_reasoning_and_conclusion(self):
@@ -63,6 +65,20 @@ class SubmissionContractTest(unittest.TestCase):
 
         self.assertEqual(result["final_response"], "4")
         self.assertEqual(result["trace"][1]["content"]["status"], "failed")
+        self.assertEqual(result["trace"][2]["content"]["source"], "sympy")
+
+    def test_common_final_label_is_extracted_without_special_brackets(self):
+        client = RecordingClient("计算过程略。\n最终答案：x=3")
+
+        result = ReasoningAgent(client).solve("求 x。", {"idx": 4})
+
+        self.assertEqual(result["final_response"], "x=3")
+
+    def test_empty_model_response_has_an_explicit_fallback_trace(self):
+        result = ReasoningAgent(RecordingClient("")).solve("求 x。", {"idx": 5})
+
+        self.assertTrue(result["final_response"].strip())
+        self.assertEqual(result["trace"][2]["content"]["source"], "fallback")
 
     def test_failed_non_symbolic_problem_still_returns_non_empty_text(self):
         class FailingClient:
