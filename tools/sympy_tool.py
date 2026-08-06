@@ -70,9 +70,11 @@ class SympyTool:
 
         hints: list[str] = []
         arithmetic = re.search(
-            r"(?:计算|求值)\s*([0-9A-Za-z_+\-*/^().,\s]+?)[。？?]?$", problem
+            r"(?:计算|求值|calculate|evaluate)\s*([0-9A-Za-z_+\-*/^().,\s]+?)[。？?]?$",
+            problem,
+            re.IGNORECASE,
         )
-        if arithmetic and not re.search(r"积分|导数|极限|方程", problem):
+        if arithmetic and not re.search(r"积分|导数|极限|方程|integral|derivative|limit|equation", problem, re.IGNORECASE):
             result = self.evaluate(arithmetic.group(1))
             if result is not None:
                 hints.append(f"SymPy 计算: {result}")
@@ -84,7 +86,7 @@ class SympyTool:
         if modular_power:
             hints.append(modular_power)
 
-        if re.search(r"导数|求导|微分", problem):
+        if re.search(r"导数|求导|微分|derivative|differentiate", problem, re.IGNORECASE):
             partial = re.search(
                 r"f\s*\(\s*[A-Za-z]\s*,\s*[A-Za-z]\s*\)\s*=\s*(?P<expression>[^，。；;]+?)\s*关于\s*\$?(?P<variable>[A-Za-z])\$?\s*的?(?:偏导|导数)",
                 problem,
@@ -103,7 +105,7 @@ class SympyTool:
         math_parts = re.findall(r"\$([^$]+)\$", problem)
         math_parts.extend(self._raw_latex_parts(problem))
         math_parts.extend(self._plain_equations(problem))
-        if re.search(r"积分|\\int", problem):
+        if re.search(r"积分|\\int|integral|integrate", problem, re.IGNORECASE):
             for part in math_parts:
                 definite = re.search(
                     r"\\int_\{?([^}\s]+)\}?\^\{?([^}\s]+)\}?\s*(.+?)(?:\\,|\s)*d([A-Za-z])\b",
@@ -126,7 +128,7 @@ class SympyTool:
                         hints.append(f"SymPy 不定积分: {result}")
                     break
 
-        if re.search(r"极限|\\lim", problem):
+        if re.search(r"极限|\\lim|\blimit\b", problem, re.IGNORECASE):
             for part in math_parts:
                 match = re.search(r"\\lim_\{?\s*([A-Za-z])\s*\\to\s*([^}\s]+)\}?\s*(.+)", part)
                 if match:
@@ -137,7 +139,7 @@ class SympyTool:
                         hints.append(f"SymPy 极限: {result}")
                     break
 
-        if re.search(r"方程|求解", problem):
+        if re.search(r"方程|求解|equation|solve|roots?|zeros?", problem, re.IGNORECASE):
             for part in math_parts:
                 if "=" not in part or r"\begin" in part:
                     continue
@@ -154,7 +156,7 @@ class SympyTool:
                         hints.append(f"SymPy 方程解: {answer}")
                     break
 
-        if re.search(r"矩阵|\\begin\{[pb]?matrix\}", problem):
+        if re.search(r"矩阵|\\begin\{[pb]?matrix\}|\bmatrix\b", problem, re.IGNORECASE):
             for part in math_parts:
                 match = re.search(r"\\begin\{[pb]?matrix\}(.+?)\\end\{[pb]?matrix\}", part, re.DOTALL)
                 if match:
@@ -171,7 +173,7 @@ class SympyTool:
     @staticmethod
     def _plain_equations(problem: str) -> list[str]:
         """Extract only short, ASCII-style equations outside LaTex delimiters."""
-        if "$" in problem or not re.search(r"方程|求解", problem):
+        if "$" in problem or not re.search(r"方程|求解|equation|solve|roots?|zeros?", problem, re.IGNORECASE):
             return []
         matches = re.findall(
             r"([0-9xyzXYZ(][0-9A-Za-z_+\-*/^().,\s]{0,120}=[0-9A-Za-z_+\-*/^().,\s]{1,120})",

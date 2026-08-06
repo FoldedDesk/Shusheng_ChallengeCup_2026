@@ -28,7 +28,8 @@ class Finalizer:
 
     @staticmethod
     def _clean(answer: str) -> str:
-        value = normalize_latex(answer).strip().strip('"“”')
+        value = re.sub(r"^```(?:latex|text|markdown)?\s*|\s*```$", "", answer.strip(), flags=re.IGNORECASE)
+        value = normalize_latex(value).strip().strip('"“”')
         # A dangling inline-math delimiter is a common model formatting error.
         if value.count("$") % 2:
             value += "$"

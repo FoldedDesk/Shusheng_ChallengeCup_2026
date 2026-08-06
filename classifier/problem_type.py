@@ -10,8 +10,8 @@ def classify_problem_type(problem: str) -> str:
         return "derivation"
     if re.search(r"解释|说明|explain|justify", problem, re.IGNORECASE):
         return "explanation"
-    if re.search(r"选择题|选项|A[．.、]", problem):
+    if re.search(r"选择题|选项|multiple choice|choose (?:the )?(?:correct|best)|A[．.、)]", problem, re.IGNORECASE):
         return "choice"
-    if re.search(r"填空|填入", problem):
+    if re.search(r"填空|填入|fill (?:in|the blank)", problem, re.IGNORECASE):
         return "fill_blank"
     return "calculation"

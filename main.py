@@ -64,7 +64,23 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Competition sample reasoning agent.")
     parser.add_argument("--input_file", required=True, help="Path to input JSONL.")
     parser.add_argument("--output_dir", required=True, help="Directory for per-problem JSON outputs.")
+    parser.add_argument(
+        "--preflight",
+        action="store_true",
+        help="Verify one lightweight Client call before starting the local batch.",
+    )
     return parser.parse_args()
+
+
+def preflight_client(client: InternChatClient) -> None:
+    """Fail fast locally when credentials or network access are unavailable."""
+    response = client.chat(
+        messages=[{"role": "user", "content": "只回复OK"}],
+        temperature=0.0,
+        max_tokens=8,
+    )
+    if not str(response or "").strip():
+        raise RuntimeError("Client preflight returned an empty response")
 
 
 def solve_item(agent: ReasoningAgent, item: Dict) -> Dict:
@@ -111,6 +127,8 @@ async def run(args: argparse.Namespace) -> None:
     items = load_jsonl(input_path)
 
     client = InternChatClient()
+    if args.preflight:
+        preflight_client(client)
     agent = ReasoningAgent(client=client)
     semaphore = asyncio.Semaphore(LOCAL_MAX_CONCURRENCY)
 

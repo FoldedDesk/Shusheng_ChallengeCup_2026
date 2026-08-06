@@ -3,7 +3,7 @@ from __future__ import annotations
 import re
 
 
-HARD_MARKERS = r"证明|求证|推导|论证|构造|隔板|计数|组合数|排列数|微分方程|通解|留数|曲率|正规子群|热方程|协方差函数|算子范数|开覆盖|线性规划"
+HARD_MARKERS = r"证明|求证|推导|论证|构造|隔板|计数|组合数|排列数|微分方程|通解|留数|曲率|正规子群|热方程|协方差函数|算子范数|开覆盖|线性规划|prove|construct|counterexample|bijection|induction|differential equation|residue"
 
 
 def classify_difficulty(problem: str, problem_type: str) -> str:

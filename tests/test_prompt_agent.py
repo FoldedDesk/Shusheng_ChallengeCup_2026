@@ -6,6 +6,7 @@ import unittest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
+from classifier import classify_profile
 from tools.sympy_tool import SympyTool
 from user_agent import ReasoningAgent
 
@@ -32,7 +33,7 @@ class SubmissionContractTest(unittest.TestCase):
         self.assertEqual(init, ["self", "client", "args", "kwargs"])
         self.assertEqual(solve, ["self", "problem", "metadata"])
 
-    def test_two_public_client_calls_use_platform_arguments(self):
+    def test_verified_tool_route_uses_one_public_client_call(self):
         client = RecordingClient([
             "计算得到 2+2=4。\n【最终答案】4",
             "核验无误。\n\\boxed{4}",
@@ -41,13 +42,13 @@ class SubmissionContractTest(unittest.TestCase):
         result = ReasoningAgent(client=client).solve("计算 2+2。", {"idx": 0})
 
         self.assertEqual(result["final_response"], "4")
-        self.assertEqual(len(client.calls), 2)
+        self.assertEqual(len(client.calls), 1)
         self.assertTrue(all(call["temperature"] == 0.2 for call in client.calls))
         self.assertTrue(all(call["max_tokens"] == 4096 for call in client.calls))
-        self.assertEqual(result["trace"][1]["content"]["status"], "completed")
+        self.assertEqual(result["trace"][0]["content"]["route"], "tool_assisted")
+        self.assertEqual(result["trace"][1]["content"]["verified_candidate"], True)
         self.assertEqual(result["trace"][2]["content"]["status"], "completed")
-        self.assertEqual(result["trace"][3]["content"]["source"], "model_explicit")
-        self.assertIn("4", client.calls[1]["messages"][1]["content"])
+        self.assertEqual(result["trace"][-2]["content"]["selected_source"], "sympy_verified")
         json.dumps(result, ensure_ascii=False)
 
     def test_proof_keeps_reasoning_and_conclusion(self):
@@ -70,14 +71,20 @@ class SubmissionContractTest(unittest.TestCase):
         result = ReasoningAgent(FailingClient()).solve("计算 2+2。", {"idx": 2})
 
         self.assertEqual(result["final_response"], "4")
-        self.assertEqual(result["trace"][1]["content"]["status"], "failed")
         self.assertEqual(result["trace"][2]["content"]["status"], "failed")
-        self.assertEqual(result["trace"][3]["content"]["source"], "sympy")
+        self.assertEqual(result["trace"][-2]["content"]["selected_source"], "sympy_verified")
 
     def test_common_final_label_is_extracted_without_special_brackets(self):
         client = RecordingClient(["计算过程略。\n最终答案：x=3", "\\boxed{x=3}"])
 
         result = ReasoningAgent(client).solve("求 x。", {"idx": 4})
+
+        self.assertEqual(result["final_response"], "x=3")
+
+    def test_english_final_answer_in_a_code_fence_is_cleaned(self):
+        client = RecordingClient(["```latex\nFinal Answer: x=3\n```", "\\boxed{x=3}"])
+
+        result = ReasoningAgent(client).solve("求 x。", {"idx": 41})
 
         self.assertEqual(result["final_response"], "x=3")
 
@@ -105,12 +112,12 @@ class SubmissionContractTest(unittest.TestCase):
         result = ReasoningAgent(RecordingClient(["\\boxed{x=2}", "Thinking Process: truncated"])).solve("求 x。", {"idx": 7})
 
         self.assertEqual(result["final_response"], "x=2")
-        self.assertEqual(result["trace"][3]["content"]["source"], "model_explicit")
+        self.assertEqual(result["trace"][-1]["content"]["source"], "model_explicit")
 
     def test_second_stage_corrects_first_stage_candidate(self):
         client = RecordingClient(["\\boxed{3}", "复核后应为 \\boxed{4}"])
 
-        result = ReasoningAgent(client).solve("计算 2+2。", {"idx": 8})
+        result = ReasoningAgent(client).solve("求 x。", {"idx": 8})
 
         self.assertEqual(result["final_response"], "4")
         self.assertIn("3", client.calls[1]["messages"][1]["content"])
@@ -129,7 +136,7 @@ class SubmissionContractTest(unittest.TestCase):
         result = ReasoningAgent(SecondCallFails()).solve("求 x。", {"idx": 9})
 
         self.assertEqual(result["final_response"], "x=2")
-        self.assertEqual(result["trace"][2]["content"]["status"], "failed")
+        self.assertEqual(result["trace"][3]["content"]["status"], "failed")
 
     def test_chinese_scratchpad_without_an_explicit_answer_is_not_submitted(self):
         client = RecordingClient(["思考过程：尚未完成。", r"\boxed{x=2}"])
@@ -153,6 +160,38 @@ class SubmissionContractTest(unittest.TestCase):
 
         self.assertIn("SymPy 方程解: x=-1，x=1", tool.hints_for("求方程 x^2-1=0 的所有根。"))
         self.assertEqual(tool.limit("x", "x", "oo"), "∞")
+
+    def test_english_problem_profile_routes_algebra_and_proof(self):
+        roots = classify_profile("Solve the equation x^2 - 1 = 0.")
+        proof = classify_profile("Prove that every finite dimensional subspace is closed.")
+
+        self.assertEqual(roots.subject, "高等代数")
+        self.assertEqual(roots.answer_shape, "roots")
+        self.assertEqual(proof.problem_type, "proof")
+        self.assertEqual(proof.difficulty, "hard")
+
+    def test_equation_roots_are_not_rendered_as_an_interval(self):
+        client = RecordingClient(["\\boxed{[-1, 1]}"])
+
+        result = ReasoningAgent(client).solve("求方程 x^2-1=0 的所有根。", {"idx": 11})
+
+        self.assertEqual(result["final_response"], "x=-1，x=1")
+        self.assertEqual(len(client.calls), 1)
+        self.assertEqual(result["trace"][-1]["content"]["source"], "sympy_verified")
+
+    def test_infinity_normalization_does_not_modify_english_words(self):
+        profile = classify_profile("Prove a statement.")
+
+        self.assertEqual(ReasoningAgent(RecordingClient()).agent._normalize_answer("proof with oo", profile), "proof with ∞")
+
+    def test_non_symbolic_calculation_keeps_two_stage_review(self):
+        client = RecordingClient(["\\boxed{A}", "\\boxed{B}"])
+
+        result = ReasoningAgent(client).solve("给出一个满足条件的构造。", {"idx": 12})
+
+        self.assertEqual(result["final_response"], "B")
+        self.assertEqual(len(client.calls), 2)
+        self.assertEqual(result["trace"][0]["content"]["route"], "solve_and_verify")
 
 
 if __name__ == "__main__":

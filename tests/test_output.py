@@ -22,6 +22,19 @@ class OutputTest(unittest.TestCase):
         self.assertEqual(result["final_response"], "4")
         self.assertIsInstance(result.get("trace"), list)
 
+    def test_entrypoint_contains_an_internal_exception(self):
+        agent = ReasoningAgent(client=FakeClient())
+
+        class BrokenSubmissionAgent:
+            def solve(self, problem, metadata):
+                raise ValueError("bad parser")
+
+        agent.agent = BrokenSubmissionAgent()
+        result = agent.solve("测试", {"idx": 1})
+
+        self.assertEqual(result["final_response"], "未能生成可验证的数学答案。")
+        self.assertEqual(result["trace"][0]["content"]["type"], "ValueError")
+
 
 if __name__ == "__main__":
     unittest.main()
