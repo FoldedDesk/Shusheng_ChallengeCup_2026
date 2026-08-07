@@ -70,12 +70,16 @@ def _answer_shape(problem: str, problem_type: str) -> str:
     lowered = problem.lower()
     if problem_type in {"proof", "derivation", "explanation"}:
         return "proof"
+    # Verification and yes/no questions frequently contain equations, but do
+    # not ask for equation roots (for example PDE solution checks).
+    if re.search(r"是否|是不是|能否|可否|验证.*(?:为解|调和)|is it|whether|verify", lowered):
+        return "truth"
     if re.search(r"不等式|inequal", lowered):
         return "interval"
-    if re.search(r"方程|equations?|roots?|solutions?|零点|zeros?", lowered):
-        return "roots"
     if re.search(r"矩阵|matrix|determinant|行列式", lowered):
         return "matrix"
-    if re.search(r"函数|function|导数|derivative|积分|integral|极限|limit", lowered):
+    if re.search(r"微分方程|热方程|波动方程|laplace方程|曲线|曲面|函数|function|导数|derivative|积分|integral|极限|limit", lowered):
         return "expression"
+    if re.search(r"(?:求解|解|求)\s*(?:代数)?方程|方程.*(?:所有)?(?:根|解)|equations?|roots?|solutions?|零点|zeros?", lowered):
+        return "roots"
     return "number"
