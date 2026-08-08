@@ -38,9 +38,8 @@ class AdaptivePipelineTest(unittest.TestCase):
         result = ReasoningAgent(client).solve("证明紧致空间的闭子集紧致。", {"idx": 1})
 
         self.assertEqual(len(client.calls), 2)
-        review = client.calls[1]["messages"][1]["content"]
-        self.assertIn("第一轮完整候选", review)
-        self.assertIn("审查卡", review)
+        self.assertIn("你是数学答案审查者", client.calls[1]["messages"][1]["content"])
+        self.assertIn("关键依据、必要推导、明确结论", client.calls[1]["messages"][1]["content"])
         self.assertIn("闭子集", result["final_response"])
 
     def test_partial_tool_evidence_cannot_select_a_whole_answer(self):

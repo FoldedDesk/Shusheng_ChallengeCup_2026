@@ -18,6 +18,7 @@ if str(ROOT) not in sys.path:
 
 from tools.latex_parser import normalize_latex
 from reasoning.finalizer import Finalizer
+from reasoning.math_equivalence import equivalent_answers
 
 
 def _normalized(value: str) -> str:
@@ -35,8 +36,11 @@ def evaluate(input_file: Path, output_dir: Path) -> dict:
         item = json.loads(line)
         expected[str(item["idx"])] = str(item.get("answer", ""))
 
-    invalid = fallback = uncertain = tool_conflicts = hits = processed = 0
+    invalid = fallback = uncertain = tool_conflicts = hits = semantic_hits = processed = 0
     selected_raw_meta = final_meta = malformed = explicit_selected = 0
+    model_calls = rescue_admitted = near_budget = all_empty = finalization_failures = 0
+    tail_segment_selected = 0
+    verification_admitted = conflicts = arbitration_used = corrected_selected = 0
     sources: dict[str, int] = {}
     for idx, answer in expected.items():
         path = output_dir / f"{idx}.json"
@@ -56,14 +60,29 @@ def evaluate(input_file: Path, output_dir: Path) -> dict:
         uncertain += int(bool(selected.get("coverage_uncertain")))
         tool_conflicts += int(any(reason == "tool_conflict" for reason in rejected))
         diagnostics = next((step.get("content", {}) for step in record.get("trace", []) if step.get("step") == "candidate_diagnostics"), {})
+        calls = [step for step in record.get("trace", []) if str(step.get("step", "")).startswith("model_call_")]
+        model_calls += len(calls)
+        near_budget += sum(bool(step.get("content", {}).get("response_near_budget")) for step in calls)
+        admission = next((step.get("content", {}) for step in record.get("trace", []) if step.get("step") == "review_admission"), {})
+        rescue_admitted += int(bool(admission.get("admitted")))
+        verification_admitted += int(admission.get("mode") == "verify")
+        equivalence = next((step.get("content", {}) for step in record.get("trace", []) if step.get("step") == "equivalence"), {})
+        conflicts += int(bool(equivalence.get("conflict")))
+        arbitration_used += int(bool(equivalence.get("arbitration_used")))
+        non_empty_stages = sum(bool(stage.get("non_empty")) for stage in diagnostics.values())
+        all_empty += int(source == "fallback" and non_empty_stages == 0)
+        finalization_failures += int(source == "fallback" and non_empty_stages > 0)
         selected_raw_meta += int(bool(diagnostics.get(source, {}).get("raw_has_meta")))
         explicit_selected += int(bool(selected.get("explicit_answer")))
+        tail_segment_selected += int(selected.get("extraction_method") == "tail_segment")
         final_reasons = Finalizer.validate_structure(record.get("final_response", ""))
         final_meta += int("meta_text" in final_reasons or Finalizer.contains_meta(record.get("final_response", "")))
         malformed += int(bool(set(final_reasons) & {"placeholder", "meaningless_fragment", "markup_fragment"}))
         actual = _normalized(record.get("final_response", ""))
         target = _normalized(answer)
         hits += int(bool(actual and target and (actual in target or target in actual)))
+        semantic_hits += int(equivalent_answers(record.get("final_response", ""), answer))
+        corrected_selected += int(selected.get("verification_verdict") == "corrected")
     return {
         "processed": processed,
         "structural_invalid_answers": invalid,
@@ -74,8 +93,19 @@ def evaluate(input_file: Path, output_dir: Path) -> dict:
         "final_response_contains_meta": final_meta,
         "malformed_final_response_count": malformed,
         "explicit_marker_selection_count": explicit_selected,
+        "tail_segment_selection_count": tail_segment_selected,
+        "model_call_count": model_calls,
+        "rescue_admission_count": rescue_admitted,
+        "verification_admission_count": verification_admitted,
+        "candidate_conflict_count": conflicts,
+        "arbitration_used_count": arbitration_used,
+        "corrected_candidate_selection_count": corrected_selected,
+        "response_near_budget_call_count": near_budget,
+        "all_model_responses_empty_count": all_empty,
+        "nonempty_finalization_failure_count": finalization_failures,
         "selection_sources": sources,
         "normalized_standard_answer_hits": hits,
+        "semantic_standard_answer_hits": semantic_hits,
     }
 
 

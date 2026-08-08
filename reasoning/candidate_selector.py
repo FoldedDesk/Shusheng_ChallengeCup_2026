@@ -7,6 +7,7 @@ import re
 from typing import TYPE_CHECKING
 
 from reasoning.finalizer import Finalizer
+from reasoning.math_equivalence import equivalent_answers
 
 if TYPE_CHECKING:
     from classifier.problem_spec import ProblemSpec
@@ -35,6 +36,7 @@ class CandidateAssessment:
     rejected_reasons: tuple[str, ...]
     raw_has_meta: bool = False
     explicit_answer: bool = False
+    verification_verdict: str = ""
 
     @property
     def accepted(self) -> bool:
@@ -43,6 +45,7 @@ class CandidateAssessment:
             and self.shape_valid
             and self.tool_status != "conflict"
             and "meta_without_explicit_answer" not in self.rejected_reasons
+            and "missing_required_goal" not in self.rejected_reasons
         )
 
 
@@ -55,11 +58,17 @@ def assess_candidate(
     extraction_reasons: tuple[str, ...] = (),
     raw_has_meta: bool = False,
     explicit_answer: bool = False,
+    verification_verdict: str = "",
 ) -> CandidateAssessment:
     value = str(answer or "").strip()
     formatting_reasons = Finalizer.validate_structure(value)
     coverage = tuple(_goal_covered(value, goal) for goal in spec.goals)
     complete = bool(coverage) and all(coverage)
+    missing_strict = any(
+        requirement.strict and not requirement.matches(value)
+        for goal in spec.goals
+        for requirement in goal.requirements
+    )
     shape_valid = _valid_shape(value, spec.profile.answer_shape) and _frame_valid(value, spec)
     tool_status = _tool_status(value, evidence)
     reasons = list(extraction_reasons) + list(formatting_reasons)
@@ -67,11 +76,14 @@ def assess_candidate(
         reasons.append("invalid_answer_shape")
     if tool_status == "conflict":
         reasons.append("tool_conflict")
+    if missing_strict:
+        reasons.append("missing_required_goal")
     score = (8 if complete else -8) + (4 if shape_valid else -4) + (4 if not formatting_reasons else -12)
-    score += 4 if tool_status == "pass" else (-8 if tool_status == "conflict" else 0)
+    score += 4 if tool_status == "pass" else (2 if tool_status == "partial_pass" else (-8 if tool_status == "conflict" else 0))
     return CandidateAssessment(
         value, source, extraction_method, score, complete, shape_valid,
-        not formatting_reasons, tool_status, coverage, not complete, tuple(reasons), raw_has_meta, explicit_answer,
+        not formatting_reasons, tool_status, coverage, not complete, tuple(reasons), raw_has_meta,
+        explicit_answer, verification_verdict,
     )
 
 
@@ -79,16 +91,23 @@ def choose_candidate(candidates: list[CandidateAssessment]) -> CandidateAssessme
     usable = [candidate for candidate in candidates if candidate.accepted]
     if not usable:
         return None
-    # Completeness and validity dominate source preference; length is only a stable final tie-breaker.
+    agreement = {
+        id(candidate): sum(equivalent_answers(candidate.answer, other.answer) for other in usable)
+        for candidate in usable
+    }
     return max(
         usable,
         key=lambda item: (
             item.complete_goals,
-            item.formatting_valid,
             item.tool_status == "pass",
+            item.tool_status == "partial_pass",
+            agreement[id(item)],
+            item.verification_verdict == "corrected",
+            item.formatting_valid,
             item.explicit_answer,
-            item.source == "review",
             item.score,
+            item.source == "solve",
+            item.source == "arbitration",
             len(item.answer),
         ),
     )
@@ -99,7 +118,7 @@ def _goal_covered(answer: str, goal) -> bool:
         return False
     compact = _compact(answer)
     if goal.requirements:
-        return all(requirement.matches(compact) for requirement in goal.requirements)
+        return all(requirement.matches(answer) for requirement in goal.requirements)
     return all(_compact(term) in compact for term in goal.required_terms)
 
 
@@ -117,14 +136,21 @@ def _valid_shape(answer: str, shape: str) -> bool:
 
 def _tool_status(answer: str, evidence: tuple[ToolEvidence, ...]) -> str:
     whole = [item for item in evidence if item.scope == "whole_goal" and item.verified]
-    if not whole:
-        return "unknown"
     normalized = _compact(answer)
     for item in whole:
         expected = _compact(item.result)
         if expected and (expected in normalized or normalized in expected):
             return "pass"
-    return "conflict"
+    if whole:
+        return "conflict"
+    partial = [item for item in evidence if item.scope == "subexpression" and item.verified]
+    if any(
+        equivalent_answers(answer, item.result)
+        or (_compact(item.result) and _compact(item.result) in normalized)
+        for item in partial
+    ):
+        return "partial_pass"
+    return "unknown"
 
 
 def _is_scratchpad(answer: str) -> bool:
@@ -143,7 +169,10 @@ def _frame_valid(answer: str, spec: "ProblemSpec") -> bool:
         return "概率" in answer
     if frame.question_kind == "truth":
         judgement = re.search(r"(?:是|否|可以|不可以|正确|错误|成立|不成立)", answer)
-        return bool(judgement and (not frame.subject or _compact(frame.subject) in _compact(answer)))
+        if not judgement:
+            return False
+        bare = re.fullmatch(r"(?:是|否|可以|不可以|正确|错误|成立|不成立)", _compact(answer))
+        return not bare or not frame.subject or _compact(frame.subject) in _compact(answer)
     return True
 
 

@@ -17,7 +17,34 @@ class Requirement:
     strict: bool = False
 
     def matches(self, compact_answer: str) -> bool:
-        return any(all(_compact(term) in compact_answer for term in option) for option in self.alternatives)
+        raw_answer = str(compact_answer or "").lower()
+        normalized = _compact(raw_answer)
+        if self.name == "judgement":
+            return bool(re.search(
+                r"(?:是|否|可以|不可以|正确|错误|成立|不成立|属于|不属于|收敛|发散|"
+                r"不可约|可约|有解|无解|相等|不等|存在|不存在|改变|不变|变化|"
+                r"位于.*(?:内|外)|在.*(?:内部|外部))",
+                raw_answer,
+            ))
+        if self.name == "reasoning":
+            return bool(re.search(r"(?:因为|由于|由|依据|根据|所以|故|因此|推出|可得|implies|because|since)", raw_answer, re.IGNORECASE))
+        if self.name == "domain":
+            return bool(re.search(r"(?:定义域|区间|domain|[x-z]\s*[<>≤≥≠]|\([^)]*,[^)]*\)|\[[^]]*,[^]]*\])", raw_answer, re.IGNORECASE))
+        if self.name == "integral_value":
+            return bool(re.search(
+                r"(?:积分|integral|∫).*(?:为|=)|(?:级数|总和|结果|近似值|精确值).*(?:为|=)",
+                raw_answer,
+                re.IGNORECASE,
+            )) or bool(re.fullmatch(
+                r"\s*\$?\s*(?:[-+]?\d+(?:\.\d+)?(?:/\d+)?|\\frac\{[^{}]+\}\{[^{}]+\}|"
+                r"\\sqrt\{[^{}]+\}|(?:[-+]?\d+(?:\.\d+)?\s*)?(?:π|\\pi|∞|\\infty)(?:\s*[A-Za-z])?(?:/\d+)?)\s*\$?\s*[。.]?\s*",
+                raw_answer,
+                re.IGNORECASE,
+            ))
+        return any(all(
+            term in raw_answer if term in {"{", "}", "[", "]"} else _compact(term) in normalized
+            for term in option
+        ) for option in self.alternatives)
 
 
 def _compact(value: str) -> str:
@@ -29,6 +56,7 @@ class Goal:
     id: str
     instruction: str
     answer_shape: str
+    kind: str = "result"
     required_terms: tuple[str, ...] = ()
     requirements: tuple[Requirement, ...] = ()
 
@@ -42,7 +70,13 @@ class AnswerFrame:
     question_kind: str = "math"
 
     def trace_content(self) -> dict:
-        return {"style": self.style, "predicate": self.predicate, "unit": self.unit, "question_kind": self.question_kind}
+        return {
+            "style": self.style,
+            "subject": self.subject,
+            "predicate": self.predicate,
+            "unit": self.unit,
+            "question_kind": self.question_kind,
+        }
 
 
 @dataclass(frozen=True)
@@ -55,13 +89,26 @@ class ProblemSpec:
     alternative_method: str
     answer_frame: AnswerFrame
     tool_can_answer_whole: bool
+    risk_score: int
+    verification_required: bool
 
     def trace_content(self) -> dict:
         return {
             "profile": self.profile.trace_content(),
             "goal_count": len(self.goals),
-            "goal_requirements": [list(goal.required_terms) for goal in self.goals],
+            "goals": [{
+                "id": goal.id,
+                "kind": goal.kind,
+                "instruction": goal.instruction,
+                "required_terms": list(goal.required_terms),
+                "requirements": [
+                    {"name": item.name, "strict": item.strict}
+                    for item in goal.requirements
+                ],
+            } for goal in self.goals],
             "risk_flags": list(self.risk_flags),
+            "risk_score": self.risk_score,
+            "verification_required": self.verification_required,
             "primary_method": self.primary_method,
             "answer_frame": self.answer_frame.trace_content(),
             "tool_can_answer_whole": self.tool_can_answer_whole,
@@ -88,10 +135,12 @@ def build_problem_spec(problem: str) -> ProblemSpec:
     goals = _goals(text, profile)
     constraints = _constraints(text)
     risks = _risks(text, profile, len(goals))
+    risk_score = _risk_score(text, profile, goals, risks)
     primary, alternative = _METHODS.get(profile.subject, ("definition_and_case_analysis", "direct_check"))
     return ProblemSpec(
         profile, tuple(goals), tuple(constraints), tuple(risks), primary, alternative,
         _answer_frame(text, profile), _tool_can_answer_whole(text, profile, goals),
+        risk_score, risk_score >= 3,
     )
 
 
@@ -115,16 +164,40 @@ def _answer_frame(text: str, profile: ProblemProfile) -> AnswerFrame:
 
 
 def _goals(text: str, profile: ProblemProfile) -> list[Goal]:
-    pieces = [piece.strip() for piece in re.split(r"[；;]\s*|(?:并且|且)(?=(?:求|证明|判断|说明|给出|prove|show|find|determine)\b)", text, flags=re.IGNORECASE) if piece.strip()]
-    commands = [piece for piece in pieces if re.search(r"求|证明|判断|说明|给出|是否|prove|show|find|determine|solve", piece, re.IGNORECASE)]
+    command = r"求|计算|判断|说明|证明|给出|验证|比较|写出|指出|列出|prove|show|find|determine|solve|calculate|verify|compare"
+    pieces = [piece.strip() for piece in re.split(
+        rf"[；;]\s*|(?:并且|并|且|以及|同时)(?=\s*(?:{command}))",
+        text,
+        flags=re.IGNORECASE,
+    ) if piece.strip()]
+    commands = [piece for piece in pieces if re.search(command + r"|是否|whether", piece, re.IGNORECASE)]
     selected = commands or [text]
     return [
         Goal(
             f"g{index + 1}", item[:400], profile.answer_shape,
+            _goal_kind(item, profile.answer_shape),
             _required_terms(item, profile.answer_shape), _requirements(item, profile.answer_shape),
         )
         for index, item in enumerate(selected[:4])
     ]
+
+
+def _goal_kind(text: str, answer_shape: str) -> str:
+    if re.search(r"证明|说明.*(?:理由|为何|原因)|prove|show|explain", text, re.IGNORECASE):
+        return "proof"
+    if re.search(r"构造|举例|反例|construct|example|counterexample", text, re.IGNORECASE):
+        return "construction"
+    if re.search(r"是否|能否|可否|真假|正确与否|判断.*是否|验证.*是否|whether", text, re.IGNORECASE):
+        return "truth_judgement"
+    if re.search(r"定义域|存在区间|domain|interval", text, re.IGNORECASE):
+        return "domain_or_interval"
+    if re.search(r"公式|通解|表达式|矩阵|集合|formula|expression|matrix", text, re.IGNORECASE):
+        return "formula"
+    if re.search(r"近似|误差|比较|approx|error|compare", text, re.IGNORECASE):
+        return "comparison"
+    if answer_shape == "roots":
+        return "equation_roots"
+    return "scalar_or_result"
 
 
 def _required_terms(text: str, answer_shape: str) -> tuple[str, ...]:
@@ -162,6 +235,10 @@ def _required_terms(text: str, answer_shape: str) -> tuple[str, ...]:
 
 def _requirements(text: str, answer_shape: str) -> tuple[Requirement, ...]:
     requirements: list[Requirement] = []
+    if re.search(r"是否|能否|可否|真假|正确与否|判断.*是否|验证.*是否|whether", text, re.IGNORECASE):
+        requirements.append(Requirement("judgement", (("是",), ("否",)), strict=True))
+    if re.search(r"说明.*(?:理由|为何|原因)|证明|prove|show|explain", text, re.IGNORECASE):
+        requirements.append(Requirement("reasoning", (("因为",), ("依据",)), strict=False))
     if re.search(r"牛顿法|newton", text, re.IGNORECASE):
         requirements.append(Requirement("iteration_formula", (("xn+1",), ("xk+1",), ("迭代公式",))))
         if re.search(r"x_0|初值", text):
@@ -169,7 +246,22 @@ def _requirements(text: str, answer_shape: str) -> tuple[Requirement, ...]:
     if re.search(r"逐点.*极限|pointwise", text, re.IGNORECASE):
         requirements.append(Requirement("pointwise_limit", (("逐点",), ("pointwise",))))
     if re.search(r"积分.*(?:极限|恒|比较)|integral.*limit", text, re.IGNORECASE):
-        requirements.append(Requirement("integral_result", (("积分",), ("integral",), ("∫",))))
+        requirements.append(Requirement(
+            "integral_result",
+            (("积分",), ("integral",), ("∫",), ("近似值", "精确值")),
+        ))
+    if re.search(r"(?:计算|求).*积分|integral", text, re.IGNORECASE):
+        requirements.append(Requirement(
+            "integral_value",
+            (("积分", "为"), ("积分", "="), ("∫", "="), ("integral", "=")),
+            strict=True,
+        ))
+    if re.search(r"(?:是否|判断).*(?:并|且).*计算.*积分|(?:whether|determine).*(?:and).*integral", text, re.IGNORECASE):
+        requirements.append(Requirement(
+            "integral_value",
+            (("积分", "为"), ("积分", "="), ("∫", "="), ("integral", "=")),
+            strict=True,
+        ))
     if re.search(r"(?<!不)交集|intersection", text, re.IGNORECASE):
         requirements.append(Requirement("intersection", (("交集",), ("intersection",), ("∩",))))
     if re.search(r"精确值|exact value", text, re.IGNORECASE):
@@ -181,7 +273,33 @@ def _requirements(text: str, answer_shape: str) -> tuple[Requirement, ...]:
         ))
     if re.search(r"两个任意函数|two arbitrary functions", text, re.IGNORECASE):
         requirements.append(Requirement("two_function_form", (("f(", "g("), ("任意函数",))))
+    if re.search(r"(?:求|列出).*(?:所有|全部).*生成元|all generators", text, re.IGNORECASE):
+        requirements.append(Requirement(
+            "generator_enumeration",
+            (("生成元为",), ("生成元包括",), ("{",), ("generator", "=")),
+        ))
     return tuple(requirements)
+
+
+def _risk_score(text: str, profile: ProblemProfile, goals: list[Goal], risks: list[str]) -> int:
+    score = 0
+    if len(goals) > 1:
+        score += 2
+    if profile.problem_type in {"proof", "derivation", "explanation"}:
+        score += 2
+    if profile.difficulty == "hard":
+        score += 1
+    if profile.confidence == "low":
+        score += 1
+    if any(goal.kind == "construction" for goal in goals):
+        score += 2
+    if re.search(r"牛顿法|二分法|欧拉法|迭代|近似|误差|newton|bisection|euler|iteration|approx", text, re.IGNORECASE):
+        score += 2
+    if re.search(r"最大右侧存在区间|maximal right(?:-hand)? interval", text, re.IGNORECASE):
+        score += 2
+    if set(risks) & {"missing_roots", "domain_or_substitution", "endpoint_error", "quantifier_or_missing_argument"}:
+        score += 1
+    return min(score, 8)
 
 
 def _tool_can_answer_whole(text: str, profile: ProblemProfile, goals: list[Goal]) -> bool:

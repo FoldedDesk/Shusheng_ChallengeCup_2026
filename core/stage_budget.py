@@ -24,7 +24,9 @@ def plan_stage_budget(spec, has_whole_tool_answer: bool) -> StageBudget:
     if has_whole_tool_answer:
         return StageBudget(0, 0, 0, 0, 0, False, False)
     if spec.profile.difficulty == "hard":
-        return StageBudget(4096, 3072, 1024, 55, 22, True, True)
+        return StageBudget(5120, 3072, 1536, 28, 18, True, True)
     if spec.profile.problem_type in {"proof", "derivation", "explanation"}:
-        return StageBudget(3584, 2560, 896, 45, 20, True, True)
-    return StageBudget(3072, 2048, 768, 45, 18, True, True)
+        return StageBudget(5120, 3072, 1536, 28, 18, True, True)
+    if spec.verification_required:
+        return StageBudget(4096, 3072, 1280, 25, 18, True, True)
+    return StageBudget(4096, 3072, 1024, 25, 12, True, True)

@@ -80,6 +80,8 @@ def _answer_shape(problem: str, problem_type: str) -> str:
         return "matrix"
     if re.search(r"微分方程|热方程|波动方程|laplace方程|曲线|曲面|函数|function|导数|derivative|积分|integral|极限|limit", lowered):
         return "expression"
+    if re.search(r"\b[xy]\s*'\s*=|d[xy]/d[xt]", lowered):
+        return "expression"
     if re.search(r"(?:求解|解|求)\s*(?:代数)?方程|方程.*(?:所有)?(?:根|解)|equations?|roots?|solutions?|零点|zeros?", lowered):
         return "roots"
     return "number"

@@ -16,6 +16,7 @@ from reasoning.candidate_selector import (
     choose_candidate,
 )
 from reasoning.finalizer import ExtractionResult, Finalizer
+from reasoning.math_equivalence import equivalent_answers
 from tools.sympy_tool import SympyTool
 
 
@@ -43,6 +44,11 @@ class SubmissionAgent:
         budget = plan_stage_budget(spec, direct_tool_route)
         trace = [
             {"step": "spec", "content": spec.trace_content()},
+            {"step": "risk_assessment", "content": {
+                "score": spec.risk_score,
+                "verification_required": spec.verification_required,
+                "reasons": list(spec.risk_flags),
+            }},
             {"step": "stage_budget", "content": budget.trace_content()},
             {"step": "retrieval", "content": cards.trace_content()},
             {"step": "tool_evidence", "content": self._evidence_trace(evidence)},
@@ -57,46 +63,74 @@ class SubmissionAgent:
                 trace,
                 started_at,
             )
-        first_candidates = self._assess_candidates(first, "", "", spec, evidence)
-        review_admitted = self._review_admitted(spec, first_candidates, budget, started_at)
+        first_candidates = self._assess_candidates(first, "", "", "", spec, evidence)
+        review_mode = self._review_mode(spec, first_candidates, first, budget, started_at)
         trace.append({
             "step": "review_admission",
             "content": {
-                "admitted": review_admitted,
+                "admitted": bool(review_mode),
+                "mode": review_mode or "none",
                 "remaining_budget_ms": self._remaining_ms(started_at),
             },
         })
         second = ""
-        if review_admitted:
+        if review_mode:
+            request = (
+                self._verification_request(text, spec, cards, evidence, first_candidates)
+                if review_mode == "verify"
+                else self._rescue_request(text, spec, cards, evidence, first)
+            )
             second = self._call(
-                self._review_request(text, spec, cards, evidence, first),
-                "review",
+                request,
+                review_mode,
                 budget.review_tokens,
                 trace,
                 started_at,
             )
 
-        candidates = self._assess_candidates(first, second, tool_answer, spec, evidence)
-        repair = ""
+        second_source = review_mode or "rescue"
+        candidates = self._assess_candidates(first, second, "", tool_answer, spec, evidence, second_source)
+        conflict = self._candidate_conflict(candidates)
+        repair_mode = "arbitration" if conflict else (
+            "last_chance" if not any(item.accepted for item in candidates) else ""
+        )
+        arbitration = ""
         if (
-            not any(candidate.accepted for candidate in candidates)
+            repair_mode
             and budget.allow_repair
             and self._remaining_ms(started_at) >= budget.repair_min_remaining_seconds * 1000
         ):
-            repair = self._call(
-                self._repair_request(text, spec), "repair", budget.repair_tokens, trace, started_at
+            arbitration = self._call(
+                self._arbitration_request(text, spec, candidates, evidence)
+                if repair_mode == "arbitration"
+                else self._last_chance_request(text, spec, evidence),
+                repair_mode,
+                budget.repair_tokens,
+                trace,
+                started_at,
             )
-            candidates = self._assess_candidates(first, second, tool_answer, spec, evidence, repair)
+            candidates = self._assess_candidates(
+                first, second, arbitration, tool_answer, spec, evidence, second_source
+            )
         trace.append({
             "step": "candidate_diagnostics",
             "content": {
                 "solve": self._safe_trace_candidate(first),
-                "review": self._safe_trace_candidate(second),
-                "repair": self._safe_trace_candidate(repair),
+                second_source: self._safe_trace_candidate(second),
+                "arbitration": self._safe_trace_candidate(arbitration),
             },
         })
         selected = self._select(candidates)
         answer = selected.answer if selected else "未能生成可验证的数学答案。"
+        trace.append({
+            "step": "equivalence", "content": {
+                "conflict": conflict,
+                "accepted_sources": [item.source for item in candidates if item.accepted],
+                "arbitration_used": bool(arbitration.strip()),
+                "repair_mode": repair_mode or "none",
+                "model_candidate_pairs": self._equivalence_pairs(candidates),
+            },
+        })
         trace.append({
             "step": "validation",
             "content": {item.source: self._assessment_trace(item) for item in candidates},
@@ -115,7 +149,7 @@ class SubmissionAgent:
                 "elapsed_ms": int((monotonic() - started_at) * 1000),
             },
         })
-        self._append_proof_trace(trace, spec, selected, first, second)
+        self._append_proof_trace(trace, spec, selected, first, second, arbitration)
         return {"final_response": answer, "trace": trace}
 
     def _call(self, request: str, stage: str, max_tokens: int, trace: list[dict], started_at: float) -> str:
@@ -137,6 +171,8 @@ class SubmissionAgent:
                     "response_non_empty": bool(value.strip()),
                     "elapsed_ms": int((monotonic() - stage_started) * 1000),
                     "remaining_budget_ms": self._remaining_ms(started_at),
+                    "max_tokens": max_tokens,
+                    "response_near_budget": len(value) >= max_tokens * 3,
                 },
             })
             return value
@@ -161,21 +197,17 @@ class SubmissionAgent:
 
     @staticmethod
     def _solve_request(problem: str, spec: ProblemSpec, cards: RetrievalBundle, evidence: tuple[ToolEvidence, ...]) -> str:
-        content = f"题目：\n{problem}\n\n"
-        content += SubmissionAgent._direct_instruction(spec)
-        content += "\n" + SubmissionAgent._spec_context(spec)
+        content = f"题目：\n{problem}\n\n{SubmissionAgent._direct_instruction(spec)}"
+        content += "\n必须覆盖以下目标：\n" + SubmissionAgent._goal_context(spec)
         if cards.solve_context():
-            content += "\n可用定理/方法（仅在前提满足时使用）：\n" + cards.solve_context()
+            content += "\n可用依据：\n" + cards.solve_context()
         if evidence:
-            content += "\n本地计算证据（只核对相应子目标）：\n" + SubmissionAgent._evidence_context(evidence)
-        if spec.answer_frame.style == "proof":
-            content += "\n\n给出精炼论证和完整结论。不要输出 Thinking Process 或元话语；最后一行必须写【最终答案】完整结论。"
-        else:
-            content += "\n\n先在内部完成推理，输出时只保留所有必答项组成的最终结论。不要输出 Thinking Process 或元话语；最后一行必须写【最终答案】完整答案。"
+            content += "\n本地核验：\n" + SubmissionAgent._evidence_context(evidence)
+        content += "\n第一行先写【最终答案】并给出全部结论，再写必要依据。"
         return content
 
     @staticmethod
-    def _review_request(
+    def _rescue_request(
         problem: str,
         spec: ProblemSpec,
         cards: RetrievalBundle,
@@ -185,30 +217,104 @@ class SubmissionAgent:
         if not candidate.strip():
             return (
                 f"题目：\n{problem}\n\n{SubmissionAgent._direct_instruction(spec)}"
+                f"\n必须覆盖以下目标：\n{SubmissionAgent._goal_context(spec)}"
                 "\n第一轮未产生可用答案。请从头独立求解，不要讨论失败原因；"
-                "覆盖题目全部必答项并在最后一行写【最终答案】完整答案。"
+                "覆盖题目全部必答项，第一行先写【最终答案】完整答案。"
             )
         content = f"题目：\n{problem}\n\n" + SubmissionAgent._direct_instruction(spec)
-        content += "\n" + SubmissionAgent._spec_context(spec)
+        content += "\n必须覆盖以下目标：\n" + SubmissionAgent._goal_context(spec)
         if cards.review_context():
             content += "\n审查卡：\n" + cards.review_context()
         if evidence:
             content += "\n本地计算证据：\n" + SubmissionAgent._evidence_context(evidence)
         content += (
-            "\n\n第一轮完整候选如下。不要默认它正确：逐项检查目标清单、最终公式或数值、定义域和单位。"
-            "若缺少子问、格式残缺或结论不完整，必须从头修正；只输出可提交答案，最后一行写【最终答案】完整答案。\n\n"
-            f"第一轮候选：\n{SubmissionAgent._review_evidence(candidate)}"
+            "\n\n独立重做并补齐缺失项，第一行先写【最终答案】完整答案。\n\n"
+            f"首轮可用摘要：\n{SubmissionAgent._review_evidence(candidate)}"
         )
         return content
 
     @staticmethod
-    def _repair_request(problem: str, spec: ProblemSpec) -> str:
-        return (
-            f"题目：\n{problem}\n\n{SubmissionAgent._direct_instruction(spec)}\n"
-            + SubmissionAgent._spec_context(spec)
-            + "\n前两轮没有可提交结论。请从头独立作答，不要复述题目、提示词或思考过程。"
-            "只输出最终可判分答案，最后一行必须为【最终答案】加完整结论。"
+    def _verification_request(
+        problem: str,
+        spec: ProblemSpec,
+        cards: RetrievalBundle,
+        evidence: tuple[ToolEvidence, ...],
+        candidates: list[CandidateAssessment],
+    ) -> str:
+        first = next((item.answer for item in candidates if item.source == "solve" and item.answer), "（无可用答案）")
+        content = (
+            f"题目：\n{problem}\n\n你是数学答案审查者。先独立重算，再检查候选；"
+            "不得因为候选表述流畅就默认正确。逐项检查必答项、公式、数值、定义域、单位、定理前提和构造条件。\n"
+            f"目标清单：\n{SubmissionAgent._goal_context(spec)}\n"
+            f"待审候选：\n{first}\n"
         )
+        if cards.review_context():
+            content += "审查依据：\n" + cards.review_context() + "\n"
+        if evidence:
+            content += "本地核验：\n" + SubmissionAgent._evidence_context(evidence) + "\n"
+        content += (
+            "若候选完全正确，第一行写【校验】通过；若有任何错误或缺项，第一行写【校验】修正。"
+            "第二行必须写【最终答案】完整答案，随后只写最短核验依据。"
+        )
+        return content
+
+    @staticmethod
+    def _arbitration_request(
+        problem: str,
+        spec: ProblemSpec,
+        candidates: list[CandidateAssessment],
+        evidence: tuple[ToolEvidence, ...],
+    ) -> str:
+        rendered = "\n".join(
+            f"候选{index + 1}：{item.answer}"
+            for index, item in enumerate(candidates)
+            if item.accepted and item.source in {"solve", "verify", "rescue"}
+        )
+        content = (
+            f"题目：\n{problem}\n\n两个答案发生实质冲突。请重新计算并裁决，不要按长度或措辞选择。\n"
+            f"目标清单：\n{SubmissionAgent._goal_context(spec)}\n{rendered}\n"
+        )
+        if evidence:
+            content += "本地证据：\n" + SubmissionAgent._evidence_context(evidence) + "\n"
+        return content + "第一行写【校验】修正，第二行写【最终答案】裁决后的完整答案。"
+
+    @staticmethod
+    def _last_chance_request(
+        problem: str,
+        spec: ProblemSpec,
+        evidence: tuple[ToolEvidence, ...],
+    ) -> str:
+        content = (
+            f"题目：\n{problem}\n\n前两轮没有形成可提交内容。停止分析格式和措辞，"
+            "直接给出实际数学结论，限一行，不解释、不复述题目。\n"
+            f"必须覆盖：\n{SubmissionAgent._goal_context(spec)}\n"
+        )
+        if evidence:
+            content += "本地核验：\n" + SubmissionAgent._evidence_context(evidence) + "\n"
+        return content
+
+    @staticmethod
+    def _goal_context(spec: ProblemSpec) -> str:
+        checks = {
+            "proof": "关键依据、必要推导、明确结论",
+            "construction": "构造对象、逐项验证题设条件",
+            "truth_judgement": "判断结论、被判断对象、关键检验",
+            "domain_or_interval": "定义域/区间、端点和排除值",
+            "formula": "完整公式、变量含义和题设初值",
+            "comparison": "各个数值、误差或大小比较",
+            "equation_roots": "全部根、定义域和伪根检查",
+            "scalar_or_result": "明确结果及题目要求的单位/对象",
+        }
+        rendered = []
+        for goal in spec.goals:
+            requirement_names = "、".join(item.name for item in goal.requirements)
+            suffix = checks.get(goal.kind, "完整可判分结论")
+            if re.search(r"最大右侧存在区间|maximal right(?:-hand)? interval", goal.instruction, re.IGNORECASE):
+                suffix += "；右侧区间须从初始点开始向右延伸，不得包含初始点左侧"
+            if requirement_names:
+                suffix += f"；必查字段：{requirement_names}"
+            rendered.append(f"- {goal.id} [{goal.kind}] {goal.instruction}（{suffix}）")
+        return "\n".join(rendered)
 
     @staticmethod
     def _spec_context(spec: ProblemSpec) -> str:
@@ -224,6 +330,13 @@ class SubmissionAgent:
 
     @staticmethod
     def _direct_instruction(spec: ProblemSpec) -> str:
+        if any(re.search(
+            r"最大右侧存在区间|maximal right(?:-hand)? interval", goal.instruction, re.IGNORECASE
+        ) for goal in spec.goals):
+            return (
+                "先通过初值确定解，再给出从初始自变量值开始向右延伸的最大存在区间；"
+                "不要用包含初始点左侧的双侧最大区间替代右侧区间。"
+            )
         if spec.profile.problem_type in {"proof", "derivation", "explanation"}:
             return (
                 "请给出可直接提交的简洁证明：写明关键依据和必要推导，"
@@ -262,7 +375,13 @@ class SubmissionAgent:
                 operation != "local_hint"
                 and spec.tool_can_answer_whole
             )
-            evidence.append(ToolEvidence(result.strip(), "whole_goal" if whole else "subexpression", operation, whole))
+            # A supported local operation is verified evidence even when it is
+            # only a substep. Scope, not verification, controls whether it may
+            # become the complete submitted answer.
+            evidence.append(ToolEvidence(
+                result.strip(), "whole_goal" if whole else "subexpression", operation,
+                operation != "local_hint",
+            ))
         return tuple(evidence)
 
     @staticmethod
@@ -281,57 +400,105 @@ class SubmissionAgent:
         return {
             "whole_goal_count": sum(item.scope == "whole_goal" for item in evidence),
             "subexpression_count": sum(item.scope == "subexpression" for item in evidence),
+            "verified_subexpression_count": sum(
+                item.scope == "subexpression" and item.verified for item in evidence
+            ),
             "operations": [item.operation for item in evidence],
         }
 
-    def _review_admitted(
+    def _review_mode(
         self,
         spec: ProblemSpec,
         first_candidates: list[CandidateAssessment],
+        first_response: str,
         budget: StageBudget,
         started_at: float,
-    ) -> bool:
+    ) -> str:
         if not budget.allow_review:
-            return False
-        needs_review = (
+            return ""
+        needs_rescue = (
             not any(candidate.accepted for candidate in first_candidates)
             or any(candidate.coverage_uncertain for candidate in first_candidates)
-            or spec.profile.difficulty == "hard"
+            or self._response_near_budget(first_response, budget.solve_tokens)
         )
-        return needs_review and self._remaining_ms(started_at) >= budget.review_min_remaining_seconds * 1000
+        if self._remaining_ms(started_at) < budget.review_min_remaining_seconds * 1000:
+            return ""
+        if needs_rescue:
+            return "rescue"
+        return "verify" if spec.verification_required else ""
+
+    @staticmethod
+    def _response_near_budget(response: str, max_tokens: int) -> bool:
+        return len(str(response or "")) >= max_tokens * 3
 
     def _assess_candidates(
         self,
         first: str,
         second: str,
+        arbitration: str,
         tool_answer: str,
         spec: ProblemSpec,
         evidence: tuple[ToolEvidence, ...],
-        repair: str = "",
+        second_source: str = "rescue",
     ) -> list[CandidateAssessment]:
         candidates = []
         first_result = self._finalize(first, spec)
         second_result = self._finalize(second, spec)
-        if first_result.answer or first_result.rejected_reasons:
+        arbitration_result = self._finalize(arbitration, spec)
+        if first.strip() and (first_result.answer or first_result.rejected_reasons):
             candidates.append(assess_candidate(
                 first_result.answer, "solve", spec, evidence, first_result.method, first_result.rejected_reasons,
                 first_result.raw_has_meta, first_result.explicit_answer,
             ))
-        if second_result.answer or second_result.rejected_reasons:
+        if second.strip() and (second_result.answer or second_result.rejected_reasons):
             candidates.append(assess_candidate(
-                second_result.answer, "review", spec, evidence, second_result.method, second_result.rejected_reasons,
-                second_result.raw_has_meta, second_result.explicit_answer,
+                second_result.answer, second_source, spec, evidence, second_result.method, second_result.rejected_reasons,
+                second_result.raw_has_meta, second_result.explicit_answer, self._verification_verdict(second),
             ))
-        repair_result = self._finalize(repair, spec)
-        if repair_result.answer or repair_result.rejected_reasons:
+        if arbitration.strip() and (arbitration_result.answer or arbitration_result.rejected_reasons):
             candidates.append(assess_candidate(
-                repair_result.answer, "repair", spec, evidence, repair_result.method, repair_result.rejected_reasons,
-                repair_result.raw_has_meta, repair_result.explicit_answer,
+                arbitration_result.answer, "arbitration", spec, evidence,
+                arbitration_result.method, arbitration_result.rejected_reasons,
+                arbitration_result.raw_has_meta, arbitration_result.explicit_answer,
+                self._verification_verdict(arbitration),
             ))
         if tool_answer:
             answer = self._render_answer(self._normalize_answer(tool_answer, spec), spec)
             candidates.append(assess_candidate(answer, "sympy_verified", spec, evidence, "tool"))
         return candidates
+
+    @staticmethod
+    def _verification_verdict(response: str) -> str:
+        match = re.search(r"【\s*校验\s*】\s*(通过|一致|修正|错误)", str(response or ""))
+        if not match:
+            return ""
+        return "confirmed" if match.group(1) in {"通过", "一致"} else "corrected"
+
+    @staticmethod
+    def _candidate_conflict(candidates: list[CandidateAssessment]) -> bool:
+        model_candidates = [
+            item for item in candidates
+            if item.accepted and item.source in {"solve", "verify", "rescue"}
+        ]
+        return len(model_candidates) >= 2 and not equivalent_answers(
+            model_candidates[0].answer, model_candidates[1].answer
+        )
+
+    @staticmethod
+    def _equivalence_pairs(candidates: list[CandidateAssessment]) -> list[dict]:
+        model_candidates = [
+            item for item in candidates
+            if item.accepted and item.source in {"solve", "verify", "rescue", "arbitration"}
+        ]
+        return [
+            {
+                "left": left.source,
+                "right": right.source,
+                "equivalent": equivalent_answers(left.answer, right.answer),
+            }
+            for index, left in enumerate(model_candidates)
+            for right in model_candidates[index + 1:]
+        ]
 
     @staticmethod
     def _select(candidates: list[CandidateAssessment]) -> CandidateAssessment | None:
@@ -340,6 +507,7 @@ class SubmissionAgent:
     @staticmethod
     def _assessment_trace(item: CandidateAssessment) -> dict:
         return {
+            "answer_preview": item.answer[:600],
             "score": item.score,
             "complete_goals": item.complete_goals,
             "shape_valid": item.shape_valid,
@@ -350,6 +518,7 @@ class SubmissionAgent:
             "extraction_method": item.extraction_method,
             "raw_has_meta": item.raw_has_meta,
             "explicit_answer": item.explicit_answer,
+            "verification_verdict": item.verification_verdict,
             "rejected_reasons": list(item.rejected_reasons),
         }
 
@@ -373,8 +542,13 @@ class SubmissionAgent:
         extracted = Finalizer.extract_result(response)
         explicit = extracted.answer if extracted.valid and extracted.explicit_answer else ""
         proof = spec.answer_frame.style == "proof"
-        if proof and not extracted.raw_has_meta and not SubmissionAgent._is_just_boxed(response):
-            answer = SubmissionAgent._proof_submission(response, explicit)
+        proof_block = Finalizer.extract_tagged_submission(response) if proof else ""
+        if proof and (proof_block or not extracted.raw_has_meta) and not SubmissionAgent._is_just_boxed(response):
+            # A normal proof may put its answer marker at the end, so retaining
+            # only the tagged suffix would discard the actual argument. The
+            # suffix is a safety boundary only when a meta preamble exists.
+            proof_source = proof_block if extracted.raw_has_meta else response
+            answer = SubmissionAgent._proof_submission(proof_source, explicit)
             reasons = Finalizer.validate_structure(answer)
             result = ExtractionResult(
                 answer if not reasons else "", "proof_body", not reasons, reasons,
@@ -383,8 +557,13 @@ class SubmissionAgent:
         else:
             result = extracted
         normalized = SubmissionAgent._render_answer(SubmissionAgent._normalize_answer(result.answer, spec), spec)
+        normalized = SubmissionAgent._normalize_answer(normalized, spec)
+        normalized_reasons = Finalizer.validate_structure(normalized)
         return ExtractionResult(
-            normalized, result.method, result.valid, result.rejected_reasons,
+            normalized if not normalized_reasons else "",
+            result.method,
+            result.valid and not normalized_reasons,
+            tuple(dict.fromkeys((*result.rejected_reasons, *normalized_reasons))),
             result.raw_has_meta, result.explicit_answer,
         )
 
@@ -403,16 +582,19 @@ class SubmissionAgent:
         selected: CandidateAssessment | None,
         first: str,
         second: str,
+        arbitration: str,
     ) -> None:
         if spec.profile.problem_type not in {"proof", "derivation", "explanation"} or not selected:
             return
-        raw = second if selected.source == "review" else first
+        raw = arbitration if selected.source == "arbitration" else (
+            second if selected.source in {"rescue", "verify"} else first
+        )
         if raw.strip():
             trace.append({"step": "proof_summary", "content": Finalizer.extract_solution(raw)[:1600]})
 
     @staticmethod
     def _normalize_answer(answer: str, spec: ProblemSpec) -> str:
-        value = str(answer or "").strip().replace(r"\infty", "∞")
+        value = str(answer or "").strip().replace("\x08ar", r"\bar").replace(r"\infty", "∞")
         value = re.sub(r"(?<![A-Za-z])oo(?![A-Za-z])", "∞", value)
         value = value.replace(r"\left", "").replace(r"\right", "")
         profile = getattr(spec, "profile", spec)
@@ -444,7 +626,10 @@ class SubmissionAgent:
             return SubmissionAgent._as_sentence(f"所求概率为{value}")
         if frame.question_kind == "truth":
             compact = re.sub(r"[\s。.]", "", value)
-            normalized = {"正确": "是", "成立": "是", "可以": "可以", "错误": "否", "不成立": "否", "不可以": "不可以"}
+            normalized = {
+                "是": "是", "正确": "是", "成立": "是", "可以": "可以",
+                "否": "否", "错误": "否", "不成立": "否", "不可以": "不可以",
+            }
             judgement = normalized.get(compact, value)
             if frame.subject and compact in normalized:
                 return SubmissionAgent._as_sentence(f"{frame.subject}：{judgement}")

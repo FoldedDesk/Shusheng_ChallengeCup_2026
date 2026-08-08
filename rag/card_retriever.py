@@ -24,6 +24,8 @@ class KnowledgeCard:
 class RetrievalBundle:
     solve_cards: tuple[KnowledgeCard, ...]
     review_cards: tuple[KnowledgeCard, ...]
+    solve_scores: tuple[int, ...] = ()
+    review_scores: tuple[int, ...] = ()
 
     def solve_context(self) -> str:
         return _render(self.solve_cards)
@@ -35,6 +37,8 @@ class RetrievalBundle:
         return {
             "solve_card_ids": [card.id for card in self.solve_cards],
             "review_card_ids": [card.id for card in self.review_cards],
+            "solve_card_scores": list(self.solve_scores),
+            "review_card_scores": list(self.review_scores),
         }
 
 
@@ -68,13 +72,19 @@ class CardRetriever:
 
     def retrieve(self, spec: "ProblemSpec") -> RetrievalBundle:
         scored = self._score(spec)
-        solve = self._diverse(scored, limit=2, include_kinds={"theorem", "method", "check"})
+        solve = self._diverse(scored, limit=2, include_kinds={"theorem", "method", "check"}, min_score=4)
         review = self._diverse(
             [(score + (3 if card.kind == "check" else 0), card) for score, card in scored],
             limit=1,
             include_kinds={"check", "method"},
+            min_score=5,
         )
-        return RetrievalBundle(tuple(solve), tuple(review))
+        return RetrievalBundle(
+            tuple(card for _, card in solve),
+            tuple(card for _, card in review),
+            tuple(score for score, _ in solve),
+            tuple(score for score, _ in review),
+        )
 
     def _load_cards(self) -> list[KnowledgeCard]:
         if not self.knowledge_dir.is_dir():
@@ -127,18 +137,25 @@ class CardRetriever:
         return sorted(scored, key=lambda item: (item[0], item[1].id), reverse=True)
 
     @staticmethod
-    def _diverse(scored: list[tuple[int, KnowledgeCard]], limit: int, include_kinds: set[str]) -> list[KnowledgeCard]:
-        selected = []
+    def _diverse(
+        scored: list[tuple[int, KnowledgeCard]],
+        limit: int,
+        include_kinds: set[str],
+        min_score: int,
+    ) -> list[tuple[int, KnowledgeCard]]:
+        selected: list[tuple[int, KnowledgeCard]] = []
         domains = set()
         kinds = set()
-        for _, card in scored:
+        for score, card in scored:
+            if score < min_score:
+                continue
             if card.kind not in include_kinds:
                 continue
-            if card.id in {item.id for item in selected}:
+            if card.id in {item.id for _, item in selected}:
                 continue
             if card.domain in domains and card.kind in kinds and len(selected) >= 2:
                 continue
-            selected.append(card)
+            selected.append((score, card))
             domains.add(card.domain)
             kinds.add(card.kind)
             if len(selected) == limit:
