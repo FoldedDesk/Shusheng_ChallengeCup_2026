@@ -38,7 +38,9 @@ class AdaptivePipelineTest(unittest.TestCase):
         result = ReasoningAgent(client).solve("证明紧致空间的闭子集紧致。", {"idx": 1})
 
         self.assertEqual(len(client.calls), 2)
-        self.assertIn("你是数学答案审查者", client.calls[1]["messages"][1]["content"])
+        review_prompt = client.calls[1]["messages"][1]["content"]
+        self.assertIn("请从头独立重算", review_prompt)
+        self.assertNotIn("任意开覆盖可限制到闭子集", review_prompt)
         self.assertIn("关键依据、必要推导、明确结论", client.calls[1]["messages"][1]["content"])
         self.assertIn("闭子集", result["final_response"])
 

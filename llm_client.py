@@ -6,6 +6,7 @@ from typing import Dict, List
 import requests
 
 from core.execution_limits import REQUEST_TIMEOUT_SECONDS
+from core.model_response import ModelCallResult
 
 
 DEFAULT_API_BASE = "https://chat.intern-ai.org.cn/api/v1/chat/completions"
@@ -18,7 +19,7 @@ class InternChatClient:
     def __init__(
         self,
         timeout: int = REQUEST_TIMEOUT_SECONDS,
-        retry: int = 1,
+        retry: int = 2,
     ) -> None:
         raw_api_key = os.environ.get("INTERN_API_KEY")
         if not raw_api_key:
@@ -29,21 +30,38 @@ class InternChatClient:
         self.api_base = os.environ.get("INTERN_API_BASE", DEFAULT_API_BASE)
         self.model = os.environ.get("INTERN_MODEL", DEFAULT_MODEL)
         self.timeout = max(1, min(int(timeout), REQUEST_TIMEOUT_SECONDS))
-        # Stage-level retry is managed by retry_once so its budget remains
-        # visible in the end-to-end per-item limit.
-        self.retry = 1
+        # One bounded transport retry absorbs transient connection/rate-limit
+        # failures. Mathematical retries remain visible as separate stages in
+        # SubmissionAgent.
+        self.retry = max(1, min(int(retry), 2))
 
     def chat(
         self,
         messages: List[Dict[str, str]],
         temperature: float = 0.2,
         max_tokens: int = 4096,
+        thinking_mode: bool = True,
     ) -> str:
+        return self.chat_result(
+            messages,
+            temperature=temperature,
+            max_tokens=max_tokens,
+            thinking_mode=thinking_mode,
+        ).content
+
+    def chat_result(
+        self,
+        messages: List[Dict[str, str]],
+        temperature: float = 0.2,
+        max_tokens: int = 4096,
+        thinking_mode: bool = True,
+    ) -> ModelCallResult:
         payload = {
             "model": self.model,
             "messages": messages,
             "temperature": temperature,
             "max_tokens": max_tokens,
+            "thinking_mode": bool(thinking_mode),
         }
         headers = {
             "Content-Type": "application/json",
@@ -61,7 +79,12 @@ class InternChatClient:
                 )
                 response.raise_for_status()
                 data = response.json()
-                return data["choices"][0]["message"]["content"]
+                choice = data["choices"][0]
+                return ModelCallResult(
+                    content=str(choice["message"].get("content", "")),
+                    finish_reason=str(choice.get("finish_reason", "") or ""),
+                    usage=data.get("usage", {}) if isinstance(data.get("usage", {}), dict) else {},
+                )
             except Exception as exc:  # noqa: BLE001 - keep sample robust and simple.
                 last_error = exc
                 if attempt + 1 < self.retry:

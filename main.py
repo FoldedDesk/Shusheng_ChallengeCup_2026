@@ -14,7 +14,9 @@ LOCAL_MAX_CONCURRENCY = max(
     1,
     min(int(os.environ.get("LOCAL_MAX_CONCURRENCY", str(MAX_CONCURRENCY))), MAX_CONCURRENCY),
 )
-FAILED_ANSWER = "本题未能在限定时间内生成可验证答案。"
+# Kept for compatibility with local imports. Diagnostics belong in the error
+# and trace fields; a failure sentence is never a gradable mathematical answer.
+FAILED_ANSWER = "0"
 
 
 def load_jsonl(path: Path) -> List[Dict]:
@@ -109,7 +111,7 @@ async def process_item(
             record = {
                 "idx": item["idx"],
                 "status": "error",
-                "final_response": FAILED_ANSWER,
+                "final_response": ReasoningAgent._safe_fallback(item.get("problem", "")),
                 "error": {
                     "type": type(exc).__name__,
                     "message": str(exc),

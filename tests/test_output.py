@@ -32,8 +32,9 @@ class OutputTest(unittest.TestCase):
         agent.agent = BrokenSubmissionAgent()
         result = agent.solve("测试", {"idx": 1})
 
-        self.assertEqual(result["final_response"], "未能生成可验证的数学答案。")
+        self.assertEqual(result["final_response"], "0")
         self.assertEqual(result["trace"][0]["content"]["type"], "ValueError")
+        self.assertTrue(result["trace"][0]["content"]["degraded"])
 
 
 if __name__ == "__main__":

@@ -20,7 +20,7 @@ class Finalizer:
     """Extract explicit answer candidates without silently repairing malformed text."""
 
     _LABEL = re.compile(
-        r"(?im)^\s*(?:(?:【\s*(?:最终答案|答案|结论)\s*】|(?:最终\s*)?答案|结论)\s*[:：]?|(?:final\s+answer|answer)\s*[:：])\s*([^\n]+?)\s*$"
+        r"(?im)^\s*(?:(?:【\s*(?:最终答案|答案|结论)\s*】|(?:最终\s*)?答案|结论)\s*[:：]?|(?:final\s+answer|answer|conclusion)\s*[:：])\s*([^\n]+?)\s*$"
     )
     _BRACKET_LABEL = re.compile(
         r"【\s*(?:最终答案|答案|结论)\s*】\s*[:：]?\s*([^`\n]+)",
@@ -33,8 +33,15 @@ class Finalizer:
     _META = re.compile(
         r"(?:<think\b|thinking process|(?im:^\s*(?:analysis|drafting)\s*[:：])|check formatting|check spacing|"
         r"system prompt|prompt instruction|final answer should|最后一行必须|思考过程|分析过程|推理过程|"
-        r"格式检查|检查格式|提示词|\bplan\b|(?im:^\s*structure\s*:)|(?:final answer )?content for (?:the )?first line|final answer content|\blet(?:'s| us)\b|\bi (?:need|will|should)\b|\bthe (?:user|task|instruction|prompt)\b|"
-        r"\bg\d+\s*\[(?:proof|formula|scalar|truth|construction)|必查字段|"
+        r"格式检查|检查格式|提示词|\bplan\b|(?im:^\s*(?:structure|count\s+lines?|draft(?:\s+\d+)?)\s*:)|(?:final answer )?content for (?:the )?first line|final answer content|\bi (?:need|will|should)\b|\bthe (?:user|instruction|prompt)\b|"
+        r"\b(?:check\s+(?:the\s+)?line\s+count|line\s+count)\b|(?im:^\s*line\s+\d+\s*:)|"
+        r"\b(?:looks? compliant|looks? solid|is there any risk|so it is fine)\b|"
+        r"(?im:^\s*g\d+\s*[:：])|[（(]\s*g\d+\s*[)）]|\bg\d+\s*\[(?:proof|formula|scalar|truth|construction)|"
+        r"\b(?:integral_result|integral_value|pointwise_limit|exact_comparison|first_iteration|iteration_formula)\b|"
+        r"\b(?:final answer )?expects? (?:just|only)\b|\bi['’]ll\s+(?:write|provide|output|include)\b|"
+        r"\boptional\s+(?:brief\s+)?note\b|"
+        r"\[\s*(?:explanation|proof|reasoning|derivation|answer|content)(?:\s+text)?\s*\]|"
+        r"\[(?:note|method|check)\.[^\]\n]+\]|必查字段|"
         r"让我(?:验证|确认|组织)|我(?:需要|应该)|输出时)",
         re.IGNORECASE,
     )
@@ -52,49 +59,81 @@ class Finalizer:
         text = re.sub(r"<\|(?:assistant|user|system|endoftext)\|>", "", text, flags=re.IGNORECASE).strip()
         raw_has_meta = Finalizer.contains_meta(text)
 
-        # Reasoning models sometimes state the exact tagged submission inside
-        # backticks while checking their output format. Scan backward for the
-        # last valid tagged value and skip echoed placeholders.
-        bracket_labels = Finalizer._BRACKET_LABEL.findall(text)
-        bracket_results = [
-            Finalizer._result(label, "bracket_label", raw_has_meta=raw_has_meta, explicit=True)
-            for label in bracket_labels
-        ]
-        valid_bracket_results = [result for result in bracket_results if result.valid]
-        if valid_bracket_results:
-            return max(
-                enumerate(valid_bracket_results),
-                key=lambda item: (Finalizer._candidate_richness(item[1].answer), item[0]),
-            )[1]
-        labels = Finalizer._LABEL.findall(text)
-        if labels:
-            label_results = [
-                Finalizer._result(label, "label", raw_has_meta=raw_has_meta, explicit=True)
-                for label in labels
+        explicit_results = Finalizer.extract_explicit_results(text, raw_has_meta=raw_has_meta)
+        valid_explicit = [result for result in explicit_results if result.valid]
+        if valid_explicit:
+            labelled = [
+                result for result in valid_explicit
+                if result.method in {"label", "label_boxed", "bracket_label"}
             ]
-            valid_label_results = [result for result in label_results if result.valid]
-            if valid_label_results:
-                return max(
-                    enumerate(valid_label_results),
-                    key=lambda item: (Finalizer._candidate_richness(item[1].answer), item[0]),
-                )[1]
-            return label_results[-1]
-        boxed = Finalizer._last_boxed(text)
-        if boxed is not None:
-            if not boxed and r"\boxed{" in text:
-                # Preserve the malformed source so structural validation can
-                # report the actual truncation rather than only an empty value.
-                return Finalizer._result(text, "boxed_unclosed", raw_has_meta=raw_has_meta, explicit=True)
-            return Finalizer._result(boxed, "boxed", raw_has_meta=raw_has_meta, explicit=True)
-        final_lines = re.findall(r"(?im)^\s*final\s*[:：]\s*([^\n]+)", text)
-        if final_lines:
-            return Finalizer._result(final_lines[-1], "final_marker", raw_has_meta=raw_has_meta, explicit=True)
+            # The public prompt deliberately places FINAL before supporting
+            # checks. A later unlabelled box is commonly an intermediate value.
+            return labelled[-1] if labelled else valid_explicit[-1]
+        if explicit_results:
+            # Preserve the most relevant structural error for diagnostics only
+            # after every explicit fragment has been attempted.
+            explicit_failure = explicit_results[-1]
+        else:
+            explicit_failure = None
         if raw_has_meta:
             recovered = Finalizer._recover_tail_conclusion(text)
             if recovered:
                 return Finalizer._result(recovered, "tail_segment", raw_has_meta=True)
+            if explicit_failure is not None:
+                return explicit_failure
             return ExtractionResult("", "meta_without_explicit_answer", False, ("meta_without_explicit_answer",), True, False)
+        if explicit_failure is not None:
+            return explicit_failure
         return Finalizer._result(text, "whole_response")
+
+    @staticmethod
+    def extract_explicit_results(candidate: str, *, raw_has_meta: bool | None = None) -> tuple[ExtractionResult, ...]:
+        """Extract every labelled or boxed answer fragment in source order."""
+        text = str(candidate or "")
+        has_meta = Finalizer.contains_meta(text) if raw_has_meta is None else raw_has_meta
+        fragments: list[tuple[int, ExtractionResult]] = []
+        label_pattern = re.compile(
+            r"(?im)^\s*(?:\*{1,3}|_{1,3})?\s*(?:"
+            r"【\s*(?:最终答案|答案|结论)\s*】\s*[:：为=]?|"
+            r"(?:the\s+)?(?:final(?:\s+answer)?|answer|conclusion)\s*(?:is|equals|[:：=])|"
+            r"(?:最终\s*)?答案\s*[:：为=]|结论\s*[:：为=])"
+            r"\s*(?:\*{1,3}|_{1,3})?\s*([^\n]+)"
+        )
+        for match in label_pattern.finditer(text):
+            value = re.sub(r"\s*(?:\*{1,3}|_{1,3})\s*$", "", match.group(1)).strip()
+            boxed = Finalizer._last_boxed(value)
+            method = "label_boxed" if boxed is not None else "label"
+            value = boxed if boxed is not None else value
+            fragments.append((
+                match.start(),
+                Finalizer._result(value, method, raw_has_meta=has_meta, explicit=True),
+            ))
+        for match in Finalizer._BRACKET_LABEL.finditer(text):
+            value = match.group(1).strip().strip("` ")
+            boxed = Finalizer._last_boxed(value)
+            value = boxed if boxed is not None else value
+            fragments.append((
+                match.start(),
+                Finalizer._result(value, "bracket_label", raw_has_meta=has_meta, explicit=True),
+            ))
+        for position, boxed, complete in Finalizer._boxed_values(text):
+            value = boxed if complete else text[position:]
+            method = "boxed" if complete else "boxed_unclosed"
+            fragments.append((
+                position,
+                Finalizer._result(value, method, raw_has_meta=has_meta, explicit=True),
+            ))
+
+        # The same boxed answer can also be captured through its line label.
+        unique: list[ExtractionResult] = []
+        seen: set[tuple[str, str, bool]] = set()
+        for _, result in sorted(fragments, key=lambda item: item[0]):
+            key = (result.answer, result.method, result.valid)
+            if key in seen:
+                continue
+            seen.add(key)
+            unique.append(result)
+        return tuple(unique)
 
     @staticmethod
     def contains_meta(value: str) -> bool:
@@ -108,9 +147,19 @@ class Finalizer:
     @staticmethod
     def extract_tagged_submission(candidate: str) -> str:
         """Recover a final tagged answer and its proof body, excluding any preamble."""
+        blocks = Finalizer.extract_tagged_submissions(candidate)
+        return blocks[-1] if blocks else ""
+
+    @staticmethod
+    def extract_tagged_submissions(candidate: str) -> tuple[str, ...]:
+        """Return every structurally complete tagged block in source order."""
         text = str(candidate or "").strip()
         matches = list(re.finditer(
-            r"(?im)^\s*(?:【\s*(?:最终答案|答案|结论)\s*】|(?:最终\s*)?答案|结论)\s*[:：]?\s*[^\n]+",
+            r"(?im)^\s*(?:\*{1,3}|_{1,3})?\s*(?:"
+            r"【\s*(?:最终答案|答案|结论)\s*】\s*[:：为=]?|"
+            r"(?:the\s+)?(?:final(?:\s+answer)?|answer|conclusion)\s*(?:is|equals|[:：=])|"
+            r"(?:最终\s*)?答案\s*[:：为=]|结论\s*[:：为=])"
+            r"[ \t]*(?:\*{1,3}|_{1,3})?[ \t]*[^\n]*$",
             text,
         ))
         blocks = []
@@ -119,16 +168,45 @@ class Finalizer:
             remainder = text[match.end():].splitlines()
             for line in remainder:
                 if Finalizer._proof_meta_boundary(line) or re.match(
-                    r"^\s*(?:【\s*(?:最终答案|答案|结论|校验)\s*】|(?:最终\s*)?答案)\s*[:：]?",
+                    r"^\s*(?:【\s*(?:最终答案|答案|结论|校验)\s*】\s*[:：]?|"
+                    r"(?:(?:最终\s*)?答案|FINAL(?:\s+ANSWER)?|ANSWER|CONCLUSION)\s*[:：])",
                     line,
                     re.IGNORECASE,
                 ):
                     break
                 lines.append(line)
             cleaned = Finalizer._clean("\n".join(lines).strip())
-            if not Finalizer.contains_meta(cleaned) and not Finalizer.validate_structure(cleaned):
+            if Finalizer.contains_meta(cleaned):
+                continue
+            if Finalizer.validate_structure(cleaned):
+                cleaned = Finalizer._trim_incomplete_suffix(cleaned)
+            if cleaned and not Finalizer.validate_structure(cleaned):
                 blocks.append(cleaned)
-        return max(blocks, key=Finalizer._candidate_richness) if blocks else ""
+        return tuple(blocks)
+
+    @staticmethod
+    def _trim_incomplete_suffix(value: str) -> str:
+        """Drop only trailing lines whose delimiters or sentence are visibly cut off."""
+        recoverable = {
+            "unclosed_code_fence",
+            "unclosed_inline_math",
+            "unclosed_inline_latex",
+            "unclosed_display_latex",
+            "unclosed_latex_environment",
+            "unclosed_latex_brace",
+            "trailing_fragment",
+            "truncated_sentence",
+        }
+        lines = str(value or "").splitlines()
+        while len(lines) > 1:
+            candidate = "\n".join(lines).strip()
+            reasons = set(Finalizer.validate_structure(candidate))
+            if not reasons:
+                return candidate
+            if not reasons <= recoverable:
+                return ""
+            lines.pop()
+        return ""
 
     @staticmethod
     def _candidate_richness(value: str) -> tuple[int, int, int]:
@@ -140,14 +218,18 @@ class Finalizer:
     @staticmethod
     def _proof_meta_boundary(line: str) -> bool:
         return bool(re.match(
-            r"^\s*(?:[-*]\s*)?(?:thinking process|analysis|wait\b|this\b|okay\b|let(?:'s| us)\b|"
-            r"i\s+(?:need|will|should|can|must)\b|check\b|one\s+(?:detail|more|adjustment)\b|"
+            r"^\s*(?:[-*]\s*)?(?:thinking process|analysis|wait\b|okay\b|"
+            r"i\s+(?:need|will|should|can|must)\b|i['’]ll\s+(?:write|provide|output|include)\b|check\b|one\s+(?:detail|more|adjustment)\b|"
             r"final\s+(?:check|plan|polish)\b|double\s+check\b|revised\s+(?:body|draft|proof)\b|plan\s*:|"
-            r"refin(?:e|ing)\b|need\s+to\b|the\s+prompt\b|g\d+\s*\[|必查字段|"
+            r"count\s+lines?\s*:|check\s+(?:the\s+)?line\s+count\b|line\s+\d+\s*:|draft(?:\s+\d+)?\s*:|"
+            r"refin(?:e|ing)\b|need\s+to\b|the\s+prompt\b|(?:this\s+)?looks?\s+(?:compliant|solid)\b|"
+            r"is\s+there\s+any\s+risk\b|so\s+it\s+is\s+fine\b|g\d+\s*(?:\[|[:：])|必查字段|"
+            r"(?:[（(]\s*)?optional\s+(?:brief\s+)?note\b|"
+            r"\[\s*(?:explanation|proof|reasoning|derivation|answer|content)(?:\s+text)?\s*\]|"
             r"再检查|格式检查|思考过程|分析过程|提示词)",
             str(line or ""),
             re.IGNORECASE,
-        )) or bool(re.match(r"^\s*\*+\s*[A-Za-z]", str(line or "")))
+        ))
 
     @staticmethod
     def validate_structure(answer: str) -> tuple[str, ...]:
@@ -171,8 +253,24 @@ class Finalizer:
             reasons.append("placeholder")
         if re.search(r"完整答案|<\s*完整答案\s*>|\b(?:adjudicated|corrected|complete) (?:final )?answer\b", value, re.IGNORECASE):
             reasons.append("placeholder")
+        if re.search(
+            r"\[\s*(?:(?:explanation|proof|reasoning|derivation|answer|content)(?:\s+text)?|"
+            r"insert\s+[^\]]+|(?:解释|证明|推理|推导|答案|内容)(?:文本)?)\s*\]",
+            value,
+            re.IGNORECASE,
+        ):
+            reasons.append("placeholder")
         if re.search(r"并给出全部结论.*(?:必要依据|必要算式)|给出全部结论.*再写", value):
             reasons.append("placeholder")
+        if re.search(r"(?:证明|结论|依据|推导)\s*[:：]\s*(?:\.{2,}|…+)", value, re.IGNORECASE):
+            reasons.append("placeholder")
+        if re.search(
+            r"\b(?:or similar|or equivalent|or something(?: similar)?|maybe|perhaps|probably)\b|"
+            r"(?:或|及)(?:其他)?类似(?:答案|形式|结果)?|诸如此类",
+            value,
+            re.IGNORECASE,
+        ):
+            reasons.append("uncertain_fragment")
         if re.search(r"\b(?:this|that) (?:looks|seems) like\b|\bspecific test case\b|\blooks like noise\b", value, re.IGNORECASE):
             reasons.append("meta_text")
         if re.search(r"\bthis (?:phrasing|wording|instruction|prompt)\b", value, re.IGNORECASE):
@@ -189,20 +287,35 @@ class Finalizer:
             reasons.append("markup_fragment")
         if value.count("```") % 2:
             reasons.append("unclosed_code_fence")
-        if value.count("$") % 2:
+        if Finalizer._unescaped_count(value, "$") % 2:
             reasons.append("unclosed_inline_math")
         if value.count(r"\(") != value.count(r"\)"):
             reasons.append("unclosed_inline_latex")
         if value.count(r"\[") != value.count(r"\]"):
             reasons.append("unclosed_display_latex")
-        for environment in re.findall(r"\\begin\{([^}]+)\}", value):
-            if len(re.findall(rf"\\end\{{{re.escape(environment)}\}}", value)) < len(
+        environments = set(re.findall(r"\\(?:begin|end)\{([^}]+)\}", value))
+        for environment in environments:
+            if len(re.findall(rf"\\end\{{{re.escape(environment)}\}}", value)) != len(
                 re.findall(rf"\\begin\{{{re.escape(environment)}\}}", value)
             ):
                 reasons.append("unclosed_latex_environment")
                 break
         if not Finalizer._balanced_braces(value):
             reasons.append("unclosed_latex_brace")
+        if not Finalizer._balanced_group_delimiters(value):
+            reasons.append("unclosed_group_delimiter")
+        if re.search(r"[,，:：;；=+*/^\\]\s*$", value):
+            reasons.append("trailing_fragment")
+        last_line = next((line.strip() for line in reversed(value.splitlines()) if line.strip()), "")
+        if (
+            last_line
+            and not re.search(r"[。.!?！？；;\])}$]$", last_line)
+            and (
+                re.match(r"^(?:设|取|令)(?:\s|[A-Za-z\u4e00-\u9fff])", last_line)
+                or re.search(r"(?:^|[，,；;。])\s*(?:取|设|令|由|因为|若|则|其中|并|且)\s*$", last_line)
+            )
+        ):
+            reasons.append("truncated_sentence")
         return tuple(reasons)
 
     @staticmethod
@@ -219,25 +332,48 @@ class Finalizer:
 
     @staticmethod
     def _clean(answer: str) -> str:
-        value = re.sub(r"^```(?:latex|text|markdown)?\s*|\s*```$", "", answer.strip(), flags=re.IGNORECASE)
+        value = answer.strip()
+        fenced = re.fullmatch(
+            r"```(?:latex|text|markdown)?\s*\n?(.*?)\n?\s*```",
+            value,
+            flags=re.IGNORECASE | re.DOTALL,
+        )
+        if fenced:
+            value = fenced.group(1).strip()
         return normalize_latex(value).strip().strip('"“”')
 
     @staticmethod
     def _last_boxed(text: str) -> str | None:
-        marker = r"\boxed{"
-        position = text.rfind(marker)
-        if position < 0:
+        values = Finalizer._boxed_values(text)
+        if not values:
             return None
-        start = position + len(marker)
-        depth = 1
-        for index in range(start, len(text)):
-            if text[index] == "{":
-                depth += 1
-            elif text[index] == "}":
-                depth -= 1
-                if depth == 0:
-                    return text[start:index].strip()
-        return ""
+        _, value, complete = values[-1]
+        return value if complete else ""
+
+    @staticmethod
+    def _boxed_values(text: str) -> list[tuple[int, str, bool]]:
+        marker = r"\boxed{"
+        values: list[tuple[int, str, bool]] = []
+        offset = 0
+        while True:
+            position = text.find(marker, offset)
+            if position < 0:
+                break
+            start = position + len(marker)
+            depth = 1
+            for index in range(start, len(text)):
+                if text[index] == "{":
+                    depth += 1
+                elif text[index] == "}":
+                    depth -= 1
+                    if depth == 0:
+                        values.append((position, text[start:index].strip(), True))
+                        offset = index + 1
+                        break
+            else:
+                values.append((position, text[start:].strip(), False))
+                offset = len(text)
+        return values
 
     @staticmethod
     def _balanced_braces(value: str) -> bool:
@@ -257,10 +393,41 @@ class Finalizer:
         return depth == 0
 
     @staticmethod
+    def _balanced_group_delimiters(value: str) -> bool:
+        """Balance ordinary grouping while allowing half-open interval notation."""
+        depth = 0
+        escaped = False
+        for char in value:
+            if char == "\\" and not escaped:
+                escaped = True
+                continue
+            if not escaped and char in "([":
+                depth += 1
+            elif not escaped and char in ")]":
+                depth -= 1
+                if depth < 0:
+                    return False
+            escaped = False
+        return depth == 0
+
+    @staticmethod
+    def _unescaped_count(value: str, marker: str) -> int:
+        count = 0
+        backslashes = 0
+        for char in str(value or ""):
+            if char == "\\":
+                backslashes += 1
+                continue
+            if char == marker and backslashes % 2 == 0:
+                count += 1
+            backslashes = 0
+        return count
+
+    @staticmethod
     def _recover_tail_conclusion(candidate: str) -> str:
         meta = re.compile(
             r"(?:thinking|analysis|draft|check|constraint|instruction|prompt|format|plan|content for (?:the )?first line|final answer content|"
-            r"let(?:'s| us)|i (?:will|should|need)|思考|分析|草稿|检查|提示|格式)",
+            r"i (?:will|should|need)|i['’]ll\s+(?:write|provide|output|include)|expects? (?:just|only)|思考|分析|草稿|检查|提示|格式)",
             re.IGNORECASE,
         )
         for paragraph in reversed(re.split(r"\n\s*\n+", str(candidate or ""))):

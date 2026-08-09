@@ -3,6 +3,8 @@ __pycache__/
 sample_outputs/
 sample_outputs_*/
 outputs/
+validation_outputs/
+judge/
 *.tmp
 .DS_Store
 prompt.txt

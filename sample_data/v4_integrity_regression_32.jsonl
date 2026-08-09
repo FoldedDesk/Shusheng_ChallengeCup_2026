@@ -1,0 +1,32 @@
+{"idx":4000,"problem":"设集合A有n个元素，求满足B⊆A且|B|为偶数的子集个数，并说明n≥1时为何两类子集数相等。","answer":"2^{n-1}","subject":"离散数学","source":"official_distribution_112_hard"}
+{"idx":4001,"problem":"求长度为10的二进制串中恰有4个1且不含相邻两个1的串数，要求先选取1的位置再计算。","answer":"35","subject":"离散数学","source":"official_distribution_112_hard"}
+{"idx":4004,"problem":"求满足x_1+x_2+x_3+x_4=13且每个x_i为正整数、x_1≥3的解数，需通过变量平移化为隔板问题。","answer":"120","subject":"离散数学","source":"official_distribution_112_hard"}
+{"idx":4008,"problem":"求递推a_n=3a_{n-1}-2且a_1=1的通项，并利用不动点平移验证结果。","answer":"a_n=2-1^{n-1}=1","subject":"离散数学","source":"official_distribution_112_hard"}
+{"idx":4010,"problem":"在5个不同元素的排列中，求元素a在b之前且c不在首位的排列数，使用容斥或条件计数。","answer":"48","subject":"离散数学","source":"official_distribution_112_hard"}
+{"idx":4014,"problem":"求从集合{1,2,3,4}到{a,b,c}的满射个数，要求使用容斥原理而非直接枚举。","answer":"36","subject":"离散数学","source":"official_distribution_112_hard"}
+{"idx":4016,"problem":"在集合{1,2,…,10}中任选4个元素，求其中不含相邻整数的选法数，并用位置压缩法计算。","answer":"35","subject":"离散数学","source":"official_distribution_112_hard"}
+{"idx":4018,"problem":"设有向图的邻接矩阵A满足(A^2)_{ij}=3，解释该数的组合意义，并给出从i到j长度为2道路数。","answer":"从i到j长度为2的有向路数为3","subject":"离散数学","source":"official_distribution_112_hard"}
+{"idx":4019,"problem":"求n=7时满足置换σ^2=id且σ恰有3个不动点的置换数，先将其余元素配对。","answer":"105","subject":"离散数学","source":"official_distribution_112_hard"}
+{"idx":4021,"problem":"求所有满足a+b+c=15、a≤b≤c且a,b,c为正整数的三元组个数，需要按a分类讨论。","answer":"19","subject":"离散数学","source":"official_distribution_112_hard"}
+{"idx":4022,"problem":"设布尔代数中x+y=1且xy=0，化简表达式(x+z)(y+z)，并使用分配律说明。","answer":"z","subject":"离散数学","source":"official_distribution_112_hard"}
+{"idx":4032,"problem":"求f(x)=ln(1+x)在x=0处三阶泰勒多项式，并写出截断到x^3的结果。","answer":"x-x^2/2+x^3/3","subject":"数值分析","source":"official_distribution_112_hard"}
+{"idx":4033,"problem":"对求积公式Q(f)=a f(0)+b f(1)，要求其对一次多项式精确，求a,b并说明列方程来源。","answer":"a=b=1/2","subject":"数值分析","source":"official_distribution_112_hard"}
+{"idx":4039,"problem":"设f=1_[0,2]+2·1_(2,3]，求其在实数上的勒贝格积分，需按不交集合分解。","answer":"4","subject":"测度积分","source":"official_distribution_112_hard"}
+{"idx":4040,"problem":"若f≥0可测且∫f dμ=0，证明对任意ε>0集合{f≥ε}为零测集，并写出结论。","answer":"f=0 几乎处处","subject":"测度积分","source":"official_distribution_112_hard"}
+{"idx":4041,"problem":"设A,B可测且μ(A)=3,μ(B)=5,μ(A∩B)=2，求μ(A∪B)并使用容斥公式。","answer":"6","subject":"测度积分","source":"official_distribution_112_hard"}
+{"idx":4042,"problem":"令f_n=n·1_(0,1/n)，说明f_n逐点收敛到何函数，并计算其积分以说明不可直接交换极限。","answer":"逐点极限为0，积分恒为1","subject":"测度积分","source":"official_distribution_112_hard"}
+{"idx":4050,"problem":"对曲线γ(t)=(cos t,sin t,t)，求速度长度并判断该参数是否为弧长参数。","answer":"√2，不是弧长参数","subject":"微分几何","source":"official_distribution_112_hard"}
+{"idx":4055,"problem":"对参数曲面X(u,v)=(u,v,u+v)，计算第一基本形式系数E,F,G。","answer":"E=2，F=1，G=2","subject":"微分几何","source":"official_distribution_112_hard"}
+{"idx":4056,"problem":"设曲面为图形z=f(x,y)，且在一点∇f=0，写出高斯曲率用Hessian行列式表示的公式。","answer":"K=f_{xx}f_{yy}-f_{xy}^2","subject":"微分几何","source":"official_distribution_112_hard"}
+{"idx":4059,"problem":"从含3红2蓝球盒中不放回取2球，求恰取一红一蓝的概率，使用组合数计算。","answer":"3/5","subject":"概率论","source":"official_distribution_112_hard"}
+{"idx":4072,"problem":"设I为环R的极大理想，说明商环R/I具有什么代数结构，并给出理由。","answer":"R/I为域","subject":"抽象代数","source":"official_distribution_112_hard"}
+{"idx":4073,"problem":"简单对称随机游走S_n从0出发，求E[S_5]与Var(S_5)，利用独立增量性质。","answer":"E[S_5]=0，Var(S_5)=5","subject":"随机过程","source":"official_distribution_112_hard"}
+{"idx":4082,"problem":"求1/(z(z-1))在z=0处的留数，先作部分分式分解并识别极点阶数。","answer":"-1","subject":"复分析","source":"official_distribution_112_hard"}
+{"idx":4086,"problem":"求∮_{|z|=1} z^2/(z-1/2) dz，使用柯西积分公式而非直接参数化。","answer":"πi/2","subject":"复分析","source":"official_distribution_112_hard"}
+{"idx":4089,"problem":"判断方程y'=y^2,y(0)=1的最大右侧存在区间，并通过分离变量求解。","answer":"y=1/(1-x)，区间x<1","subject":"常微分方程","source":"official_distribution_112_hard"}
+{"idx":4096,"problem":"在C[0,1]配备一致范数，证明评价泛函L(f)=f(1/2)有界并求其算子范数。","answer":"||L||=1","subject":"泛函分析","source":"official_distribution_112_hard"}
+{"idx":4098,"problem":"证明Hilbert空间中闭凸集上的最近点若存在则唯一，指出使用的严格凸性等式。","answer":"最近点唯一","subject":"泛函分析","source":"official_distribution_112_hard"}
+{"idx":4103,"problem":"对热方程u_t=u_{xx}，验证u(x,t)=e^{-t}sin x是否为解，需分别求时间和空间导数。","answer":"是","subject":"偏微分方程","source":"official_distribution_112_hard"}
+{"idx":4104,"problem":"求拉普拉斯方程u_{xx}+u_{yy}=0中函数u=x^2-y^2是否调和，并进行二阶求导。","answer":"是","subject":"偏微分方程","source":"official_distribution_112_hard"}
+{"idx":4106,"problem":"设M为紧致黎曼流形，说明连续函数为何必取得最大值和最小值，并给出所用紧致性结论。","answer":"由紧致性和连续像紧致，必取到最大最小值","subject":"非基础及进阶课程","source":"official_distribution_112_hard"}
+{"idx":4107,"problem":"利用基本群的同伦不变性，说明圆S^1与单点空间不可能同胚，并比较其基本群。","answer":"π_1(S^1)=Z而单点基本群平凡","subject":"非基础及进阶课程","source":"official_distribution_112_hard"}

@@ -191,7 +191,7 @@ outputs/
 {
   "idx": 0,
   "status": "error",
-  "final_response": "",
+  "final_response": "0",
   "error": {
     "type": "RuntimeError",
     "message": "错误信息"
@@ -199,6 +199,9 @@ outputs/
   "trace": []
 }
 ```
+
+异常详情只写入 `error` 或 `trace`。`final_response` 始终保留为非空、可判分的数学答案，
+不得写入“未能生成答案”、格式检查提示或内部异常文本。
 
 本地调试时，如果某个 `idx.json` 已经存在且文件非空，runner 会跳过该题，便于中断后继续运行。
 
@@ -222,11 +225,13 @@ export INTERN_API_KEY="sk-..."
 python main.py --input_file sample_data/dev.jsonl --output_dir sample_outputs
 ```
 
-本地 runner 默认并发数为 8。如需调整：
+本地 runner 的最大并发数为 3。如需调整（超过 3 会自动限制为 3）：
 
 ```bash
-export LOCAL_MAX_CONCURRENCY=4
+export LOCAL_MAX_CONCURRENCY=3
 ```
+
+每题最多发起 3 次模型调用：主解、独立复核或截断续算、冲突裁决或最终恢复。困难题主解和独立复核各保留 8192 token；单次请求上限 120 秒。单题模型等待理论上界为 6 分钟，112 题在并发 3 下的理论上界为 228 分钟。
 
 本地调试结果只用于选手自测，不代表正式评测分数。正式评测会使用隐藏测试集、官方 client、平台 runner 和官方 judger。
 

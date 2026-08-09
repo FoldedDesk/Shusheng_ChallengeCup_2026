@@ -1,0 +1,2 @@
+{"idx":4072,"problem":"设R为含幺交换环，I为R的极大理想。证明商环R/I是域。","answer":"R/I是域","subject":"抽象代数","source":"official_distribution_112_hard"}
+{"idx":4089,"problem":"判断方程 y'=y^2,y(0)=1 的最大右侧存在区间，并通过分离变量求解。","answer":"y=1/(1-x)，最大右侧存在区间[0,1)","subject":"常微分方程","source":"official_distribution_112_hard"}

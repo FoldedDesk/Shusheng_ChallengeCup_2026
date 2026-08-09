@@ -202,7 +202,7 @@ class SubmissionContractTest(unittest.TestCase):
 
         self.assertEqual(result["final_response"], "B")
         self.assertEqual(len(client.calls), 3)
-        self.assertEqual(self._step(result, "review_admission")["content"]["mode"], "verify")
+        self.assertEqual(self._step(result, "review_admission")["content"]["mode"], "rescue")
 
     def test_age_question_renders_a_bare_number_as_a_readable_sentence(self):
         result = ReasoningAgent(RecordingClient([r"\boxed{14}", r"\boxed{14}"])).solve(

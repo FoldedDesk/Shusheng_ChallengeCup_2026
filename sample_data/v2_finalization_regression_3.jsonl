@@ -1,0 +1,3 @@
+{"idx":4045,"problem":"给定f(x)=x^{-1/2}定义在(0,1]上，判断其是否属于L^1[0,1]并计算积分。","answer":"属于L^1，积分为2","subject":"测度积分","source":"official_distribution_112_hard"}
+{"idx":4050,"problem":"对曲线γ(t)=(cos t,sin t,t)，求速度长度并判断该参数是否为弧长参数。","answer":"√2，不是弧长参数","subject":"微分几何","source":"official_distribution_112_hard"}
+{"idx":4101,"problem":"在线性回归中，若残差与每个设计变量正交，写出残差平方和对截距的一阶正规方程。","answer":"Σe_i=0","subject":"线性回归","source":"official_distribution_112_hard"}

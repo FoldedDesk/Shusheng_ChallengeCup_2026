@@ -1,9 +1,4 @@
-"""Shared execution limits for the local evaluation runner.
-
-A hard item has six remote-model stages: decomposition, three solver
-candidates, one critic, and one verifier. Only solver candidates have a
-single recovery retry, so its real worst case is nine request windows.
-"""
+"""Shared execution limits for the bounded score-first evaluation runner."""
 
 from __future__ import annotations
 
@@ -11,11 +6,11 @@ from math import ceil
 
 
 MAX_CONCURRENCY = 3
-REQUEST_TIMEOUT_SECONDS = 60
-# Decomposer, critic and verifier make one request. Each of the three solver
-# candidates may make one recovery request after malformed model output.
-HARD_REQUEST_WINDOWS = 9
-HARD_MODEL_STAGES = 6
+REQUEST_TIMEOUT_SECONDS = 120
+# Two independent deep solves may each need one bounded answer completion.
+# Provider retries are owned by the client.
+HARD_REQUEST_WINDOWS = 4
+HARD_MODEL_STAGES = 4
 PER_ITEM_TIMEOUT_SECONDS = 20 * 60
 OVERALL_TIMEOUT_SECONDS = 360 * 60
 

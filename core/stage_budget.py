@@ -14,19 +14,37 @@ class StageBudget:
     repair_min_remaining_seconds: int
     allow_review: bool
     allow_repair: bool
+    require_independent_review: bool = False
+    emergency_tokens: int = 2048
 
     def trace_content(self) -> dict:
         return asdict(self)
 
 
-def plan_stage_budget(spec, has_whole_tool_answer: bool) -> StageBudget:
-    """Reserve enough time for repair instead of spending it on every stage."""
+def plan_stage_budget(
+    spec,
+    has_whole_tool_answer: bool,
+    *,
+    deep_reasoning: bool = False,
+) -> StageBudget:
+    """Plan at most two full solves and one bounded repair.
+
+    Review admission is a correctness decision.  The caller may skip optional
+    arbitration near the wall-clock budget, but it must never skip an
+    emergency answer recovery merely because the first solve was slow.
+    """
     if has_whole_tool_answer:
         return StageBudget(0, 0, 0, 0, 0, False, False)
-    if spec.profile.difficulty == "hard":
-        return StageBudget(5120, 3072, 1536, 28, 18, True, True)
-    if spec.profile.problem_type in {"proof", "derivation", "explanation"}:
-        return StageBudget(5120, 3072, 1536, 28, 18, True, True)
-    if spec.verification_required:
-        return StageBudget(4096, 3072, 1280, 25, 18, True, True)
-    return StageBudget(4096, 3072, 1024, 25, 12, True, True)
+
+    high_risk = (
+        spec.profile.difficulty == "hard"
+        or deep_reasoning
+        or spec.profile.problem_type in {"proof", "derivation", "explanation"}
+        or spec.verification_required
+        or spec.risk_score >= 2
+    )
+    if high_risk:
+        # Recovery only has to turn an existing derivation into a concise,
+        # gradable submission. Output wrappers never determine reasoning cost.
+        return StageBudget(8192, 8192, 4096, 0, 45, True, True, True, 2048)
+    return StageBudget(4096, 4096, 2048, 0, 30, True, True, False, 1024)
