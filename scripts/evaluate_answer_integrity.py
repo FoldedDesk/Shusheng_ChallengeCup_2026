@@ -18,9 +18,11 @@ if str(ROOT) not in sys.path:
 
 from tools.latex_parser import normalize_latex
 from classifier.problem_spec import build_problem_spec
+from core.submission_agent import SubmissionAgent
 from reasoning.candidate_selector import assess_candidate
 from reasoning.finalizer import Finalizer
 from reasoning.math_equivalence import equivalent_answers
+from tools.sympy_tool import SympyTool
 
 
 def _normalized(value: str) -> str:
@@ -47,6 +49,12 @@ def evaluate(input_file: Path, output_dir: Path) -> dict:
     tail_segment_selected = 0
     verification_admitted = conflicts = arbitration_used = corrected_selected = 0
     missing_required_goals = offline_uncertain = 0
+    semantic_miss_indices: list[str] = []
+    missing_required_goal_indices: list[str] = []
+    certified_tool_route_indices: list[str] = []
+    certified_tool_answer_hits = 0
+    projected_semantic_miss_indices: list[str] = []
+    sympy = SympyTool()
     sources: dict[str, int] = {}
     for idx, item in expected.items():
         path = output_dir / f"{idx}.json"
@@ -55,13 +63,17 @@ def evaluate(input_file: Path, output_dir: Path) -> dict:
         processed += 1
         record = json.loads(path.read_text(encoding="utf-8"))
         final_response = record.get("final_response", "")
+        spec = build_problem_spec(item["problem"])
         offline_assessment = assess_candidate(
             final_response,
             "offline",
-            build_problem_spec(item["problem"]),
+            spec,
             (),
         )
-        missing_required_goals += int("missing_required_goal" in offline_assessment.rejected_reasons)
+        missing_goal = "missing_required_goal" in offline_assessment.rejected_reasons
+        missing_required_goals += int(missing_goal)
+        if missing_goal:
+            missing_required_goal_indices.append(idx)
         offline_uncertain += int(offline_assessment.coverage_uncertain)
         validation = _trace_validation(record)
         candidates = list(validation.values()) if isinstance(validation, dict) else []
@@ -96,7 +108,19 @@ def evaluate(input_file: Path, output_dir: Path) -> dict:
         actual = _normalized(final_response)
         target = _normalized(item["answer"])
         hits += int(bool(actual and target and (actual in target or target in actual)))
-        semantic_hits += int(equivalent_answers(final_response, item["answer"]))
+        semantic_hit = equivalent_answers(final_response, item["answer"])
+        semantic_hits += int(semantic_hit)
+        if not semantic_hit:
+            semantic_miss_indices.append(idx)
+        evidence = SubmissionAgent._tool_evidence(sympy.results_for(item["problem"]), spec)
+        tool_answer = SubmissionAgent._whole_tool_answer(evidence)
+        if tool_answer:
+            certified_tool_route_indices.append(idx)
+            tool_hit = equivalent_answers(tool_answer, item["answer"])
+            certified_tool_answer_hits += int(tool_hit)
+            semantic_hit = semantic_hit or tool_hit
+        if not semantic_hit:
+            projected_semantic_miss_indices.append(idx)
         corrected_selected += int(selected.get("verification_verdict") == "corrected")
     return {
         "processed": processed,
@@ -123,6 +147,13 @@ def evaluate(input_file: Path, output_dir: Path) -> dict:
         "selection_sources": sources,
         "normalized_standard_answer_hits": hits,
         "semantic_standard_answer_hits": semantic_hits,
+        "semantic_miss_indices": semantic_miss_indices,
+        "missing_required_goal_indices": missing_required_goal_indices,
+        "certified_tool_route_count": len(certified_tool_route_indices),
+        "certified_tool_answer_hits": certified_tool_answer_hits,
+        "certified_tool_route_indices": certified_tool_route_indices,
+        "projected_semantic_hits_with_current_tools": processed - len(projected_semantic_miss_indices),
+        "projected_semantic_miss_indices": projected_semantic_miss_indices,
     }
 
 

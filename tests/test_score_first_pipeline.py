@@ -179,9 +179,9 @@ class ScoreFirstPipelineTest(unittest.TestCase):
         self.assertEqual(result["final_response"], r"\boxed{45}")
         self.assertTrue(client.calls[0]["thinking_mode"])
         self.assertFalse(client.calls[1]["thinking_mode"])
-        self.assertEqual(client.calls[1]["max_tokens"], 2048)
+        self.assertEqual(client.calls[1]["max_tokens"], 1024)
         self.assertTrue(client.calls[2]["thinking_mode"])
-        self.assertEqual(client.calls[2]["max_tokens"], 8192)
+        self.assertEqual(client.calls[2]["max_tokens"], 6144)
         self.assertEqual(len(client.calls[2]["messages"]), 2)
         self.assertNotIn("FINAL: \\boxed{9}", client.calls[2]["messages"][1]["content"])
         self.assertEqual(
@@ -217,7 +217,7 @@ class ScoreFirstPipelineTest(unittest.TestCase):
         self.assertEqual(result["final_response"], r"\boxed{45}")
         self.assertTrue(client.calls[1]["thinking_mode"])
         self.assertFalse(client.calls[2]["thinking_mode"])
-        self.assertEqual(client.calls[2]["max_tokens"], 2048)
+        self.assertEqual(client.calls[2]["max_tokens"], 1024)
         self.assertEqual(
             [message["role"] for message in client.calls[2]["messages"]],
             ["system", "user", "assistant", "user"],
@@ -229,7 +229,41 @@ class ScoreFirstPipelineTest(unittest.TestCase):
         )
         self.assertEqual(self._step(result, "selection")["content"]["source"], "continue_verify")
 
-    def test_recovered_answer_and_truncated_recheck_use_four_stage_closed_loop(self):
+    def test_truncated_verifier_continuation_cannot_override_complete_primary(self):
+        client = StructuredRecordingClient([
+            ModelCallResult(
+                r"FINAL: \boxed{120}" "\n令 $y_1=x_1-2$，则四个正整数之和为11，故有 $\binom{10}{3}=120$。"
+            ),
+            ModelCallResult(
+                "Independent recount reaches 120, but the final check is $",
+                finish_reason="length",
+            ),
+            ModelCallResult(
+                r"FINAL: \boxed{35}" "\nYet the direct count gives $\binom{10}{3}=120$, and now $",
+                finish_reason="length",
+            ),
+        ])
+
+        result = ReasoningAgent(client).solve(
+            "求满足x_1+x_2+x_3+x_4=13且每个x_i为正整数、"
+            "x_1>=3的解数，需通过变量平移化为隔板问题。",
+            {},
+        )
+
+        self.assertEqual(result["final_response"], "120")
+        self.assertEqual(len(client.calls), 3)
+        self.assertEqual(
+            self._step(result, "equivalence")["content"]["repair_mode"],
+            "continue_verify",
+        )
+        validation = self._step(result, "validation")["content"]
+        self.assertIn(
+            "provider_truncated_ambiguous_box",
+            validation["continue_verify"]["rejected_reasons"],
+        )
+        self.assertEqual(self._step(result, "selection")["content"]["source"], "solve")
+
+    def test_truncated_recovered_answer_completes_the_independent_verifier(self):
         client = StructuredRecordingClient([
             ModelCallResult("Primary deep analysis: unfinished", finish_reason="length"),
             ModelCallResult(r"FINAL: \boxed{9}"),
@@ -252,15 +286,8 @@ class ScoreFirstPipelineTest(unittest.TestCase):
         )
         self.assertEqual(
             [call["max_tokens"] for call in client.calls],
-            [8192, 2048, 8192, 2048],
+            [8192, 1024, 6144, 1024],
         )
-        fourth_messages = client.calls[3]["messages"]
-        self.assertEqual(
-            [message["role"] for message in fourth_messages],
-            ["system", "user", "assistant", "user"],
-        )
-        self.assertIn("Independent verifier analysis", fourth_messages[2]["content"])
-        self.assertNotIn("Primary deep analysis", fourth_messages[2]["content"])
         equivalence = self._step(result, "equivalence")["content"]
         self.assertTrue(equivalence["final_verification_completion_used"])
         self.assertEqual(equivalence["repair_mode"], "verify_recovered")
@@ -270,20 +297,47 @@ class ScoreFirstPipelineTest(unittest.TestCase):
 
     def test_conflicting_complete_answers_trigger_third_round_arbitration(self):
         client = StructuredRecordingClient([
-            ModelCallResult(r"FINAL: \boxed{x=1}"),
-            ModelCallResult(r"FINAL: \boxed{x=2}"),
-            ModelCallResult(r"FINAL: \boxed{x=2}"),
+            ModelCallResult(r"FINAL: \boxed{取x=1，代入检验得1^2=1。}"),
+            ModelCallResult(r"FINAL: \boxed{取x=2，代入检验得2^2=4。}"),
+            ModelCallResult(r"FINAL: \boxed{取x=2，代入检验得2^2=4。}"),
         ])
 
-        result = ReasoningAgent(client).solve("给出一个满足条件的构造。", {})
+        result = ReasoningAgent(client).solve("构造一个正整数x，使x^2=4。", {})
 
-        self.assertEqual(result["final_response"], "x=2")
+        self.assertIn("x=2", result["final_response"])
         self.assertEqual(len(client.calls), 3)
         equivalence = self._step(result, "equivalence")["content"]
         self.assertTrue(equivalence["conflict"])
         self.assertTrue(equivalence["arbitration_used"])
         self.assertEqual(equivalence["repair_mode"], "arbitration")
-        self.assertEqual(self._step(result, "selection")["content"]["source"], "arbitration")
+        self.assertEqual(self._step(result, "selection")["content"]["source"], "verify")
+        self.assertEqual(equivalence["arbitration_disposition"], "implicit_supports_b")
+
+    def test_incomplete_verifier_box_uses_support_body_without_arbitration(self):
+        client = StructuredRecordingClient([
+            ModelCallResult(
+                r"FINAL: \boxed{x_{n+1}=\frac{x_n^2+3}{2x_n},\ x_1=\frac74}"
+            ),
+            ModelCallResult(
+                r"FINAL: \boxed{x_1=\frac74}" "\n"
+                r"牛顿迭代公式为 $x_{n+1}=\frac{x_n^2+3}{2x_n}$，"
+                r"代入 $x_0=2$ 得 $x_1=\frac74$。"
+            ),
+            ModelCallResult(r"FINAL: \boxed{SHOULD_NOT_BE_USED}"),
+        ])
+
+        result = ReasoningAgent(client).solve(
+            "用牛顿法求方程x^2-3=0的迭代公式，并由x_0=2计算x_1。",
+            {},
+        )
+
+        self.assertEqual(len(client.calls), 2)
+        self.assertIn("x_{n+1}", result["final_response"])
+        self.assertIn("x_1", result["final_response"])
+        equivalence = self._step(result, "equivalence")["content"]
+        self.assertFalse(equivalence["conflict"])
+        self.assertFalse(equivalence["arbitration_used"])
+        self.assertEqual(self._step(result, "selection")["content"]["source"], "solve")
 
     def test_all_empty_calls_return_scoreable_fallback_not_failure_sentinel(self):
         client = StructuredRecordingClient([ModelCallResult("") for _ in range(3)])
@@ -350,6 +404,8 @@ class ScoreFirstPipelineTest(unittest.TestCase):
 
         self.assertTrue(SubmissionAgent._use_deep_reasoning(spec, problem))
         self.assertEqual(budget.solve_tokens, 8192)
+        self.assertEqual(budget.review_tokens, 6144)
+        self.assertEqual(budget.max_calls, 4)
         self.assertTrue(budget.require_independent_review)
 
     def test_multipart_and_nonlinear_solution_counts_use_deep_reasoning(self):
@@ -456,16 +512,16 @@ class ScoreFirstPipelineTest(unittest.TestCase):
         self.assertTrue(SubmissionAgent._use_deep_reasoning(galois, galois_problem))
         self.assertFalse(SubmissionAgent._use_deep_verification(galois, True))
 
-    def test_missing_explicit_method_is_degraded_but_still_selectable(self):
+    def test_missing_explicit_method_keeps_result_complete_but_loses_support_score(self):
         spec = build_problem_spec(
             "求长度为10的二进制串中恰有4个1且不含相邻两个1的串数，要求先选取1的位置再计算。"
         )
 
         candidate = assess_candidate("35", "solve", spec, ())
 
-        self.assertFalse(candidate.accepted)
-        self.assertTrue(candidate.degraded)
-        self.assertFalse(candidate.complete_goals)
+        self.assertTrue(candidate.accepted)
+        self.assertFalse(all(candidate.support_coverage))
+        self.assertTrue(candidate.complete_goals)
         self.assertTrue(candidate.formatting_valid)
         self.assertIs(choose_candidate([candidate]), candidate)
 

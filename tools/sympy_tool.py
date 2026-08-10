@@ -1,10 +1,15 @@
 from __future__ import annotations
 
 import re
+from collections import Counter
 from fractions import Fraction
+from itertools import combinations, permutations, product
 from math import gcd
 import math
 from typing import Any, Optional
+
+from tools.tool_contract import ToolResult, result_from_legacy_hint
+from tools.exact_olympiad_tool import ExactOlympiadTool
 
 
 class SympyTool:
@@ -73,8 +78,18 @@ class SympyTool:
             str(problem or ""),
             flags=re.IGNORECASE | re.DOTALL,
         ).strip()
-        hints: list[str] = []
+        hints: list[str] = ExactOlympiadTool().hints_for(problem)
         for local_hint in (
+            self._complete_multipartite_tree_hint(problem),
+            self._quadratic_congruence_count_hint(problem),
+            self._digit_permutation_divisibility_hint(problem),
+            self._adjacent_surjection_count_hint(problem),
+            self._multiset_no_adjacent_hint(problem),
+            self._binary_run_avoidance_hint(problem),
+            self._bracelet_no_adjacent_hint(problem),
+            self._strip_lattice_path_hint(problem),
+            self._nested_modular_sum_hint(problem),
+            self._quadratic_form_maximum_hint(problem),
             self._propositional_implication_chain_hint(problem),
             self._minimum_degree_path_hint(problem),
             self._nonadjacent_binary_string_count_hint(problem),
@@ -154,7 +169,7 @@ class SympyTool:
                         self._latex_to_sympy(definite.group(1)),
                         self._latex_to_sympy(definite.group(2)),
                     )
-                    if result is not None:
+                    if result is not None and self._is_evaluated_result(result):
                         hints.append(f"SymPy 定积分: {result}")
                     break
                 match = re.search(r"\\int\s*(.+?)(?:\\,|\s)*d([A-Za-z])\b", part)
@@ -205,6 +220,434 @@ class SympyTool:
                         hints.append(f"SymPy 矩阵: {result}")
                     break
         return hints
+
+    def results_for(self, problem: str) -> list[ToolResult]:
+        """Return structured deterministic evidence while preserving ``hints_for``.
+
+        Callers should prefer this method when deciding whether a tool may
+        answer a complete goal.  Unknown legacy labels remain unverified.
+        """
+
+        results: list[ToolResult] = []
+        for hint in self.hints_for(problem):
+            parsed = result_from_legacy_hint(
+                hint,
+                trusted_source=True,
+                extra_checks=self._certificate_checks_for_hint(hint),
+            )
+            if parsed is not None:
+                results.append(parsed)
+        return results
+
+    @staticmethod
+    def _certificate_checks_for_hint(hint: str) -> tuple[str, ...]:
+        label = str(hint or "").partition(": ")[0]
+        if label == "本地圆周拉普拉斯":
+            return (
+                "f=x^2+y^2",
+                "circle_constraint",
+                "ambient_or_unqualified_laplacian",
+                "exact_quadratic_expression",
+                "explicit_circle_constraint",
+                "ambient_operator_selected",
+                "second_derivatives_sum_to_4",
+            )
+        if label == "本地圆周Laplace-Beltrami":
+            return (
+                "f=x^2+y^2",
+                "circle_constraint",
+                "explicit_intrinsic_operator",
+                "exact_quadratic_expression",
+                "explicit_circle_constraint",
+                "intrinsic_operator_selected",
+                "restriction_is_constant",
+            )
+        if label == "本地圆周拉普拉斯歧义核验":
+            return (
+                "f=x^2+y^2",
+                "circle_constraint",
+                "operator_not_disambiguated",
+                "operator_ambiguity",
+                "exact_quadratic_expression",
+                "explicit_circle_constraint",
+                "operator_ambiguity_detected",
+                "both_operator_cases_evaluated",
+            )
+        return ()
+
+    @staticmethod
+    def _is_evaluated_result(result: str) -> bool:
+        """Reject inert SymPy objects that merely restate the requested work."""
+        return not bool(re.search(
+            r"\b(?:Integral|Derivative|Limit|Sum|Product|RootSum|ConditionSet)\s*\(",
+            str(result or ""),
+        ))
+
+    @staticmethod
+    def _complete_multipartite_tree_hint(problem: str) -> Optional[str]:
+        """Count spanning trees of a fully specified complete multipartite graph."""
+        text = str(problem or "")
+        match = re.search(
+            r"complete\s+(?:bi|tri|multi)?partite\s+graph\s+\$?K_?\{?"
+            r"([0-9]+(?:\s*,\s*[0-9]+)+)\}?\$?",
+            text,
+            re.IGNORECASE,
+        )
+        if not match or not re.search(r"spanning\s+trees?", text, re.IGNORECASE):
+            return None
+        parts = tuple(int(item) for item in re.findall(r"\d+", match.group(1)))
+        if len(parts) < 2 or any(item <= 0 for item in parts):
+            return None
+        deletion = bool(re.search(r"\b(?:delet|remov)\w*\b", text, re.IGNORECASE))
+        if deletion:
+            if len(parts) != 2 or not re.search(
+                r"(?:one|a\s+single)\s+edge", text, re.IGNORECASE
+            ):
+                return None
+            left, right = parts
+            result = (
+                left ** (right - 2)
+                * right ** (left - 2)
+                * (left - 1)
+                * (right - 1)
+            )
+        else:
+            total = sum(parts)
+            result = total ** (len(parts) - 2)
+            for part in parts:
+                result *= (total - part) ** (part - 1)
+        return f"本地完全多部图生成树: {result}"
+
+    @staticmethod
+    def _factor_prime_powers(value: int) -> list[tuple[int, int]]:
+        factors = []
+        remaining = value
+        divisor = 2
+        while divisor * divisor <= remaining:
+            exponent = 0
+            while remaining % divisor == 0:
+                remaining //= divisor
+                exponent += 1
+            if exponent:
+                factors.append((divisor, exponent))
+            divisor += 1 if divisor == 2 else 2
+        if remaining > 1:
+            factors.append((remaining, 1))
+        return factors
+
+    @staticmethod
+    def _parse_positive_product(expression: str) -> Optional[int]:
+        value = str(expression or "").replace(r"\cdot", "*").replace(" ", "")
+        if not value:
+            return None
+        result = 1
+        for piece in value.split("*"):
+            match = re.fullmatch(r"(\d+)(?:\^\{?(\d+)\}?)?", piece)
+            if not match:
+                return None
+            base = int(match.group(1))
+            exponent = int(match.group(2) or 1)
+            if base <= 0 or exponent < 0 or exponent > 10000:
+                return None
+            result *= base**exponent
+        return result
+
+    @staticmethod
+    def _unit_square_roots(modulus: int) -> list[int]:
+        roots = [0]
+        current_modulus = 1
+        for prime, exponent in SympyTool._factor_prime_powers(modulus):
+            prime_power = prime**exponent
+            if prime == 2:
+                if exponent == 1:
+                    local = [1]
+                elif exponent == 2:
+                    local = [1, 3]
+                else:
+                    half = prime_power // 2
+                    local = [1, prime_power - 1, half - 1, half + 1]
+            else:
+                local = [1, prime_power - 1]
+            combined = []
+            inverse = pow(current_modulus, -1, prime_power)
+            for left, right in product(roots, local):
+                offset = ((right - left) * inverse) % prime_power
+                combined.append((left + current_modulus * offset) % (current_modulus * prime_power))
+            roots = combined
+            current_modulus *= prime_power
+        return sorted(set(roots))
+
+    @staticmethod
+    def _quadratic_congruence_count_hint(problem: str) -> Optional[str]:
+        """Count x^2=1 residue classes, optionally in a stated positive range."""
+        compact = re.sub(r"\s+", "", str(problem or ""))
+        match = re.search(r"x\^2\\equiv1\\pmod\{([^{}]+)\}", compact)
+        if not match or not re.search(r"howmany|numberof|多少", compact, re.IGNORECASE):
+            return None
+        modulus = SympyTool._parse_positive_product(match.group(1))
+        if modulus is None or modulus <= 1 or modulus > 10**12:
+            return None
+        roots = SympyTool._unit_square_roots(modulus)
+        bound_match = re.search(r"1\\le(?:q)?x\\le(?:q)?(10\^\{\d+\}|\d+)", compact)
+        if bound_match:
+            bound = SympyTool._parse_positive_product(bound_match.group(1))
+            if bound is None:
+                return None
+            count = sum(
+                0 if residue > bound else (bound - residue) // modulus + 1
+                for residue in roots
+                if residue > 0
+            )
+            # The zero residue is not a root for modulus > 1, but retaining
+            # this branch keeps the range count correct for future handlers.
+            if 0 in roots:
+                count += bound // modulus
+        else:
+            count = len(roots)
+        return f"本地二次同余计数: {count}"
+
+    @staticmethod
+    def _digit_permutation_divisibility_hint(problem: str) -> Optional[str]:
+        text = str(problem or "")
+        digits = re.search(
+            r"digits?\s*\$?0\s*,\s*1\s*,\s*(?:\\ldots|\\dots|\.\.\.)\s*,\s*(\d+)\$?",
+            text,
+            re.IGNORECASE,
+        )
+        modulus = re.search(r"divisible\s+by\s+\$?(\d+)\$?", text, re.IGNORECASE)
+        if not digits or not modulus or not re.search(r"exactly\s+once", text, re.IGNORECASE):
+            return None
+        last = int(digits.group(1))
+        divisor = int(modulus.group(1))
+        if not 1 <= last <= 8 or divisor <= 0:
+            return None
+        count = 0
+        for arrangement in permutations(range(last + 1)):
+            if arrangement[0] == 0:
+                continue
+            residue = 0
+            for digit in arrangement:
+                residue = (10 * residue + digit) % divisor
+            count += residue == 0
+        return f"本地数字排列整除计数: {count}"
+
+    @staticmethod
+    def _adjacent_surjection_count_hint(problem: str) -> Optional[str]:
+        text = str(problem or "")
+        domain = re.search(r"\\\{1,2,\\(?:ldots|dots),(\d+)\\\}", text)
+        codomain = re.search(r"\\to\s*\\\{([^{}]+)\\\}", text)
+        if (
+            not domain or not codomain
+            or not re.search(r"surjective", text, re.IGNORECASE)
+            or not re.search(r"f\s*\(i\)\s*\\ne\s*f\s*\(i\s*\+\s*1\)", text)
+        ):
+            return None
+        values = [part.strip() for part in codomain.group(1).split(",")]
+        if not values or any(not value.isdigit() for value in values):
+            return None
+        numeric_values = [int(value) for value in values]
+        if numeric_values != list(range(1, len(numeric_values) + 1)):
+            return None
+        length, colors = int(domain.group(1)), len(numeric_values)
+        if not 1 <= length <= 10**5 or not 1 <= colors <= 30:
+            return None
+        count = 0
+        for omitted in range(colors + 1):
+            available = colors - omitted
+            proper = available * (available - 1) ** (length - 1) if available else 0
+            count += (-1) ** omitted * math.comb(colors, omitted) * proper
+        return f"本地相邻约束满射计数: {count}"
+
+    @staticmethod
+    def _multiset_no_adjacent_hint(problem: str) -> Optional[str]:
+        text = str(problem or "")
+        word = re.search(r"\\mathrm\{([A-Za-z]+)\}", text)
+        letter = re.search(
+            r"no\s+two\s+copies\s+of\s+the\s+letter\s+\$?([A-Za-z])\$?\s+adjacent",
+            text,
+            re.IGNORECASE,
+        )
+        if not word or not letter or not re.search(r"arrangements?", text, re.IGNORECASE):
+            return None
+        symbols = word.group(1).upper()
+        separated = letter.group(1).upper()
+        frequencies = Counter(symbols)
+        copies = frequencies.pop(separated, 0)
+        other_count = sum(frequencies.values())
+        if copies <= 1 or copies > other_count + 1 or len(symbols) > 30:
+            return None
+        arrangements = math.factorial(other_count)
+        for frequency in frequencies.values():
+            arrangements //= math.factorial(frequency)
+        arrangements *= math.comb(other_count + 1, copies)
+        return f"本地重复字母隔位计数: {arrangements}"
+
+    @staticmethod
+    def _binary_run_avoidance_hint(problem: str) -> Optional[str]:
+        text = str(problem or "")
+        length = re.search(r"binary\s+strings?\s+of\s+length\s+\$?(\d+)\$?", text, re.IGNORECASE)
+        forbidden = re.search(
+            r"neither\s+\$?(0+)\$?\s+nor\s+\$?(1+)\$?",
+            text,
+            re.IGNORECASE,
+        )
+        if not length or not forbidden or len(forbidden.group(1)) != len(forbidden.group(2)):
+            return None
+        size = int(length.group(1))
+        run_limit = len(forbidden.group(1))
+        if not 1 <= size <= 10**6 or run_limit <= 1:
+            return None
+        states = {(0, 1): 1, (1, 1): 1}
+        if size == 1:
+            return "本地二进制游程计数: 2"
+        for _ in range(1, size):
+            updated: dict[tuple[int, int], int] = {}
+            for (last, run), count in states.items():
+                updated[(1 - last, 1)] = updated.get((1 - last, 1), 0) + count
+                if run + 1 < run_limit:
+                    updated[(last, run + 1)] = updated.get((last, run + 1), 0) + count
+            states = updated
+        return f"本地二进制游程计数: {sum(states.values())}"
+
+    @staticmethod
+    def _bracelet_no_adjacent_hint(problem: str) -> Optional[str]:
+        text = str(problem or "")
+        size = re.search(r"bracelet\s+has\s+\$?(\d+)\$?\s+positions", text, re.IGNORECASE)
+        weight = re.search(
+            r"exactly\s+(\d+|one|two|three|four|five|six|seven|eight|nine|ten|"
+            r"eleven|twelve|thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|"
+            r"nineteen|twenty)\s+positions\s+are\s+black",
+            text,
+            re.IGNORECASE,
+        )
+        if (
+            not size or not weight
+            or not re.search(r"no\s+two\s+black\s+positions\s+are\s+adjacent", text, re.IGNORECASE)
+            or not re.search(r"rotation\s+or\s+a?\s*reflection", text, re.IGNORECASE)
+        ):
+            return None
+        number_words = {
+            word: value
+            for value, word in enumerate(
+                (
+                    "zero", "one", "two", "three", "four", "five", "six", "seven",
+                    "eight", "nine", "ten", "eleven", "twelve", "thirteen", "fourteen",
+                    "fifteen", "sixteen", "seventeen", "eighteen", "nineteen", "twenty",
+                )
+            )
+        }
+        weight_text = weight.group(1).lower()
+        n = int(size.group(1))
+        k = int(weight_text) if weight_text.isdigit() else number_words[weight_text]
+        if not 1 <= n <= 28 or not 0 <= k <= n or math.comb(n, k) > 2_000_000:
+            return None
+        representatives = set()
+        for selected in combinations(range(n), k):
+            chosen = set(selected)
+            if any(((index + 1) % n) in chosen for index in chosen):
+                continue
+            bits = tuple(int(index in chosen) for index in range(n))
+            reflected = tuple(reversed(bits))
+            orbit = [bits[offset:] + bits[:offset] for offset in range(n)]
+            orbit.extend(reflected[offset:] + reflected[:offset] for offset in range(n))
+            representatives.add(min(orbit))
+        return f"本地手链轨道计数: {len(representatives)}"
+
+    @staticmethod
+    def _strip_lattice_path_hint(problem: str) -> Optional[str]:
+        text = str(problem or "")
+        endpoint = re.search(
+            r"path\s+from\s+\$?\(0\s*,\s*0\)\$?\s+to\s+\$?\((\d+)\s*,\s*(\d+)\)\$?",
+            text,
+            re.IGNORECASE,
+        )
+        strip = re.search(
+            r"0\s*(?:<=|\\le)\s*x\s*-\s*y\s*(?:<=|\\le)\s*(\d+)",
+            text,
+        )
+        if (
+            not endpoint or not strip
+            or not re.search(r"monotone\s+lattice\s+path", text, re.IGNORECASE)
+            or not re.search(r"steps?\s+\$?\(1\s*,\s*0\).*\(0\s*,\s*1\)", text, re.IGNORECASE)
+        ):
+            return None
+        horizontal, vertical, width = map(int, (*endpoint.groups(), strip.group(1)))
+        if horizontal * vertical > 10**7:
+            return None
+        counts = {(0, 0): 1}
+        for x_value in range(horizontal + 1):
+            for y_value in range(vertical + 1):
+                if (x_value, y_value) == (0, 0) or not 0 <= x_value - y_value <= width:
+                    continue
+                counts[(x_value, y_value)] = (
+                    counts.get((x_value - 1, y_value), 0)
+                    + counts.get((x_value, y_value - 1), 0)
+                )
+        return f"本地条带格路计数: {counts.get((horizontal, vertical), 0)}"
+
+    @staticmethod
+    def _nested_modular_sum_hint(problem: str) -> Optional[str]:
+        compact = (
+            re.sub(r"\s+", "", str(problem or ""))
+            .replace(r"\(", "")
+            .replace(r"\)", "")
+            .replace("$", "")
+        )
+        match = re.search(
+            r"(\d+)\^\{(\d+)\^\{(\d+)\}\}\+"
+            r"(\d+)\^\{(\d+)\^\{(\d+)\}\}modulo(\d+(?:\^\{?\d+\}?)?)",
+            compact,
+            re.IGNORECASE,
+        )
+        if not match:
+            return None
+        first, inner_first, power_first, second, inner_second, power_second = map(int, match.groups()[:6])
+        modulus = SympyTool._parse_positive_product(match.group(7))
+        if modulus is None:
+            return None
+        if modulus <= 0 or max(power_first, power_second) > 10000:
+            return None
+        result = (
+            pow(first, inner_first**power_first, modulus)
+            + pow(second, inner_second**power_second, modulus)
+        ) % modulus
+        return f"本地嵌套模幂和: {result}"
+
+    def _quadratic_form_maximum_hint(self, problem: str) -> Optional[str]:
+        if not self.sympy:
+            return None
+        text = str(problem or "")
+        match = re.search(
+            r"maximum\s+value\s+of\s+\$?([^$]+?)\$?\s+over\s+all\s+real\s+triples",
+            text,
+            re.IGNORECASE,
+        )
+        if not match or not re.search(
+            r"x\^2\s*\+\s*y\^2\s*\+\s*z\^2\s*=\s*1", text
+        ):
+            return None
+        expression = re.sub(r"\s+|\\cdot", "", match.group(1))
+        expression = expression.replace(r"\(", "").replace(r"\)", "").replace("$", "")
+        terms = re.findall(r"([+-]?\d*)(xy|yz|zx)", expression)
+        if (
+            not re.fullmatch(r"(?:[+-]?\d*(?:xy|yz|zx)){3}", expression)
+            or {name for _, name in terms} != {"xy", "yz", "zx"}
+            or len(terms) != 3
+        ):
+            return None
+        coefficients = {}
+        for raw, name in terms:
+            coefficients[name] = -1 if raw == "-" else 1 if raw in {"", "+"} else int(raw)
+        matrix = self.sympy.Matrix([
+            [0, self.sympy.Rational(coefficients["xy"], 2), self.sympy.Rational(coefficients["zx"], 2)],
+            [self.sympy.Rational(coefficients["xy"], 2), 0, self.sympy.Rational(coefficients["yz"], 2)],
+            [self.sympy.Rational(coefficients["zx"], 2), self.sympy.Rational(coefficients["yz"], 2), 0],
+        ])
+        eigenvalues = tuple(matrix.eigenvals())
+        if not eigenvalues:
+            return None
+        maximum = max(eigenvalues, key=lambda value: float(value.evalf()))
+        return f"本地二次型最大值: {self._format(maximum)}"
 
     @staticmethod
     def _propositional_implication_chain_hint(problem: str) -> Optional[str]:
@@ -592,6 +1035,37 @@ class SympyTool:
     def _complete_graph_cover_time_hint(problem: str) -> Optional[str]:
         """Exact coupon-collector expectation for a complete-graph walk."""
         text = str(problem or "")
+        numeric_graph = re.search(r"完全图\s*\$?K_?\{?(\d+)\}?\$?", text)
+        if numeric_graph:
+            size = int(numeric_graph.group(1))
+            words = {
+                "一": 1, "二": 2, "两": 2, "三": 3, "四": 4, "五": 5,
+                "六": 6, "七": 7, "八": 8, "九": 9, "十": 10,
+            }
+            all_vertices = re.search(r"首次访问全部([一二两三四五六七八九十\d]+)个顶点", text)
+            alternatives = re.search(r"每一步等概率走向另外([一二两三四五六七八九十\d]+)个顶点", text)
+
+            def parse_count(value: str) -> Optional[int]:
+                return int(value) if value.isdigit() else words.get(value)
+
+            if (
+                2 <= size <= 10**6
+                and all_vertices and parse_count(all_vertices.group(1)) == size
+                and alternatives and parse_count(alternatives.group(1)) == size - 1
+                and re.search(r"简单随机游走", text)
+                and re.search(r"期望", text)
+                and not re.search(r"懒惰|加权|自环", text)
+            ):
+                expectation = (size - 1) * sum(
+                    (Fraction(1, index) for index in range(1, size)),
+                    Fraction(),
+                )
+                answer = (
+                    str(expectation.numerator)
+                    if expectation.denominator == 1
+                    else f"{expectation.numerator}/{expectation.denominator}"
+                )
+                return f"本地完全图覆盖时间: {answer}"
         if not re.search(
             r"(?:\$\s*)?N(?:\s*\$|\\\))?\s*个顶点的完全图|"
             r"complete\s+graph\s+(?:on|with)\s+(?:\$\s*)?N(?:\s*\$)?\s+vertices",
@@ -644,17 +1118,79 @@ class SympyTool:
 
     @staticmethod
     def _circle_laplacian_hint(problem: str) -> Optional[str]:
-        """Evaluate the intrinsic Laplacian of a constant circle restriction."""
-        compact = re.sub(r"\s+", "", str(problem or "")).lower()
-        if not re.search(r"拉普拉斯|laplacian", problem, re.IGNORECASE):
-            return None
-        if not (
-            ("f(x,y)=x^2+y^2" in compact or "f(x,y)=x²+y²" in compact)
-            and ("x^2+y^2=1" in compact or "x²+y²=1" in compact)
-            and re.search(r"圆周|circle", problem, re.IGNORECASE)
+        """Separate the ambient Laplacian from the circle Laplace--Beltrami operator."""
+        text = str(problem or "")
+        compact = re.sub(r"\s+", "", text).lower()
+        if re.search(
+            r"bi\s*[-–—]?\s*laplacian|biharmonic|双拉普拉斯|双调和|"
+            r"weighted\s+laplacian|加权拉普拉斯|p\s*[-–—]?\s*laplacian|p\s*[-–—]?\s*拉普拉斯",
+            text,
+            re.IGNORECASE,
         ):
             return None
-        return "本地圆周拉普拉斯: 0"
+        if not re.search(r"拉普拉斯|laplacian|laplace\s*[-–—]?\s*beltrami", text, re.IGNORECASE):
+            return None
+        expression = bool(re.search(
+            r"f\(x,y\)=x(?:\^\{?2\}?|²)\+y(?:\^\{?2\}?|²)", compact,
+        ))
+        circle = bool(
+            re.search(r"圆周|circle|s\^?1", text, re.IGNORECASE)
+            and re.search(
+                r"x(?:\^\{?2\}?|²)\+y(?:\^\{?2\}?|²)="
+                r"(?:1|[1-9]\d*(?:\^\{?2\}?|²)?|[a-z](?:\^\{?2\}?|²))",
+                compact,
+                re.IGNORECASE,
+            )
+        )
+        if not (expression and circle):
+            return None
+
+        explicit_intrinsic = bool(re.search(
+            r"laplace\s*[-–—]?\s*beltrami|laplacebeltrami|"
+            r"拉普拉斯\s*[-–—]?\s*贝尔特拉米|拉普拉斯贝尔特拉米|"
+            r"内蕴拉普拉斯|intrinsic\s+laplacian|"
+            r"(?:限制函数|限制到|restriction\s+of|restricted\s+to|f\s*\|)"
+            r"[^。.!?]{0,40}(?:拉普拉斯|laplacian)",
+            text,
+            re.IGNORECASE,
+        ))
+        explicit_ambient = bool(re.search(
+            r"环境拉普拉斯|欧氏拉普拉斯|ambient\s+laplacian|euclidean\s+laplacian|"
+            r"\\Delta_?\{?\\mathbb\s*\{?R\}?\^?2\}?",
+            text,
+            re.IGNORECASE,
+        ))
+        explicit_ambiguity = bool(
+            re.search(
+                r"(?:环境|欧氏|ambient|euclidean).{0,30}(?:还是|或|或者|or|versus|vs\.?)"
+                r".{0,30}(?:内蕴|贝尔特拉米|intrinsic|beltrami)|"
+                r"(?:内蕴|贝尔特拉米|intrinsic|beltrami).{0,30}"
+                r"(?:还是|或|或者|or|versus|vs\.?).{0,30}(?:环境|欧氏|ambient|euclidean)|"
+                r"(?:未说明|不明确|有歧义|unspecified|ambiguous).{0,20}"
+                r"(?:拉普拉斯|laplacian)",
+                text,
+                re.IGNORECASE,
+            )
+            or (explicit_intrinsic and explicit_ambient)
+        )
+        needs_support = bool(re.search(
+            r"证明|推导|解释|说明理由|"
+            r"\b(?:prove|derive|justify|explain|show\s+why)\b",
+            text,
+            re.IGNORECASE,
+        ))
+
+        if explicit_ambiguity:
+            return (
+                "本地圆周拉普拉斯歧义核验: "
+                r"若指环境算子，则 \(\Delta_{\mathbb R^2}f=f_{xx}+f_{yy}=2+2=4\)；"
+                r"若指限制函数的 Laplace--Beltrami 算子，则 \(f|_{S^1}\) 为常数，故值为 \(0\)"
+            )
+        if explicit_intrinsic:
+            label = "本地圆周Laplace-Beltrami核验" if needs_support else "本地圆周Laplace-Beltrami"
+            return f"{label}: 0"
+        label = "本地圆周拉普拉斯核验" if needs_support else "本地圆周拉普拉斯"
+        return f"{label}: 4"
 
     @staticmethod
     def _central_difference_hint(problem: str) -> Optional[str]:
@@ -1530,7 +2066,9 @@ class SympyTool:
 
     @staticmethod
     def _latex_to_sympy(expression: str) -> str:
-        value = expression.strip().replace("$", "")
+        # English prose extractors may include the sentence-final period.  It
+        # would turn an integer exponent such as ``x^3.`` into SymPy's ``3.0``.
+        value = expression.strip().replace("$", "").rstrip("。；;，,.!?？")
         value = SympyTool._replace_fractions(value)
         value = re.sub(r"\\sqrt\{([^{}]+)\}", r"sqrt(\1)", value)
         function_names = {

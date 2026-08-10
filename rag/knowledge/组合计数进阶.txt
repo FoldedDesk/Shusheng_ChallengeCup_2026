@@ -8,3 +8,9 @@
 
 递推计数：先列初值，再按最后一步、最后一个元素或状态分类。鸽巢原理用于“至少存在”的结论，需写清对象数、盒子数和超过关系。
 概率计数中，先明确样本空间是否等可能；无放回通常用组合数，顺序过程可用条件概率连乘。
+
+For exact finite counting, define the counted objects before choosing a formula. Derive the recurrence, inclusion-exclusion sum, orbit count, or generating-function coefficient, then verify it by exhaustive enumeration on the smallest nontrivial sizes.
+For arrangements with k identical marked objects and no two adjacent, first arrange the other objects and choose k of the resulting gaps. For a cycle, cut only after accounting for the wraparound adjacency.
+The number of surjective functions from an n-set onto a k-set is sum_{j=0}^k (-1)^j C(k,j)(k-j)^n. If adjacent values must differ, replace (k-j)^n by (k-j)(k-j-1)^(n-1) before inclusion-exclusion.
+For necklaces or bracelets identified by a rotation or a reflection, apply Burnside to the full dihedral group; with rotations only, use the cyclic group. Enforce fixed weight and adjacency restrictions inside each fixed-point set; do not divide a raw labeled count by the group size.
+For binary strings that contain neither of two forbidden runs, tilings, bounded monotone lattice paths, and local coloring restrictions, use a finite state that records exactly the boundary information needed by the next step. Check the initial state, terminal condition, and cyclic closure separately.

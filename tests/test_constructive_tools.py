@@ -21,7 +21,7 @@ class _NoModelClient:
 
 def _evidence(problem: str):
     spec = build_problem_spec(problem)
-    return SubmissionAgent._tool_evidence(SympyTool().hints_for(problem), spec)
+    return SubmissionAgent._tool_evidence(SympyTool().results_for(problem), spec)
 
 
 def test_unit_mass_spike_is_a_certified_complete_construction():

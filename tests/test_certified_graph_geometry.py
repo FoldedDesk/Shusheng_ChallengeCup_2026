@@ -22,7 +22,7 @@ class _NoModelClient:
 
 def _evidence(problem: str):
     spec = build_problem_spec(problem)
-    return SubmissionAgent._tool_evidence(SympyTool().hints_for(problem), spec)
+    return SubmissionAgent._tool_evidence(SympyTool().results_for(problem), spec)
 
 
 def test_euler_face_count_and_paraboloid_curvature_are_certified():

@@ -42,9 +42,47 @@ def test_single_direct_calculus_requests_may_use_the_whole_tool_result():
     assert _whole(r"Find $\lim_{x\to 0} \sin(x)/x$.")
 
     assert not _whole("Find the second derivative of f(x)=x^3.")
+    assert not _whole(r"Evaluate the indefinite integral $\int x^2\,dx$.")
+    assert not _whole(r"Evaluate $\int x^2\,dx$.")
     assert not _whole(r"Evaluate $\int_0^1 x*y\,dx$.")
     assert not _whole(r"Evaluate $\int_0^1 x\,dx$ and $\int_0^2 x\,dx$.")
     assert not _whole("Find the derivative of f(x)=x^2 and compare it with x.")
+
+
+def test_generic_symbolic_evidence_obeys_the_problem_level_whole_answer_gate():
+    cases = (
+        ("Find the second derivative of f(x)=x^3.", "derivative"),
+        (r"在实数范围内求解方程 $x^2+1=0$。", "solve_equation"),
+    )
+    for problem, operation in cases:
+        spec = build_problem_spec(problem)
+        evidence = SubmissionAgent._tool_evidence(SympyTool().results_for(problem), spec)
+
+        assert not spec.tool_can_answer_whole
+        assert any(item.operation == operation for item in evidence)
+        assert all(item.scope == "subexpression" for item in evidence)
+
+    direct_problem = "Find the derivative of f(x)=x^3."
+    direct_spec = build_problem_spec(direct_problem)
+    direct = SubmissionAgent._tool_evidence(SympyTool().results_for(direct_problem), direct_spec)
+    assert direct_spec.tool_can_answer_whole
+    assert any(
+        item.operation == "derivative"
+        and item.result == "3*x^2"
+        and item.scope == "whole_goal"
+        for item in direct
+    )
+
+
+def test_indefinite_integrals_are_never_certified_as_complete_answers():
+    from tools.tool_contract import result_from_legacy_hint
+
+    result = result_from_legacy_hint("SymPy 不定积分: log(x)", trusted_source=True)
+
+    assert result is not None and result.verified
+    assert result.contract is not None
+    assert not result.contract.whole_answer_capable
+    assert not result.whole_answer_eligible
 
 
 def test_numerical_methods_and_requested_processes_are_local_evidence_only():
@@ -117,7 +155,7 @@ def test_certified_statistical_and_numerical_routes_bypass_the_model():
         (
             r"计算函数 f(x,y)=x^2+y^2 在圆周 x^2+y^2=1 上的拉普拉斯算子。"
             r"Remember to put your final answer within \boxed{}.",
-            r"\boxed{0}",
+            r"\boxed{4}",
         ),
     )
 
@@ -134,7 +172,7 @@ def test_centered_difference_is_a_certified_whole_answer():
     from core.submission_agent import SubmissionAgent
     from tools.sympy_tool import SympyTool
 
-    evidence = SubmissionAgent._tool_evidence(SympyTool().hints_for(
+    evidence = SubmissionAgent._tool_evidence(SympyTool().results_for(
         r"使用中心差分公式计算函数 f(x)=\sin(x) 在 x=\pi/4 处的一阶导数，取 h=0.1。"
     ), spec)
 
@@ -148,6 +186,16 @@ def test_centered_difference_is_a_certified_whole_answer():
         {},
     )
     assert result["final_response"] == r"\boxed{0.7059}"
+
+
+def test_embedded_equations_cannot_replace_the_requested_function_result():
+    problem = "求函数f(z)=z^2的实部u(x,y)，并验证u满足拉普拉斯方程。"
+    spec = build_problem_spec(problem)
+    evidence = SubmissionAgent._tool_evidence(SympyTool().results_for(problem), spec)
+
+    assert evidence
+    assert all(item.scope == "subexpression" for item in evidence)
+    assert any(item.operation == "solve_equation" for item in evidence)
 
 
 NUMBER_WRITING_GAME = (
@@ -182,7 +230,7 @@ DIGIT_SUM_WINDOW = (
 
 def _evidence(problem: str):
     spec = build_problem_spec(problem)
-    return SubmissionAgent._tool_evidence(SympyTool().hints_for(problem), spec)
+    return SubmissionAgent._tool_evidence(SympyTool().results_for(problem), spec)
 
 
 def test_certified_finite_game_and_path_partition_routes_bypass_the_model():

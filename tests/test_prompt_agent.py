@@ -117,16 +117,20 @@ class SubmissionContractTest(unittest.TestCase):
 
     def test_second_stage_corrects_first_stage_candidate(self):
         client = RecordingClient([
-            "\\boxed{3}",
-            "【校验】修正\n【最终答案】4",
-            "【校验】修正\n【最终答案】4",
+            "\\boxed{取x=3，代入检验得3^2=9。}",
+            "【校验】修正\n【最终答案】取x=4，代入检验得4^2=16。",
+            "【校验】修正\n【最终答案】取x=4，代入检验得4^2=16。",
         ])
 
-        result = ReasoningAgent(client).solve("给出一个满足条件的构造。", {"idx": 8})
+        result = ReasoningAgent(client).solve("构造一个正整数x，使x^2=16。", {"idx": 8})
 
-        self.assertEqual(result["final_response"], "4")
+        self.assertIn("x=4", result["final_response"])
         self.assertEqual(len(client.calls), 3)
-        self.assertEqual(self._step(result, "selection")["content"]["source"], "arbitration")
+        self.assertEqual(self._step(result, "selection")["content"]["source"], "verify")
+        self.assertEqual(
+            self._step(result, "equivalence")["content"]["arbitration_disposition"],
+            "implicit_supports_b",
+        )
 
     def test_second_stage_failure_keeps_first_explicit_answer(self):
         class SecondCallFails:
@@ -136,12 +140,14 @@ class SubmissionContractTest(unittest.TestCase):
             def chat(self, **kwargs):
                 self.calls += 1
                 if self.calls == 1:
-                    return r"\boxed{x=2}"
+                    return r"\boxed{取x=2，代入检验得2^2=4。}"
                 raise RuntimeError("temporary failure")
 
-        result = ReasoningAgent(SecondCallFails()).solve("给出一个满足条件的构造。", {"idx": 9})
+        result = ReasoningAgent(SecondCallFails()).solve(
+            "构造一个正整数x，使x^2=4。", {"idx": 9}
+        )
 
-        self.assertEqual(result["final_response"], "x=2")
+        self.assertIn("x=2", result["final_response"])
         self.assertTrue(self._step(result, "review_admission")["content"]["admitted"])
         self.assertEqual(self._step(result, "review_admission")["content"]["mode"], "verify")
 
@@ -191,17 +197,17 @@ class SubmissionContractTest(unittest.TestCase):
 
         self.assertEqual(ReasoningAgent(RecordingClient()).agent._normalize_answer("proof with oo", profile), "proof with ∞")
 
-    def test_non_symbolic_calculation_keeps_two_stage_review(self):
+    def test_non_symbolic_construction_stops_after_complete_rescue(self):
         client = RecordingClient([
             "\\boxed{A}",
-            "【校验】修正\n【最终答案】B",
-            "【校验】修正\n【最终答案】B",
+            "【校验】修正\n【最终答案】取x=4，代入检验得4^2=16。",
+            "【校验】修正\n【最终答案】取x=4，代入检验得4^2=16。",
         ])
 
-        result = ReasoningAgent(client).solve("给出一个满足条件的构造。", {"idx": 12})
+        result = ReasoningAgent(client).solve("构造一个正整数x，使x^2=16。", {"idx": 12})
 
-        self.assertEqual(result["final_response"], "B")
-        self.assertEqual(len(client.calls), 3)
+        self.assertIn("x=4", result["final_response"])
+        self.assertEqual(len(client.calls), 2)
         self.assertEqual(self._step(result, "review_admission")["content"]["mode"], "rescue")
 
     def test_age_question_renders_a_bare_number_as_a_readable_sentence(self):

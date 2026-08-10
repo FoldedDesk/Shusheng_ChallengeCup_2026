@@ -8,3 +8,8 @@
 
 邻接矩阵的 A^r 给出长度 r 游走数；简单路径还需排除重复顶点。最短路算法中，非负权使用 Dijkstra，允许负边但无负圈可用 Bellman-Ford。
 平面图应先确认连通分支数。连通平面简单图面边界长度至少三时 3F<=2E；与 Euler 公式联立可得边数上界。
+
+The Matrix-Tree theorem says that a connected graph's spanning-tree count is any cofactor of its Laplacian. Equivalently, it is the product of all nonzero Laplacian eigenvalues divided by the number of vertices; multiplicities must be included.
+For a complete bipartite, complete tripartite, or complete multipartite graph K_{n_1,...,n_k} with N=sum n_i, the spanning-tree count is N^(k-2) product_i (N-n_i)^(n_i-1). In particular tau(K_{m,n})=m^(n-1)n^(m-1). Deleting one edge from K_{m,n} leaves m^(n-2)n^(m-2)(m-1)(n-1); this one-edge formula must not be reused when several edges or a cycle are deleted.
+The number of spanning trees of the d-dimensional hypercube Q_d follows from Laplacian eigenvalue 2j with multiplicity C(d,j): tau(Q_d)=[product_{j=1}^d (2j)^{C(d,j)}]/2^d. Check d=1 and d=2 before evaluating a larger case.
+For labeled trees with prescribed degrees d_i, Prufer codes give (n-2)!/product_i(d_i-1)! when every degree is fixed. With only some degrees fixed, count Prufer words with the corresponding symbol multiplicities and sum over the unrestricted symbols.

@@ -10,6 +10,42 @@ from classifier.profile import ProblemProfile, classify_profile
 from classifier.target import extract_target_clause
 
 
+_SUPPORT_REQUIREMENT_NAMES = frozenset({
+    "reasoning",
+    "position_selection",
+    "variable_shift",
+    "stars_and_bars",
+    "counting_method",
+    "inclusion_exclusion",
+    "pairing_step",
+    "case_split",
+    "position_compression",
+    "distributive_step",
+    "two_steps",
+    "disjoint_decomposition",
+    "combination_calculation",
+    "partial_fraction",
+    "pole_order",
+    "pole_location",
+    "cauchy_formula",
+    "integrating_factor",
+    "characteristic_equation",
+    "separation_of_variables",
+    "independent_increments",
+    "inference_rule",
+    "continuity_contradiction",
+    "open_cover_step",
+    "fixed_point_check",
+    "induction",
+    "pigeonhole_principle",
+    "am_gm",
+    "cauchy_schwarz",
+    "contradiction",
+})
+
+_FORMAT_REQUIREMENT_NAMES = frozenset({"boxed_wrapper", "answer_language", "output_unit"})
+
+
 @dataclass(frozen=True)
 class Requirement:
     """A gradable answer obligation with acceptable local textual anchors."""
@@ -17,6 +53,16 @@ class Requirement:
     name: str
     alternatives: tuple[tuple[str, ...], ...]
     strict: bool = False
+    category: str = "auto"
+
+    def __post_init__(self) -> None:
+        if self.category == "auto":
+            category = "support" if self.name in _SUPPORT_REQUIREMENT_NAMES else (
+                "format" if self.name in _FORMAT_REQUIREMENT_NAMES else "result"
+            )
+            object.__setattr__(self, "category", category)
+        elif self.category not in {"result", "support", "format"}:
+            raise ValueError(f"unknown requirement category: {self.category}")
 
     def matches(self, compact_answer: str) -> bool:
         raw_answer = str(compact_answer or "").lower()
@@ -40,6 +86,19 @@ class Requirement:
             return bool(re.search(
                 r"(?:因为|由于|由|依据|根据|所以|故|因此|推出|可得|implies|because|since|therefore|hence|by\s+)",
                 raw_answer,
+                re.IGNORECASE,
+            ))
+        if self.name == "iteration_formula":
+            return bool(re.search(
+                r"x\^?[a-z]\+1=[^=]{1,240}",
+                normalized,
+                re.IGNORECASE,
+            ))
+        if self.name == "first_iteration":
+            return bool(re.search(
+                r"(?:x1=|第一次迭代(?:值|结果)?(?:为|是|=)|"
+                r"firstiteration(?:value|result)?(?:is|=))[^=]{1,120}",
+                normalized,
                 re.IGNORECASE,
             ))
         if self.name == "numeric_result":
@@ -69,10 +128,17 @@ class Requirement:
         if self.name == "degree_value":
             return bool(re.search(
                 r"(?:\[[^\]]+:[^\]]+\]|\bdegree\b|扩张次数|次数)\s*=\s*\d+|"
-                r"[,，;；]\s*\d+\s*[,，;；]",
+                r"[,，;；]\s*\d+\s*[,，;；]|^\s*\d+\s*$",
                 latex_flat,
                 re.IGNORECASE,
             ))
+        if self.name == "operator_norm":
+            return bool(re.search(
+                r"(?:\\lVert|\\Vert|\|\|).*(?:\\rVert|\\Vert|\|\|)\s*=|"
+                r"(?:算子)?范数\s*(?:为|是|=)|\boperator\s+norm\s*(?:is|=)",
+                raw_answer,
+                re.IGNORECASE,
+            )) or _is_bare_math_expression(raw_answer)
         if self.name == "galois_verdict":
             return bool(re.search(r"是|否|\b(?:yes|no|true|false)\b", raw_answer, re.IGNORECASE))
         if self.name == "two_items":
@@ -201,7 +267,7 @@ class Requirement:
                 r"\\sqrt\{[^{}]+\}|(?:[-+]?\d+(?:\.\d+)?\s*)?(?:π|\\pi|∞|\\infty)(?:\s*[A-Za-z])?(?:/\d+)?)\s*\$?\s*[。.]?\s*",
                 raw_answer,
                 re.IGNORECASE,
-            ))
+            )) or _is_bare_math_expression(raw_answer)
         return any(all(
             term in raw_answer if term in {"{", "}", "[", "]"} else _compact(term) in normalized
             for term in option
@@ -212,6 +278,38 @@ def _compact(value: str) -> str:
     return re.sub(r"[\s{}()\[\]\\,，。；;：:_]", "", str(value or "").lower()).replace("−", "-")
 
 
+def _is_bare_math_expression(value: str) -> bool:
+    """Recognize a complete formula without requiring a redundant result label."""
+    text = str(value or "").strip().strip("$").strip()
+    if text.startswith(r"\boxed{"):
+        depth = 1
+        closing = -1
+        for index, character in enumerate(text[len(r"\boxed{"):], len(r"\boxed{")):
+            if character == "{":
+                depth += 1
+            elif character == "}":
+                depth -= 1
+                if depth == 0:
+                    closing = index
+                    break
+        if closing == len(text) - 1:
+            text = text[len(r"\boxed{"):-1].strip()
+    if not text or re.search(r"[\u4e00-\u9fff]", text):
+        return False
+    commands = re.findall(r"\\([A-Za-z]+)", text)
+    allowed_commands = {
+        "frac", "dfrac", "tfrac", "sqrt", "pi", "infty", "log", "ln", "exp",
+        "sin", "cos", "tan", "sinh", "cosh", "tanh", "lVert", "rVert", "Vert",
+        "operatorname", "mathrm", "mathsf", "mathbb", "cdot",
+    }
+    if any(command not in allowed_commands for command in commands):
+        return False
+    return bool(
+        re.search(r"\d|\\(?:frac|sqrt|pi|infty|log|ln|exp|sin|cos)", text)
+        and re.fullmatch(r"[0-9A-Za-z_+\-*/^().,!{}\[\]\\\s]+", text)
+    )
+
+
 @dataclass(frozen=True)
 class Goal:
     id: str
@@ -220,6 +318,18 @@ class Goal:
     kind: str = "result"
     required_terms: tuple[str, ...] = ()
     requirements: tuple[Requirement, ...] = ()
+
+    @property
+    def result_requirements(self) -> tuple[Requirement, ...]:
+        return tuple(item for item in self.requirements if item.category == "result")
+
+    @property
+    def support_requirements(self) -> tuple[Requirement, ...]:
+        return tuple(item for item in self.requirements if item.category == "support")
+
+    @property
+    def format_requirements(self) -> tuple[Requirement, ...]:
+        return tuple(item for item in self.requirements if item.category == "format")
 
 
 @dataclass(frozen=True)
@@ -252,6 +362,8 @@ class AnswerPart:
     support_requirements: tuple[str, ...] = ()
     unit: str = ""
     validation_requirements: tuple[str, ...] = ()
+    result_requirements: tuple[str, ...] = ()
+    format_requirements: tuple[str, ...] = ()
 
     @property
     def explicit_support_requirements(self) -> tuple[str, ...]:
@@ -306,6 +418,7 @@ class ProblemSpec:
     risk_score: int
     verification_required: bool
     answer_contract: AnswerContract | None = None
+    problem_text: str = ""
 
     def trace_content(self) -> dict:
         return {
@@ -317,7 +430,7 @@ class ProblemSpec:
                 "instruction": goal.instruction,
                 "required_terms": list(goal.required_terms),
                 "requirements": [
-                    {"name": item.name, "strict": item.strict}
+                    {"name": item.name, "strict": item.strict, "category": item.category}
                     for item in goal.requirements
                 ],
             } for goal in self.goals],
@@ -361,7 +474,7 @@ def build_problem_spec(problem: str) -> ProblemSpec:
     return ProblemSpec(
         profile, tuple(goals), tuple(constraints), tuple(risks), primary, alternative,
         answer_frame, _tool_can_answer_whole(semantic_text, profile, goals),
-        risk_score, risk_score >= 3, contract,
+        risk_score, risk_score >= 3, contract, semantic_text,
     )
 
 
@@ -422,45 +535,6 @@ def _answer_frame(text: str, profile: ProblemProfile) -> AnswerFrame:
         return AnswerFrame("sentence", predicate="数量", question_kind="count")
     return AnswerFrame("math", question_kind="math")
 
-
-_SUPPORT_REQUIREMENT_NAMES = frozenset({
-    "reasoning",
-    "position_selection",
-    "variable_shift",
-    "stars_and_bars",
-    "counting_method",
-    "inclusion_exclusion",
-    "pairing_step",
-    "case_split",
-    "position_compression",
-    "distributive_step",
-    "two_steps",
-    "first_second_derivatives",
-    "disjoint_decomposition",
-    "combination_calculation",
-    "partial_fraction",
-    "pole_order",
-    "cauchy_formula",
-    "integrating_factor",
-    "characteristic_equation",
-    "separation_of_variables",
-    "independent_increments",
-    "inference_rule",
-    "continuity_contradiction",
-    "open_cover_step",
-    "fixed_point_check",
-    "pde_time_space_derivatives",
-    "laplace_second_derivatives",
-    "euler_formula_check",
-    "surface_second_derivatives",
-    "induction",
-    "pigeonhole_principle",
-    "am_gm",
-    "cauchy_schwarz",
-    "contradiction",
-})
-
-
 def _answer_contract(
     original_text: str,
     semantic_text: str,
@@ -472,13 +546,12 @@ def _answer_contract(
         requirement.name
         for goal in goals
         for requirement in goal.requirements
-        if requirement.name in _SUPPORT_REQUIREMENT_NAMES
+        if requirement.category == "support"
     ))
-    formal_proof = not _is_result_or_nonexistence_alternative(semantic_text) and bool(re.search(
-        r"证明|求证|论证|\b(?:prove|proof|show\s+that)\b",
-        semantic_text,
-        re.IGNORECASE,
-    ))
+    formal_proof = (
+        not _is_result_or_nonexistence_alternative(semantic_text)
+        and profile.task_kind == "proof"
+    )
     if formal_proof and "reasoning" not in support:
         support = (*support, "reasoning")
     mode = "proof" if formal_proof else (
@@ -487,6 +560,7 @@ def _answer_contract(
         else "answer_only"
     )
     unit = frame.unit or _explicit_unit(semantic_text)
+    wrapper = _requested_wrapper(original_text)
     parts = tuple(AnswerPart(
         id=goal.id,
         instruction=goal.instruction,
@@ -497,7 +571,7 @@ def _answer_contract(
             *(
                 requirement.name
                 for requirement in goal.requirements
-                if requirement.name in _SUPPORT_REQUIREMENT_NAMES
+                if requirement.category == "support"
             ),
             *(("reasoning",) if formal_proof else ()),
         ))),
@@ -506,11 +580,21 @@ def _answer_contract(
             *(requirement.name for requirement in goal.requirements),
             *(("reasoning",) if formal_proof else ()),
         ))),
+        result_requirements=tuple(dict.fromkeys(
+            requirement.name
+            for requirement in goal.requirements
+            if requirement.category == "result"
+        )),
+        format_requirements=tuple(dict.fromkeys((
+            *(requirement.name for requirement in goal.requirements if requirement.category == "format"),
+            *(("boxed_wrapper",) if wrapper == "boxed" else ()),
+            *(("output_unit",) if (_explicit_unit(goal.instruction) or (unit if len(goals) == 1 else "")) else ()),
+        ))),
     ) for goal in goals)
     return AnswerContract(
         language=_answer_language(semantic_text, profile.language),
         mode=mode,
-        wrapper=_requested_wrapper(original_text),
+        wrapper=wrapper,
         answer_shape=profile.answer_shape,
         parts=parts,
         explicit_support_requirements=support,
@@ -585,7 +669,8 @@ _SPLIT_GOAL_COMMAND = (
 _ELABORATION_CLAUSE = re.compile(
     r"^\s*(?:给出|写出|指出|列出|(?:state|identify|write|give)\b).*"
     r"(?:所用|理由|依据|条件|结论|含义|计算式|截断|具体公式|转移矩阵|"
-    r"derivation|justification|reason|condition|criterion|conclusion|supporting formula|cov\s*\()",
+    r"derivation|justification|reason|condition|criterion|conclusion|supporting formula|"
+    r"family|construction|example|blocks?|cov\s*\()",
     re.IGNORECASE | re.DOTALL,
 )
 
@@ -834,6 +919,22 @@ def _requirements(text: str, answer_shape: str) -> tuple[Requirement, ...]:
         re.IGNORECASE,
     ):
         requirements.append(Requirement("judgement", (("是",), ("否",), ("yes",), ("no",), ("true",), ("false",)), strict=True))
+    if re.search(
+        r"(?:求|计算)[^。.!?\n]{0,80}(?:范数|\|\|[^\n]{0,30}\|\||\bnorm\b)",
+        text,
+        re.IGNORECASE,
+    ):
+        requirements.append(Requirement(
+            "operator_norm",
+            (("||t||", "="), ("范数", "="), ("norm", "=")),
+            strict=True,
+        ))
+        if re.search(r"(?:说明|判断)[^。.!?\n]{0,40}是否|\bwhether\b", text, re.IGNORECASE):
+            requirements.append(Requirement(
+                "judgement",
+                (("是",), ("否",), ("等距",), ("isometry",), ("isometric",)),
+                strict=True,
+            ))
     if answer_shape == "number" and re.search(r"\bfor\s+which\s+values?\b", text, re.IGNORECASE):
         requirements.append(Requirement("numeric_result", (("number",),), strict=True))
     if answer_shape == "choice" and _requires_all_correct_choice_labels(text):
@@ -842,9 +943,14 @@ def _requirements(text: str, answer_shape: str) -> tuple[Requirement, ...]:
             (("all", "correct", "labels"), ("全部", "正确", "标签")),
             strict=True,
         ))
-    if re.search(r"分裂域|splitting\s+field", text, re.IGNORECASE):
+    asks_for_degree = bool(re.search(
+        r"扩张次数|extension\s+degree|\[[^\]]+:[^\]]+\]",
+        text,
+        re.IGNORECASE,
+    ))
+    if re.search(r"分裂域|splitting\s+field", text, re.IGNORECASE) and not asks_for_degree:
         requirements.append(Requirement("field_value", (("mathbb", "q"), ("field",)), strict=True))
-    if re.search(r"\[[^\]]+:[^\]]+\]\s*=\s*(?:\(\s*\\quad\s*\)|\(\s*\)|_{2,})|extension\s+degree", text, re.IGNORECASE):
+    if re.search(r"扩张次数|\[[^\]]+:[^\]]+\]\s*=\s*(?:\(\s*\\quad\s*\)|\(\s*\)|_{2,})|extension\s+degree", text, re.IGNORECASE):
         requirements.append(Requirement("degree_value", (("degree",), ("次数",)), strict=True))
     if re.search(r"galois", text, re.IGNORECASE) and re.search(r"填|是|否|yes|no|\(\s*\)", text, re.IGNORECASE):
         requirements.append(Requirement("galois_verdict", (("galois", "是"), ("galois", "否"), ("galois", "yes"), ("galois", "no")), strict=True))
@@ -857,7 +963,9 @@ def _requirements(text: str, answer_shape: str) -> tuple[Requirement, ...]:
     if re.search(
         r"(?:求|列出|写出)(?:出)?(?:所有|全部)|"
         r"\b(?:find|determine|list|classify|describe)\s+all\b|"
-        r"\b(?:find|determine)\s+all\s+possible\b",
+        r"\b(?:find|determine)\s+all\s+possible\b|"
+        r"\b(?:find|determine)\s+the\s+complete\s+set\s+of\b|"
+        r"\bfind\s+(?:a\s+)?complete\s+set\s+of\b",
         text,
         re.IGNORECASE,
     ):
@@ -918,6 +1026,18 @@ def _requirements(text: str, answer_shape: str) -> tuple[Requirement, ...]:
         requirements.append(Requirement(
             "integral_value",
             (("积分", "为"), ("积分", "="), ("∫", "="), ("integral", "=")),
+            strict=True,
+        ))
+    if re.search(
+        r"(?:说明|解释)[^。.!?\n]{0,50}极点[^。.!?\n]{0,30}是否[^。.!?\n]{0,30}围道|"
+        r"(?:explain|state)[^.!?\n]{0,60}(?:pole|singularity)[^.!?\n]{0,40}"
+        r"(?:inside|outside)[^.!?\n]{0,30}(?:contour|curve)",
+        text,
+        re.IGNORECASE,
+    ):
+        requirements.append(Requirement(
+            "pole_location",
+            (("极点", "内"), ("极点", "外"), ("pole", "inside"), ("pole", "outside")),
             strict=True,
         ))
     if re.search(r"(?:是否|判断).*(?:并|且).*计算.*积分|(?:whether|determine).*(?:and).*integral", text, re.IGNORECASE):
@@ -1190,6 +1310,23 @@ def _is_single_direct_calculus(text: str, profile: ProblemProfile) -> bool:
     families = [pattern for pattern in _CALCULUS_FAMILIES if pattern.search(text)]
     if len(families) != 1:
         return False
+    if _CALCULUS_FAMILIES[1] in families:
+        # Only bounded integrals can be complete deterministic answers.  A
+        # bare antiderivative still needs +C, real-domain/absolute-value
+        # handling, and a readability check beyond SymPy's expression object.
+        explicitly_indefinite = bool(re.search(
+            r"不定积分|原函数|\b(?:indefinite\s+integral|antiderivative)\b",
+            text,
+            re.IGNORECASE,
+        ))
+        has_latex_bounds = bool(re.search(r"\\int\s*_", text))
+        explicitly_definite = bool(re.search(
+            r"定积分|\bdefinite\s+integral\b",
+            text,
+            re.IGNORECASE,
+        ))
+        if explicitly_indefinite or not (has_latex_bounds or explicitly_definite):
+            return False
     if re.search(
         r"二阶|三阶|高阶|混合偏导|梯度|海森|雅可比|"
         r"\b(?:second|third|higher|n(?:th|-th)\s+derivative|mixed partial|gradient|hessian|jacobian)\b",

@@ -20,6 +20,11 @@ class KnowledgeCard:
     keywords: tuple[str, ...]
     topics: tuple[str, ...] = ()
     text_en: str = ""
+    domains: tuple[str, ...] = ()
+
+    @property
+    def effective_domains(self) -> tuple[str, ...]:
+        return self.domains or (self.domain,)
 
     def render(self, language: str) -> str:
         """Render in the contract language, falling back to the source note."""
@@ -43,6 +48,9 @@ class RetrievalBundle:
     solve_scores: tuple[int, ...] = ()
     review_scores: tuple[int, ...] = ()
     language: str = "zh"
+    primary_subject: str = ""
+    secondary_subject: str = ""
+    subject_confidence: str = "low"
 
     def solve_context(self) -> str:
         return _render(self.solve_cards, self.language)
@@ -57,17 +65,49 @@ class RetrievalBundle:
             "solve_card_scores": list(self.solve_scores),
             "review_card_scores": list(self.review_scores),
             "language": self.language,
+            "primary_subject": self.primary_subject,
+            "secondary_subject": self.secondary_subject,
+            "subject_confidence": self.subject_confidence,
         }
 
 
 _DOMAIN_BY_NAME = {
     "回归": "线性回归",
-    "抽象代数": "抽象代数", "数论": "数论", "数值线性": "数值分析", "线性代数": "线性代数",
+    "抽象代数": "抽象代数", "高等代数": "高等代数", "数论": "数论",
+    "数值分析": "数值分析", "数值线性": "数值分析", "线性代数": "线性代数",
     "离散": "离散数学", "图论": "离散数学", "组合": "离散数学", "概率": "概率论",
     "统计": "统计推断", "实分析": "数学分析", "微积分": "数学分析", "测度": "测度积分",
     "常微分": "常微分方程", "偏微分": "偏微分方程", "PDE": "偏微分方程", "复分析": "复分析", "拓扑": "拓扑学",
     "泛函": "泛函分析", "优化": "运筹学", "几何": "微分几何", "答案": "answer",
 }
+
+_COMPOSITE_DOMAINS = {
+    "数论与代数": ("数论", "抽象代数"),
+    "泛函分析与拓扑": ("泛函分析", "拓扑学"),
+    "拓扑与泛函": ("拓扑学", "泛函分析"),
+    "数据编码与数值PDE": ("离散数学", "数值分析", "偏微分方程"),
+    "线性代数与优化": ("线性代数", "运筹学"),
+    "概率统计": ("概率论", "统计推断"),
+    "描述统计与时间序列": ("统计推断", "随机过程"),
+}
+
+_OPERATION_TERMS = (
+    "牛顿法", "newton method", "newton's method",
+    "二分法", "bisection method",
+    "割线法", "secant method",
+    "有限差分", "finite difference", "finite-difference",
+    "中心差分", "central difference",
+    "欧拉法", "euler method", "euler's method",
+    "辛普森", "simpson", "梯形公式", "trapezoidal",
+    "容斥", "inclusion-exclusion", "inclusion exclusion",
+    "spanning tree", "spanning trees of", "complete bipartite", "complete tripartite", "deleting one edge",
+    "surjective functions", "bracelet", "necklace", "lattice path", "monotone lattice path",
+    "binary string", "hypercube", "no two", "rotation or a reflection", "contain neither",
+    "pell equation", "positive divisors", "factorial quotient",
+    "拉格朗日插值", "lagrange interpolation",
+    "柯西积分", "cauchy integral", "留数", "residue",
+    "高斯曲率", "gaussian curvature", "主曲率", "principal curvature",
+)
 
 
 _METHOD_CARDS = (
@@ -204,6 +244,9 @@ class CardRetriever:
         contract = getattr(spec, "answer_contract", None)
         raw_language = getattr(contract, "language", None) or getattr(spec.profile, "language", "zh")
         language = "en" if raw_language == "en" else "zh"
+        primary_subject = getattr(spec.profile, "primary_subject", spec.profile.subject)
+        secondary_subject = getattr(spec.profile, "secondary_subject", "")
+        subject_confidence = getattr(spec.profile, "subject_confidence", "low")
         scored = self._score(spec, language)
         solve = self._top_confident(scored, include_kinds={"theorem", "method"}, min_score=9)
         solve_ids = {card.id for _, card in solve}
@@ -224,6 +267,9 @@ class CardRetriever:
             tuple(score for score, _ in solve),
             tuple(score for score, _ in review),
             language,
+            primary_subject,
+            secondary_subject,
+            subject_confidence,
         )
 
     def _load_cards(self) -> list[KnowledgeCard]:
@@ -231,7 +277,8 @@ class CardRetriever:
             return []
         cards = []
         for path in sorted(self.knowledge_dir.glob("*.txt")):
-            domain = self._domain(path.stem)
+            domains = self._domains(path.stem)
+            domain = domains[0]
             try:
                 lines = path.read_text(encoding="utf-8").splitlines()
             except OSError:
@@ -246,51 +293,81 @@ class CardRetriever:
                     domain=domain,
                     text=text[:420],
                     keywords=tuple(_tokens(text)),
+                    domains=domains,
                 ))
         return cards
 
     @staticmethod
     def _domain(name: str) -> str:
-        for marker, domain in _DOMAIN_BY_NAME.items():
+        return CardRetriever._domains(name)[0]
+
+    @staticmethod
+    def _domains(name: str) -> tuple[str, ...]:
+        for marker, domains in _COMPOSITE_DOMAINS.items():
             if marker in name:
-                return domain
-        return "进阶数学"
+                return domains
+        found = []
+        for marker, domain in _DOMAIN_BY_NAME.items():
+            if marker in name and domain not in found:
+                found.append(domain)
+        return tuple(found) or ("进阶数学",)
 
     def _score(self, spec: "ProblemSpec", language: str = "zh") -> list[tuple[int, KnowledgeCard]]:
         topic = getattr(spec.profile, "topic", "general")
+        primary_subject = getattr(spec.profile, "primary_subject", spec.profile.subject)
+        secondary_subject = getattr(spec.profile, "secondary_subject", "")
+        subject_confidence = getattr(spec.profile, "subject_confidence", "low")
         contract = getattr(spec, "answer_contract", None)
         support = tuple(getattr(contract, "explicit_support_requirements", ()))
         query = set(_tokens(" ".join([
-            spec.profile.subject, spec.profile.problem_type, topic, spec.primary_method,
+            getattr(spec, "problem_text", ""),
+            primary_subject, secondary_subject, spec.profile.problem_type, topic, spec.primary_method,
             spec.alternative_method, *spec.constraints, *spec.risk_flags,
             *support,
             *(goal.instruction for goal in spec.goals),
         ])))
-        domain_tokens = set(_tokens(spec.profile.subject))
+        domain_tokens = set(_tokens(" ".join((primary_subject, secondary_subject))))
         proof_goal = any(goal.kind == "proof" for goal in spec.goals)
+        problem_text = " ".join((
+            getattr(spec, "problem_text", ""),
+            *(goal.instruction for goal in spec.goals),
+        )).lower()
         scored = []
         for card in self.cards:
             if not card.supports(language):
                 continue
             if card.topics and topic not in card.topics:
                 continue
-            # Subject agreement is the strongest retrieval signal. Long notes
-            # naturally contain generic n-grams such as "what method" and can
-            # otherwise outrank a shorter operation-specific card from the
-            # actual mathematical domain.
-            score = 12 if card.domain == spec.profile.subject else 0
+            card_domains = set(card.effective_domains)
+            # Low-confidence classification never injects a card solely from
+            # a guessed domain. Such cards must earn their score from concrete
+            # operation/topic tokens in the public problem.
+            primary_bonus = {"high": 12, "medium": 9, "low": 0}.get(subject_confidence, 0)
+            secondary_bonus = {"high": 6, "medium": 5, "low": 0}.get(subject_confidence, 0)
+            score = primary_bonus if primary_subject in card_domains else 0
+            if secondary_subject and secondary_subject in card_domains:
+                score += secondary_bonus
             if card.domain == "proof" and proof_goal:
                 score += 6
             if card.domain == "answer":
                 score += 2
             if topic != "general" and topic in card.topics:
-                score += 9
+                score += 7
             # Domain membership already has its own score.  Counting every
             # overlapping n-gram of the domain name made generic cards outrank
             # a card matching the actual requested operation.
             score += 2 * len(query.intersection(card.keywords) - domain_tokens)
+            card_text = f"{card.text} {card.text_en}".lower()
+            score += 5 * sum(
+                1 for term in _OPERATION_TERMS
+                if term in problem_text and term in card_text
+            )
             if card.kind == "method" and (
-                card.domain == spec.profile.subject or (card.domain == "proof" and proof_goal)
+                (
+                    subject_confidence != "low"
+                    and bool(card_domains.intersection({primary_subject, secondary_subject}))
+                )
+                or (card.domain == "proof" and proof_goal)
             ):
                 score += 3
             if card.kind == "check" and any(flag in {"missing_roots", "theorem_scope", "double_counting", "multiple_goals"} for flag in spec.risk_flags):
@@ -341,8 +418,20 @@ class CardRetriever:
         return selected
 
 
+_ENGLISH_STOPWORDS = {
+    "the", "a", "an", "and", "or", "of", "to", "from", "for", "with", "without",
+    "all", "is", "are", "be", "in", "on", "by", "as", "at", "when", "where", "that",
+    "this", "then", "than", "each", "every", "one", "only", "has", "have", "having",
+    "find", "determine", "evaluate", "number", "value", "possible", "using", "under",
+    "into", "after", "before", "given", "such", "which", "whose", "does", "not",
+}
+
+
 def _tokens(text: str) -> list[str]:
-    tokens = re.findall(r"[A-Za-z]{2,}|\d+", text.lower())
+    tokens = [
+        token for token in re.findall(r"[A-Za-z]{2,}|\d+", text.lower())
+        if token not in _ENGLISH_STOPWORDS
+    ]
     for run in re.findall(r"[\u4e00-\u9fff]+", text):
         tokens.extend(
             run[index:index + width]

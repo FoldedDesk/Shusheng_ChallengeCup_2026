@@ -20,40 +20,10 @@ from reasoning.candidate_selector import (
 from reasoning.finalizer import ExtractionResult, Finalizer
 from reasoning.math_equivalence import equivalent_answers
 from tools.sympy_tool import SympyTool
+from tools.tool_contract import ToolResult, result_from_legacy_hint
 
 
 SUBMISSION_SOFT_BUDGET_SECONDS = 270
-CERTIFIED_WHOLE_OPERATIONS = {
-    "curve_speed",
-    "first_fundamental_form",
-    "graph_gaussian_curvature",
-    "minimum_degree_path_proof",
-    "nonadjacent_binary_string_count",
-    "precedence_permutation_count",
-    "surjection_count",
-    "planar_euler_faces",
-    "paraboloid_curvature",
-    "ordered_positive_triples",
-    "pde_verification",
-    "propositional_implication_chain",
-    "simple_random_walk_moments",
-    "complete_graph_cover_time",
-    "two_venue_capacity",
-    "circle_laplacian",
-    "central_difference",
-    "number_writing_game",
-    "path_independent_set_partition",
-    "rational_f2_constraint",
-    "digit_sum_window",
-    "lz78_encoding",
-    "spike_sequence_construction",
-    "dependent_bernoulli_construction",
-}
-CERTIFIED_MULTI_GOAL_OPERATIONS = {
-    "curve_speed", "lz78_encoding", "dependent_bernoulli_construction",
-}
-
-
 class SubmissionAgent:
     """Score-first solve path with bounded independent verification."""
 
@@ -69,7 +39,7 @@ class SubmissionAgent:
         text = str(problem or "").strip()
         spec = build_problem_spec(text)
         cards = self.retriever.retrieve(spec) if self._should_retrieve(spec) else RetrievalBundle((), ())
-        evidence = self._tool_evidence(self.sympy.hints_for(text), spec)
+        evidence = self._tool_evidence(self.sympy.results_for(text), spec)
         tool_answer = self._whole_tool_answer(evidence)
         direct_tool_route = bool(tool_answer)
         deep_reasoning = self._use_deep_reasoning(spec, text)
@@ -83,6 +53,13 @@ class SubmissionAgent:
                 "reasons": list(spec.risk_flags),
             }},
             {"step": "stage_budget", "content": budget.trace_content()},
+            {"step": "call_plan", "content": {
+                "route": "certified_tool" if direct_tool_route else "model",
+                "max_model_calls": budget.max_calls,
+                "deep_solve": deep_reasoning,
+                "deep_verification": deep_verification,
+                "independent_review_required": budget.require_independent_review,
+            }},
             {"step": "retrieval", "content": cards.trace_content()},
             {"step": "tool_evidence", "content": self._evidence_trace(evidence)},
         ]
@@ -101,7 +78,7 @@ class SubmissionAgent:
         first_candidates = self._assess_candidates(
             first, "", "", tool_answer, spec, evidence, first_truncated=first_truncated
         )
-        review_mode = self._review_mode(
+        review_mode, review_reason = self._review_decision(
             spec, first_candidates, first, budget, started_at, text, first_truncated
         )
         trace.append({
@@ -109,12 +86,13 @@ class SubmissionAgent:
             "content": {
                 "admitted": bool(review_mode),
                 "mode": review_mode or "none",
+                "reason": review_reason,
                 "remaining_budget_ms": self._remaining_ms(started_at),
             },
         })
         second = ""
         second_truncated = False
-        if review_mode:
+        if review_mode and self._can_call(trace, budget):
             independent = review_mode == "verify" or (
                 review_mode == "rescue" and budget.require_independent_review
             )
@@ -178,7 +156,12 @@ class SubmissionAgent:
             repair_mode != "arbitration"
             or self._remaining_ms(started_at) >= budget.repair_min_remaining_seconds * 1000
         )
-        if repair_mode and budget.allow_repair and optional_arbitration_allowed:
+        if (
+            repair_mode
+            and budget.allow_repair
+            and optional_arbitration_allowed
+            and self._can_call(trace, budget)
+        ):
             continuing_verifier = repair_mode == "continue_verify"
             independent_verifier = repair_mode in {"verify_recovered", "retry_verify"}
             if continuing_verifier or independent_verifier:
@@ -225,6 +208,7 @@ class SubmissionAgent:
                 and third_truncated
                 and arbitration.strip()
                 and not usable_third
+                and self._can_call(trace, budget)
             ):
                 verification_completion, fourth_truncated = self._call(
                     repair_request,
@@ -252,7 +236,16 @@ class SubmissionAgent:
                 "verification_completion": self._safe_trace_candidate(verification_completion),
             },
         })
-        selected = self._select(candidates)
+        arbitration_selection = None
+        arbitration_disposition = "not_used"
+        arbitration_decision = ""
+        if repair_mode == "arbitration" and arbitration.strip():
+            (
+                arbitration_selection,
+                arbitration_disposition,
+                arbitration_decision,
+            ) = self._resolve_arbitration(arbitration, candidates)
+        selected = arbitration_selection or self._select(candidates)
         verified_recovery = None
         if repair_mode in {"verify_recovered", "continue_verify", "retry_verify"}:
             verified_recovery = self._select([
@@ -289,6 +282,8 @@ class SubmissionAgent:
                 "final_verification_completion_used": bool(verification_completion.strip()),
                 "repair_mode": repair_mode or "none",
                 "final_repair_truncated": third_truncated,
+                "arbitration_decision": arbitration_decision or "none",
+                "arbitration_disposition": arbitration_disposition,
                 "model_candidate_pairs": self._equivalence_pairs(candidates),
             },
         })
@@ -301,6 +296,7 @@ class SubmissionAgent:
                 "source": selected.source if selected else "fallback",
                 "score": selected.score if selected else 0,
                 "degraded_reason": degraded_reason,
+                "arbitration_selection_applied": bool(arbitration_selection),
                 "recovered_answer_verification": (
                     verified_recovery.validation_tier if verified_recovery else "unresolved"
                 ) if repair_mode in {
@@ -314,6 +310,8 @@ class SubmissionAgent:
                 "answer_shape": spec.profile.answer_shape,
                 "source": selected.source if selected else "fallback",
                 "contract_wrapper": self._contract_value(spec, "wrapper", "none"),
+                "model_call_count": self._model_call_count(trace),
+                "model_call_limit": budget.max_calls,
                 "elapsed_ms": int((monotonic() - started_at) * 1000),
             },
         })
@@ -546,20 +544,25 @@ class SubmissionAgent:
     ) -> str:
         del candidates
         english = SubmissionAgent._answer_language(spec) == "en"
+        alternative = str(getattr(spec, "alternative_method", "") or "independent_check")
+        choice_check = ""
+        if spec.profile.answer_shape == "choice":
+            choice_check = (
+                "Evaluate every option separately as true or false before returning the complete label set.\n"
+                if english else
+                "请先逐项判断每个选项的真伪，再返回完整的正确选项集合。\n"
+            )
         content = (
             f"Problem:\n{problem}\n\nSolve independently from scratch using a different method where possible. "
             "Do not assume or reconstruct another solver's answer. Check every requested value, root, condition, unit, and extremal case.\n"
+            f"Preferred independent method: {alternative}.\n{choice_check}"
             f"Required answer obligations:\n{SubmissionAgent._goal_context(spec)}\n"
             if english else
             f"题目：\n{problem}\n\n请从头独立重算，尽量采用不同方法，不要猜测或沿用另一位求解者的答案。"
-            f"逐项检查数值、全部根、条件、单位和极端情形。\n必须覆盖的作答要求：\n{SubmissionAgent._goal_context(spec)}\n"
+            f"逐项检查数值、全部根、条件、单位和极端情形。\n"
+            f"优先采用的独立方法：{alternative}。\n{choice_check}"
+            f"必须覆盖的作答要求：\n{SubmissionAgent._goal_context(spec)}\n"
         )
-        if cards.solve_context():
-            content += (
-                "Curated domain facts: use directly applicable facts and check each option or definition against them.\n"
-                if english else
-                "经本地校订的领域事实：必须用直接适用的事实逐项核对定义或选项。\n"
-            ) + cards.solve_context() + "\n"
         if cards.review_context():
             content += ("Alternative method hint:\n" if english else "备选方法提示：\n") + cards.review_context() + "\n"
         if evidence:
@@ -580,20 +583,43 @@ class SubmissionAgent:
         evidence: tuple[ToolEvidence, ...],
     ) -> str:
         english = SubmissionAgent._answer_language(spec) == "en"
-        rendered = "\n".join(
-            f"Candidate {index + 1}: {item.answer}" if english else f"候选{index + 1}：{item.answer}"
-            for index, item in enumerate(candidates)
-            if item.validation_tier in {"complete", "degraded"}
-            and item.answer
-            and item.shape_valid
-            and item.formatting_valid
-            and SubmissionAgent._source_stage(item.source) in {"solve", "verify", "rescue"}
+        stage_groups = (
+            ("A", {"solve"}),
+            ("B", {"verify", "rescue"}),
         )
+        rendered_items = []
+        for label, stages in stage_groups:
+            eligible = [
+                item for item in candidates
+                if item.validation_tier in {"complete", "degraded"}
+                and item.answer
+                and item.shape_valid
+                and item.formatting_valid
+                and SubmissionAgent._source_stage(item.source) in stages
+            ]
+            if not eligible:
+                continue
+            chosen = max(
+                eligible,
+                key=lambda item: (
+                    item.validation_tier == "complete",
+                    sum(item.goal_coverage),
+                    item.score,
+                    item.explicit_answer,
+                ),
+            )
+            rendered_items.append(
+                f"Candidate {label}: {chosen.answer[:1800]}"
+                if english else f"候选{label}：{chosen.answer[:1800]}"
+            )
+        rendered = "\n".join(rendered_items)
         content = (
-            f"Problem:\n{problem}\n\nThe candidate answers conflict. Recompute the decisive steps and adjudicate mathematically; never choose by length or style.\n"
+            f"Problem:\n{problem}\n\nThe independently produced candidates conflict. Recompute only the decisive step and choose A or B by mathematics, never by length or style. "
+            "Do not invent a third answer. If neither candidate can be certified, mark the decision UNRESOLVED.\n"
             f"Required answer obligations:\n{SubmissionAgent._goal_context(spec)}\n{rendered}\n"
             if english else
-            f"题目：\n{problem}\n\n候选答案发生实质冲突。请重算关键步骤并按数学正确性裁决，不要按长度或措辞选择。\n"
+            f"题目：\n{problem}\n\n两个独立候选发生实质冲突。请只重算有判别力的关键步骤，并按数学正确性选择A或B，"
+            f"不得按长度或措辞选择，也不得发明第三个答案；若两者都无法核证，标记UNRESOLVED。\n"
             f"必须覆盖的作答要求：\n{SubmissionAgent._goal_context(spec)}\n{rendered}\n"
         )
         if evidence:
@@ -605,8 +631,11 @@ class SubmissionAgent:
                 "经本地校订的领域事实（直接相关时必须使用）：\n"
             ) + cards.solve_context() + "\n"
         return content + (
-            "First line: FINAL: \\boxed{the adjudicated complete answer}."
-            if english else "第一行必须写 FINAL: \\boxed{裁决后的完整答案}。"
+            "First line: FINAL: \\boxed{the exact complete answer of candidate A or B}. "
+            "Second line: DECISION: A, DECISION: B, or DECISION: UNRESOLVED. Then give one decisive check."
+            if english else
+            "第一行必须写 FINAL: \\boxed{候选A或B的完整答案}。第二行写 DECISION: A、DECISION: B "
+            "或 DECISION: UNRESOLVED，之后只写一项决定性核验。"
         )
 
     @staticmethod
@@ -779,152 +808,114 @@ class SubmissionAgent:
         return "请直接完整求解，避免冗长解释。"
 
     @staticmethod
-    def _tool_evidence(hints: list[str], spec: ProblemSpec) -> tuple[ToolEvidence, ...]:
-        supported = {
-            "SymPy 计算": "calculate", "SymPy 方程解": "solve_equation", "SymPy 导数": "derivative",
-            "SymPy 定积分": "definite_integral", "SymPy 不定积分": "integral", "SymPy 极限": "limit",
-            "SymPy 递推通项": "recurrence_solution", "SymPy 曲线速度": "curve_speed",
-            "SymPy 第一基本形式": "first_fundamental_form",
-            "本地高斯曲率公式": "graph_gaussian_curvature",
-            "本地图论路径证明": "minimum_degree_path_proof",
-            "本地不相邻二进制串计数": "nonadjacent_binary_string_count",
-            "本地不相邻二进制串核验": "nonadjacent_binary_string_count_check",
-            "本地排列条件计数": "precedence_permutation_count",
-            "本地排列条件计数核验": "precedence_permutation_count_check",
-            "本地满射容斥计数": "surjection_count",
-            "本地满射容斥核验": "surjection_count_check",
-            "本地平面图欧拉答案": "planar_euler_faces",
-            "本地平面图欧拉核验": "planar_euler_faces_check",
-            "本地抛物面曲率答案": "paraboloid_curvature",
-            "本地抛物面曲率核验": "paraboloid_curvature_check",
-            "SymPy PDE核验": "pde_verification",
-            "本地有序三元组计数": "ordered_positive_triples",
-            "本地随机游走矩": "simple_random_walk_moments",
-            "本地完全图覆盖时间": "complete_graph_cover_time",
-            "本地二项分布容量": "two_venue_capacity",
-            "本地圆周拉普拉斯": "circle_laplacian",
-            "本地中心差分": "central_difference",
-            "本地有理数约束传播答案": "rational_f2_constraint",
-            "本地有理数约束传播核验": "rational_f2_constraint_check",
-            "本地数位和窗口答案": "digit_sum_window",
-            "本地数位和窗口最小性核验": "digit_sum_window_check",
-            "本地取数博弈答案": "number_writing_game",
-            "本地取数博弈状态核验": "number_writing_game_state_check",
-            "本地路径配分函数答案": "path_independent_set_partition",
-            "本地路径配分函数递推核验": "path_partition_recurrence_check",
-            "本地LZ78编码答案": "lz78_encoding",
-            "本地LZ78编码核验": "lz78_encoding_check",
-            "本地尖峰函数构造答案": "spike_sequence_construction",
-            "本地尖峰函数构造核验": "spike_sequence_construction_check",
-            "本地Bernoulli依赖构造答案": "dependent_bernoulli_construction",
-            "本地Bernoulli依赖构造核验": "dependent_bernoulli_construction_check",
-            "本地命题逻辑推导": "propositional_implication_chain",
-        }
+    def _tool_evidence(
+        results: list[ToolResult] | list[str], spec: ProblemSpec
+    ) -> tuple[ToolEvidence, ...]:
+        """Translate deterministic results without letting labels self-certify."""
         evidence = []
-        for hint in hints:
-            label, separator, result = hint.partition(": ")
-            if not separator or not result.strip():
+        for raw in results:
+            result = raw if isinstance(raw, ToolResult) else result_from_legacy_hint(raw)
+            if result is None or not result.result.strip():
                 continue
-            operation = supported.get(label, "local_hint")
-            certified_whole = (
-                operation in CERTIFIED_WHOLE_OPERATIONS
-                and SubmissionAgent._certified_operation_covers_contract(operation, spec)
+            whole = bool(
+                result.whole_answer_eligible
+                and SubmissionAgent._tool_contract_covers_spec(result, spec)
             )
-            whole = certified_whole or (
-                operation != "local_hint"
-                and not operation.endswith("_check")
-                and spec.tool_can_answer_whole
-            )
-            # A supported local operation is verified evidence even when it is
-            # only a substep. Scope, not verification, controls whether it may
-            # become the complete submitted answer.
             evidence.append(ToolEvidence(
-                result.strip(), "whole_goal" if whole else "subexpression", operation,
-                operation != "local_hint",
+                result.result.strip(),
+                "whole_goal" if whole else "subexpression",
+                result.operation,
+                result.verified,
+                result.certificate.method,
+                result.certificate.checks,
+                result.certificate.issues,
             ))
+        whole = [item for item in evidence if item.scope == "whole_goal" and item.verified]
+        if len(whole) > 1 and not all(
+            equivalent_answers(whole[0].result, item.result) for item in whole[1:]
+        ):
+            evidence = [
+                ToolEvidence(
+                    item.result,
+                    "subexpression" if item.scope == "whole_goal" else item.scope,
+                    item.operation,
+                    item.verified,
+                    item.certificate_method,
+                    item.certificate_checks,
+                    tuple(dict.fromkeys((*item.certificate_issues, "conflicting_whole_tool_results"))),
+                )
+                for item in evidence
+            ]
         return tuple(evidence)
 
     @staticmethod
-    def _certified_operation_covers_contract(operation: str, spec: ProblemSpec) -> bool:
-        """Prevent a verified subcalculation from bypassing unrelated answer parts."""
-        contract = getattr(spec, "answer_contract", None)
-        parts = tuple(getattr(contract, "parts", ())) if contract is not None else ()
+    def _tool_contract_covers_spec(result: ToolResult, spec: ProblemSpec) -> bool:
+        """Require an explicit operation contract to cover every answer obligation."""
+        tool_contract = result.contract
+        if tool_contract is None or not result.verified:
+            return False
+        # Generic symbolic handlers deliberately solve only a narrow syntactic
+        # fragment.  Their static contract is necessary but not sufficient:
+        # ProblemSpec also rejects higher derivatives, constrained-domain
+        # equations, numerical-method prompts, and other embedded operations.
+        generic_symbolic_operations = {
+            "calculate",
+            "solve_equation",
+            "derivative",
+            "definite_integral",
+            "integral",
+            "limit",
+        }
+        if result.operation in generic_symbolic_operations and not spec.tool_can_answer_whole:
+            return False
+        if SubmissionAgent._has_uncovered_tool_obligation(spec.problem_text):
+            return False
+        answer_contract = getattr(spec, "answer_contract", None)
+        parts = tuple(getattr(answer_contract, "parts", ())) if answer_contract is not None else ()
         goal_count = max(len(spec.goals), len(parts))
-        if operation == "lz78_encoding":
-            requirements = {
-                requirement.name
-                for goal in spec.goals
-                for requirement in goal.requirements
-                if requirement.strict
-            }
-            return (
-                1 <= goal_count <= 2
-                and requirements == {"phrase_decomposition", "encoded_string"}
-            )
-        if operation == "spike_sequence_construction":
-            requirements = {
-                requirement.name
-                for goal in spec.goals
-                for requirement in goal.requirements
-            }
-            return (
-                1 <= goal_count <= 2
-                and any(goal.kind == "construction" for goal in spec.goals)
-                and all(goal.kind in {"construction", "formula"} for goal in spec.goals)
-                and bool(requirements & {"integral_result", "integral_value"})
-                and requirements <= {"integral_result", "integral_value", "pointwise_limit"}
-            )
-        if operation == "dependent_bernoulli_construction":
-            requirements = {
-                requirement.name
-                for goal in spec.goals
-                for requirement in goal.requirements
-            }
-            has_probability_target = "target_p" in requirements or any(
-                re.search(r"P\s*\(\s*X\s*=\s*Y\s*\)", goal.instruction, re.IGNORECASE)
-                for goal in spec.goals
-            )
-            return (
-                1 <= goal_count <= 2
-                and any(goal.kind == "construction" for goal in spec.goals)
-                and has_probability_target
-                and requirements <= {"target_p"}
-            )
-        if operation in {
-            "nonadjacent_binary_string_count",
-            "precedence_permutation_count",
-            "surjection_count",
-            "planar_euler_faces",
-            "paraboloid_curvature",
-        }:
-            requirements = {
-                requirement.name
-                for goal in spec.goals
-                for requirement in goal.requirements
-            }
-            allowed = {
-                "nonadjacent_binary_string_count": {"position_selection"},
-                "precedence_permutation_count": {"counting_method"},
-                "surjection_count": {"inclusion_exclusion"},
-                "planar_euler_faces": {"euler_formula_check"},
-                "paraboloid_curvature": {
-                    "principal_curvatures", "gaussian_curvature", "surface_second_derivatives",
-                },
-            }[operation]
-            max_goals = 2 if operation == "paraboloid_curvature" else 1
-            return (
-                1 <= goal_count <= max_goals
-                and spec.profile.answer_shape in {"number", "expression"}
-                and requirements <= allowed
-            )
-        return goal_count <= 1 or operation in CERTIFIED_MULTI_GOAL_OPERATIONS
+        requirements = {
+            requirement.name
+            for goal in spec.goals
+            for requirement in goal.requirements
+            if getattr(requirement, "category", "result") != "format"
+        }
+        if not tool_contract.covers(
+            goal_count,
+            requirements,
+            task_kind=getattr(spec.profile, "task_kind", spec.profile.problem_type),
+            answer_shape=getattr(spec.profile, "result_kind", spec.profile.answer_shape),
+            problem_facts=result.certificate.checks,
+        ):
+            return False
+        if result.operation in {"spike_sequence_construction", "dependent_bernoulli_construction"}:
+            return any(goal.kind == "construction" for goal in spec.goals)
+        return True
+
+    @staticmethod
+    def _has_uncovered_tool_obligation(problem: str) -> bool:
+        """Reject direct routes when the prompt transforms or filters a matched result."""
+        text = str(problem or "")
+        return bool(re.search(
+            r"\b(?:and\s+then|then)\s+(?:add|subtract|multiply|divide|square|cube|double|"
+            r"take|report|return|compute|evaluate|find)\b|"
+            r"\b(?:twice|double|half\s+of|one\s+plus|two\s+times)\b|"
+            r"\bonly\s+(?:count|include|report|return)\b|\breport\s+only\b|"
+            r"\b(?:vertex\s+\d+|every\s+(?:set|member)|each\s+(?:set|member))\s+must\b|"
+            r"(?:再|然后|所得结果|上述结果|原式)[^。！？!?\n]{0,24}(?:加|减|乘|除|平方|立方|倍)|"
+            r"(?:只|仅)(?:统计|计算|计入|报告)|(?:顶点\s*\d+|每个集合|每个成员)必须",
+            text,
+            re.IGNORECASE,
+        ))
 
     @staticmethod
     def _whole_tool_answer(evidence: tuple[ToolEvidence, ...]) -> str:
-        for item in evidence:
-            if item.scope == "whole_goal" and item.verified:
-                return item.result
-        return ""
+        whole = [
+            item.result for item in evidence
+            if item.scope == "whole_goal" and item.verified
+        ]
+        if not whole or not all(equivalent_answers(whole[0], item) for item in whole[1:]):
+            return ""
+        return whole[0]
 
     @staticmethod
     def _evidence_context(evidence: tuple[ToolEvidence, ...]) -> str:
@@ -939,9 +930,20 @@ class SubmissionAgent:
                 item.scope == "subexpression" and item.verified for item in evidence
             ),
             "operations": [item.operation for item in evidence],
+            "certificates": [
+                {
+                    "operation": item.operation,
+                    "scope": item.scope,
+                    "passed": item.verified,
+                    "method": item.certificate_method,
+                    "checks": list(item.certificate_checks),
+                    "issues": list(item.certificate_issues),
+                }
+                for item in evidence
+            ],
         }
 
-    def _review_mode(
+    def _review_decision(
         self,
         spec: ProblemSpec,
         first_candidates: list[CandidateAssessment],
@@ -950,27 +952,47 @@ class SubmissionAgent:
         started_at: float,
         problem: str = "",
         provider_truncated: bool = False,
-    ) -> str:
-        del started_at
+    ) -> tuple[str, str]:
+        del problem
         if not budget.allow_review:
-            return ""
+            return "", "review_disabled"
+        usable = [
+            candidate for candidate in first_candidates
+            if candidate.validation_tier in {"complete", "degraded"}
+            and candidate.shape_valid
+            and candidate.formatting_valid
+        ]
         needs_rescue = (
-            not any(candidate.accepted for candidate in first_candidates)
-            or any(candidate.coverage_uncertain for candidate in first_candidates)
-            or self._response_near_budget(first_response, budget.solve_tokens)
+            not usable
+            or all(candidate.coverage_uncertain for candidate in usable)
         )
         if needs_rescue:
             if provider_truncated and first_response.strip():
-                return "continue"
-            return "rescue"
-        contest_contract = bool(re.search(
-            r"remember\s+to\s+put\s+your\s+final\s+answer|\\boxed\s*\{\s*\}",
-            problem,
-            re.IGNORECASE,
-        ))
-        if budget.require_independent_review or contest_contract or len(problem) >= 180:
-            return "verify"
-        return ""
+                return "continue", "truncated_without_complete_result"
+            return "rescue", "missing_complete_result"
+        if (
+            not budget.require_independent_review
+            and self._remaining_ms(started_at) < budget.review_min_remaining_seconds * 1000
+        ):
+            return "", "insufficient_optional_review_time"
+        if budget.require_independent_review:
+            return "verify", "high_risk_independent_check"
+        if spec.verification_required:
+            return "verify", "problem_contract_requires_verification"
+        if getattr(spec.profile, "confidence", "high") == "low":
+            return "verify", "low_classification_confidence"
+        return "", "complete_low_risk_result"
+
+    @staticmethod
+    def _model_call_count(trace: list[dict]) -> int:
+        return sum(
+            str(item.get("step", "")).startswith("model_call_")
+            for item in trace
+        )
+
+    @staticmethod
+    def _can_call(trace: list[dict], budget: StageBudget) -> bool:
+        return SubmissionAgent._model_call_count(trace) < budget.max_calls
 
     @staticmethod
     def _response_near_budget(response: str, max_tokens: int) -> bool:
@@ -1039,6 +1061,25 @@ class SubmissionAgent:
                     )
                 ):
                     reasons = tuple(dict.fromkeys((*reasons, "provider_truncated_ambiguous_box")))
+                standalone_explicit = bool(
+                    result.explicit_answer
+                    and len(response) <= 600
+                    and len(response.splitlines()) == 1
+                    and not Finalizer.validate_structure(response)
+                )
+                if (
+                    provider_truncated
+                    and stage in {
+                        "verify", "verify_recovered", "continue_verify", "retry_verify"
+                    }
+                    and not standalone_explicit
+                ):
+                    # A cut verifier may state one value near the start and
+                    # contradict it later.  It is unresolved evidence, not a
+                    # safe replacement for a complete primary answer.
+                    reasons = tuple(dict.fromkeys((
+                        *reasons, "provider_truncated_ambiguous_box"
+                    )))
                 candidates.append(assess_candidate(
                     result.answer, source, spec, evidence, result.method, reasons,
                     result.raw_has_meta, result.explicit_answer, verdict,
@@ -1069,7 +1110,7 @@ class SubmissionAgent:
         for item in candidates:
             stage = SubmissionAgent._source_stage(item.source)
             if (
-                item.validation_tier not in {"complete", "degraded"}
+                item.validation_tier != "complete"
                 or not item.answer
                 or not item.shape_valid
                 or not item.formatting_valid
@@ -1113,7 +1154,74 @@ class SubmissionAgent:
 
     @staticmethod
     def _select(candidates: list[CandidateAssessment]) -> CandidateAssessment | None:
-        return choose_candidate(candidates)
+        usable_bases = [
+            item for item in candidates
+            if SubmissionAgent._source_stage(item.source) != "arbitration"
+            and item.validation_tier in {"complete", "degraded"}
+        ]
+        eligible = list(usable_bases)
+        for item in candidates:
+            if SubmissionAgent._source_stage(item.source) != "arbitration":
+                continue
+            if item.tool_status == "pass" or any(
+                equivalent_answers(item.answer, base.answer) for base in usable_bases
+            ):
+                eligible.append(item)
+        return choose_candidate(eligible)
+
+    @staticmethod
+    def _best_stage_candidate(
+        candidates: list[CandidateAssessment], stages: set[str]
+    ) -> CandidateAssessment | None:
+        return choose_candidate([
+            item for item in candidates
+            if SubmissionAgent._source_stage(item.source) in stages
+            and item.validation_tier in {"complete", "degraded"}
+            and item.answer
+            and item.shape_valid
+            and item.formatting_valid
+        ])
+
+    @staticmethod
+    def _resolve_arbitration(
+        response: str, candidates: list[CandidateAssessment]
+    ) -> tuple[CandidateAssessment | None, str, str]:
+        """Treat arbitration as an A/B certificate, never as a third solver."""
+        candidate_a = SubmissionAgent._best_stage_candidate(candidates, {"solve"})
+        candidate_b = SubmissionAgent._best_stage_candidate(candidates, {"verify", "rescue"})
+        arb = SubmissionAgent._best_stage_candidate(candidates, {"arbitration"})
+        match = re.search(
+            r"(?:DECISION|裁决)\s*[:：]\s*(A|B|UNRESOLVED|未解决)",
+            str(response or ""),
+            re.IGNORECASE,
+        )
+        decision = match.group(1).upper() if match else ""
+        if decision == "未解决":
+            decision = "UNRESOLVED"
+
+        fallback = (
+            candidate_b if candidate_b and candidate_b.validation_tier == "complete" else
+            candidate_a if candidate_a and candidate_a.validation_tier == "complete" else
+            candidate_b or candidate_a
+        )
+        if decision in {"A", "B"}:
+            target = candidate_a if decision == "A" else candidate_b
+            if target and arb and equivalent_answers(arb.answer, target.answer):
+                return target, f"supports_{decision.lower()}", decision
+            return fallback, "decision_answer_mismatch", decision
+        if decision == "UNRESOLVED":
+            return fallback, "unresolved_fallback", decision
+        if arb and candidate_a and equivalent_answers(arb.answer, candidate_a.answer):
+            return candidate_a, "implicit_supports_a", "A"
+        if arb and candidate_b and equivalent_answers(arb.answer, candidate_b.answer):
+            return candidate_b, "implicit_supports_b", "B"
+        if arb and arb.tool_status == "pass":
+            certified = next(
+                (item for item in candidates if item.tool_status == "pass" and item.source == "sympy_verified"),
+                arb,
+            )
+            return certified, "certified_tool_result", "TOOL"
+        return fallback, "rejected_novel_answer", ""
 
     @staticmethod
     def _source_stage(source: str) -> str:
@@ -1140,6 +1248,9 @@ class SubmissionAgent:
             "shape_valid": item.shape_valid,
             "formatting_valid": item.formatting_valid,
             "goal_coverage": list(item.goal_coverage),
+            "result_coverage": list(item.result_coverage),
+            "support_coverage": list(item.support_coverage),
+            "format_coverage": list(item.format_coverage),
             "coverage_uncertain": item.coverage_uncertain,
             "tool_status": item.tool_status,
             "extraction_method": item.extraction_method,
@@ -1173,16 +1284,19 @@ class SubmissionAgent:
         multipart = len(spec.goals) > 1
         tagged_block = SubmissionAgent._best_tagged_block(response, spec)
         support_required = any(
-            requirement.strict and requirement.name not in {
-                "judgement",
-                "integral_value",
-                "pointwise_limit",
-                "domain",
-                "solution_formula",
-            }
+            requirement.category == "support"
             for goal in spec.goals
             for requirement in goal.requirements
+        ) or (
+            getattr(spec.profile, "task_kind", "") == "construction"
+            or any(goal.kind == "construction" for goal in spec.goals)
         )
+        explicit_incomplete = bool(explicit) and not assess_candidate(
+            SubmissionAgent._normalize_answer(explicit, spec),
+            "explicit_result_probe",
+            spec,
+            (),
+        ).complete_goals
         proof_block = tagged_block if proof else ""
         first_line = next(
             (line for line in response.splitlines() if line.strip()),
@@ -1192,11 +1306,14 @@ class SubmissionAgent:
             first_line
             and not SubmissionAgent._strip_leading_answer_marker(first_line)
         )
-        if not proof and tagged_block and (multipart or support_required):
+        if not proof and tagged_block and (
+            multipart or support_required or explicit_incomplete
+        ):
             answer = SubmissionAgent._support_submission(
                 tagged_block,
                 Finalizer.extract_result(tagged_block).answer or explicit,
                 spec,
+                max_chars=800 if explicit_incomplete else 240,
             )
             reasons = Finalizer.validate_structure(answer)
             result = ExtractionResult(
@@ -1297,19 +1414,25 @@ class SubmissionAgent:
 
     @staticmethod
     def _should_retrieve(spec: ProblemSpec) -> bool:
+        problem_text = " ".join((
+            getattr(spec, "problem_text", ""),
+            *(goal.instruction for goal in spec.goals),
+        ))
         if spec.profile.answer_shape in {"choice", "truth"}:
             return True
-        if any(re.search(
-            r"时间序列|回归|异方差|统计|中心差分|有限差分|有限元|Lempel[- ]?Ziv|LZ78",
-            goal.instruction,
+        if re.search(
+            r"时间序列|回归|异方差|统计|中心差分|有限差分|有限元|辛普森|高斯求积|"
+            r"Lempel[- ]?Ziv|LZ78|newton(?:'s)? method|simpson(?:'s)? rule|"
+            r"gauss[- ]legendre|quadrature|interpolat",
+            problem_text,
             re.IGNORECASE,
-        ) for goal in spec.goals):
+        ):
             return True
         if getattr(spec.profile, "topic", "general").startswith("olympiad_"):
             return True
         theoretical = {
             "抽象代数", "拓扑学", "泛函分析", "复分析", "常微分方程",
-            "数学分析", "离散数学", "数论", "初等几何", "高等代数",
+            "数学分析", "离散数学", "数论", "初等几何", "高等代数", "数值分析",
         }
         risk_driven = {"multiple_goals", "theorem_scope", "definition_or_structure_conditions", "construction_validation"}
         return spec.profile.subject in theoretical and (
@@ -1466,9 +1589,15 @@ class SubmissionAgent:
             if len(spec.goals) > 1 and multipart_items(value) < len(spec.goals):
                 return False
             normalized = SubmissionAgent._normalize_answer(value, spec)
-            return assess_candidate(
+            candidate_complete = assess_candidate(
                 normalized, "support_compaction", spec, ()
             ).accepted
+            explicit_support_complete = all(
+                requirement.matches(normalized)
+                for goal in spec.goals
+                for requirement in goal.support_requirements
+            )
+            return candidate_complete and explicit_support_complete
 
         templated = bool(re.search(
             r"(?im)^\s*(?:#{1,6}\s*|\d+[.)、]\s*|[-+*]\s+|\*{0,2}(?:"
@@ -1546,7 +1675,7 @@ class SubmissionAgent:
 
         # Preserve the previous behavior when no bounded subset can satisfy the
         # contract. Completeness is more important than cosmetic compression.
-        return full
+        return base if Finalizer.validate_structure(full) else full
 
     @staticmethod
     def _support_units(response: str) -> tuple[str, ...]:

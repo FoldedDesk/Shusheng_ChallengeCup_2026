@@ -8,7 +8,7 @@ import re
 from classifier.difficulty import classify_difficulty
 from classifier.problem_type import classify_problem_type
 from classifier.choice import has_choice_options
-from classifier.subject import classify_subject
+from classifier.subject import classify_subjects
 from classifier.target import extract_target_clause
 
 
@@ -22,6 +22,20 @@ class ProblemProfile:
     confidence: str
     tool_eligible: bool
     topic: str = "general"
+    task_kind: str = "calculation"
+    result_kind: str = "number"
+    primary_subject: str = "进阶数学"
+    secondary_subject: str = ""
+    subject_confidence: str = "low"
+    matched_signals: tuple[str, ...] = ()
+
+    @property
+    def primary(self) -> str:
+        return self.primary_subject
+
+    @property
+    def secondary(self) -> str:
+        return self.secondary_subject
 
     def trace_content(self) -> dict:
         return asdict(self)
@@ -42,12 +56,27 @@ _ENGLISH_SUBJECTS = (
 
 
 _OLYMPIAD_TOPICS = (
-    ("olympiad_functional_equation", r"\bfind\s+all\s+functions?\b|\bfunctional equations?\b|f\s*\([^)]*\)\s*[+=].*f\s*\("),
-    ("olympiad_geometry", r"\b(triangle|quadrilateral|polygon|circle|cyclic|tangent|collinear|concurrent|circumcircle|incircle|orthocenter|incenter|angle bisector)\b"),
-    ("olympiad_number_theory", r"\b(positive integers?|integer solutions?|diophantine|divisibility|divisible|congruence|modulo|prime numbers?|gcd|lcm)\b"),
-    ("olympiad_combinatorics", r"\b(colorings?|arrangements?|permutations?|combinations?|pigeonhole|double counting|tournament|subsets?|ways\s+to)\b"),
-    ("olympiad_inequality", r"\b(inequalit\w*|am[- ]gm|cauchy[- ]schwarz|positive reals?|minimum possible|maximum possible)\b"),
-    ("olympiad_polynomial", r"\b(polynomials?|vieta|integer roots?|real roots?|monic polynomial)\b"),
+    (
+        "olympiad_functional_equation",
+        r"\bfunctional equations?\b|"
+        r"\b(?:find|determine|classify)\s+all\s+(?:(?:continuous|differentiable|"
+        r"twice[- ]differentiable|real[- ]valued)\s+)*functions?\s+[A-Za-z]?\s*"
+        r"(?::|such\s+that|satisfying)\s*[^.!?]{0,500}"
+        r"[A-Za-z]\s*\([^)]*\)\s*=\s*[^.!?]{0,300}[A-Za-z]\s*\(",
+    ),
+    ("olympiad_geometry", r"\b(triangles?|quadrilaterals?|polygons?|hexagons?|circle|cyclic|tangent|collinear|concurrent|circumcircle|incircle|orthocenter|circumcenter|incenter|angle bisector)\b"),
+    ("olympiad_number_theory", r"\b(positive integers?|integer solutions?|pairs? of integers|triples? of integers|diophantine|divisibility|divisible|divides|congruence|modulo|prime numbers?|gcd|lcm|totient|pell equation|factorials?|positive divisors?)\b|\\pmod|\\mid"),
+    (
+        "olympiad_combinatorics",
+        r"\b(colorings?|arrangements?|permutations?|combinations?|pigeonhole|double counting|"
+        r"tournaments?|subsets?|ways\s+to|spanning trees?|labeled trees?|posets?|linear extensions?|"
+        r"bracelets?|necklaces?|binary strings?|lattice paths?|generating functions?|coefficients?|"
+        r"heaps?|losing positions?|winning positions?|codewords?|hamming weight|tilings?|dominoes?|"
+        r"boards?|partitions?|surjective functions?|injective functions?|boolean variables?|"
+        r"satisfying assignments?|conjunctive normal form|selected seats?|graphs?)\b",
+    ),
+    ("olympiad_inequality", r"\b(inequalit\w*|am[- ]gm|cauchy[- ]schwarz|positive reals?|minimum possible|maximum possible|minimum value|maximum value)\b"),
+    ("olympiad_polynomial", r"\b(polynomials?|vieta|integer roots?|real roots?|complex roots?|roots?,\s*counted\s+with\s+multiplicity|monic polynomial)\b"),
     ("olympiad_sequence", r"\b(sequences?|recurrence relations?|recursive sequence)\b"),
     ("olympiad_general", r"\b(olympiad|imo|aime|amc|math contest|mathematical competition)\b"),
 )
@@ -58,15 +87,27 @@ _OLYMPIAD_SIGNAL = re.compile(
     r"prove|show\s+that|find\s+all|determine\s+all|classify\s+all|for\s+all|"
     r"least\s+possible|greatest\s+possible|minimum\s+possible|maximum\s+possible|"
     r"functional equations?|diophantine|pigeonhole|double counting|"
-    r"number\s+of\s+ways|how\s+many\s+ways)\b",
+    r"number\s+of\s+ways|how\s+many(?:\s+ways)?|find\s+the\s+number|"
+    r"determine\s+the\s+number|find\s+the\s+coefficient|construct|for\s+every|"
+    r"least\s+nonnegative\s+residue|greatest\s+integer|least\s+positive\s+integer|"
+    r"smallest\s+integer|"
+    r"minimum\s+value|maximum\s+value|find\s+the\s+exact)\b",
     re.IGNORECASE,
 )
 
 
 _OLYMPIAD_GEOMETRY_MARKERS = re.compile(
-    r"\b(?:triangle|quadrilateral|polygon|circle|cyclic|tangent|collinear|concurrent|"
-    r"circumcircle|incircle|orthocenter|incenter|angle bisector)\b",
+    r"\b(?:triangles?|quadrilaterals?|polygons?|hexagons?|circle|cyclic|tangent|collinear|concurrent|"
+    r"circumcircle|incircle|orthocenter|circumcenter|incenter|angle bisector)\b",
     re.IGNORECASE,
+)
+
+
+_COMBINATORIAL_OBJECT_PRIORITY = re.compile(
+    r"\b(?:famil(?:y|ies).{0,50}subsets?|set systems?|blocks?|surjective functions?|"
+    r"injective functions?|bracelets?|necklaces?|binary strings?|lattice paths?|"
+    r"linear extensions?|spanning trees?|labeled trees?|tournaments?|colorings?)\b",
+    re.IGNORECASE | re.DOTALL,
 )
 
 
@@ -87,17 +128,29 @@ def classify_profile(problem: str) -> ProblemProfile:
     lowered = text.lower()
     target = extract_target_clause(text)
     problem_type = classify_problem_type(text)
-    subject = classify_subject(text)
+    subject_route = classify_subjects(text)
+    subject = subject_route.primary
+    secondary_subject = subject_route.secondary
+    subject_confidence = subject_route.confidence
+    matched_signals = subject_route.matched_signals
     topic = _classify_topic(lowered)
     if topic in _TOPIC_SUBJECTS:
-        subject = _TOPIC_SUBJECTS[topic]
-    if subject == "进阶数学":
-        for candidate, pattern in _ENGLISH_SUBJECTS:
-            if re.search(pattern, lowered):
-                subject = candidate
-                break
+        topic_subject = _TOPIC_SUBJECTS[topic]
+        if subject not in {"进阶数学", topic_subject}:
+            secondary_subject = subject
+        subject = topic_subject
+        subject_confidence = "high" if subject_route.primary == topic_subject else "medium"
+        matched_signals = (*matched_signals, f"{topic_subject}:topic:{topic}")
 
     answer_shape = _answer_shape(text, problem_type, target)
+    if subject == "进阶数学" and answer_shape == "roots" and re.search(
+        r"方程|根|零点|\b(?:equation|roots?|zeros?|solutions?)\b",
+        target or text,
+        re.IGNORECASE,
+    ):
+        subject = "高等代数"
+        subject_confidence = "low"
+        matched_signals = (*matched_signals, "高等代数:root-object-fallback")
     language = "mixed" if re.search(r"[\u4e00-\u9fff]", text) and re.search(r"[A-Za-z]", text) else (
         "zh" if re.search(r"[\u4e00-\u9fff]", text) else "en"
     )
@@ -119,20 +172,46 @@ def classify_profile(problem: str) -> ProblemProfile:
         and answer_shape in {"number", "roots", "expression", "matrix"}
         and not topic.startswith("olympiad_")
     )
-    return ProblemProfile(subject, problem_type, difficulty, answer_shape, language, confidence, tool_eligible, topic)
+    return ProblemProfile(
+        subject=subject,
+        problem_type=problem_type,
+        difficulty=difficulty,
+        answer_shape=answer_shape,
+        language=language,
+        confidence=confidence,
+        tool_eligible=tool_eligible,
+        topic=topic,
+        task_kind=problem_type,
+        result_kind=answer_shape,
+        primary_subject=subject,
+        secondary_subject=secondary_subject,
+        subject_confidence=subject_confidence,
+        matched_signals=tuple(dict.fromkeys(matched_signals)),
+    )
 
 
 def _classify_topic(lowered: str) -> str:
     has_olympiad_signal = bool(_OLYMPIAD_SIGNAL.search(lowered))
+    if has_olympiad_signal and _COMBINATORIAL_OBJECT_PRIORITY.search(lowered):
+        return "olympiad_combinatorics"
     geometry_markers = set(_OLYMPIAD_GEOMETRY_MARKERS.findall(lowered))
     for topic, pattern in _OLYMPIAD_TOPICS:
         if not re.search(pattern, lowered, re.IGNORECASE | re.DOTALL):
             continue
         inherently_high_risk = topic == "olympiad_functional_equation" or bool(re.search(
-            r"\b(?:diophantine|pigeonhole|double counting)\b",
+            r"\b(?:diophantine|pigeonhole|double counting|roots?,\s*counted\s+with\s+multiplicity|"
+            r"recurrence\s+relations?|recursive\s+sequence|a_\{?n\+2\}?)\b",
             lowered,
             re.IGNORECASE,
         ))
+        if topic == "olympiad_number_theory" and re.search(
+            r"\b(?:totient|pell\s+equation|primitive\s+pythagorean|positive\s+divisors?|"
+            r"factorials?|greatest\s+integer|least\s+positive\s+integer|gcd\s*\(|"
+            r"divides?\b|divisor\s+sum)\b",
+            lowered,
+            re.IGNORECASE,
+        ):
+            inherently_high_risk = True
         configured_geometry = topic == "olympiad_geometry" and len(geometry_markers) >= 2
         if has_olympiad_signal or inherently_high_risk or configured_geometry:
             return topic
@@ -144,6 +223,8 @@ def _answer_shape(problem: str, problem_type: str, target: str = "") -> str:
     lowered = target_text.lower()
     if problem_type in {"proof", "derivation", "explanation"}:
         return "proof"
+    if problem_type == "construction":
+        return "expression"
     if has_choice_options(problem):
         return "choice"
     # Verification and yes/no questions frequently contain equations, but do
@@ -154,7 +235,7 @@ def _answer_shape(problem: str, problem_type: str, target: str = "") -> str:
         lowered,
     )) or bool(re.search(
         r"^\s*判断(?![^。？！?]*(?:是否|真假|正确|错误))[^。？！?]*(?:区间|数值|值|公式|解集)",
-        target_text,
+        problem,
     ))
     truth_query = bool(re.search(
         r"是否|是不是|能否|可否|填[^。\n]*(?:是[^。\n]*否|否[^。\n]*是)|^\s*判断|"
@@ -162,18 +243,58 @@ def _answer_shape(problem: str, problem_type: str, target: str = "") -> str:
         target_text,
         re.IGNORECASE,
     ))
-    if truth_query and not value_after_verdict:
+    result_then_support = bool(re.search(
+        r"(?:^|[，,；;。.!?]\s*)(?:计算|求|calculate|compute|find)"
+        r"[^。.!?\n]{0,160}(?:积分|范数|\|\|[^\n]{0,40}\|\||contour\s+integral|norm)"
+        r"[^。.!?\n]{0,100}(?:说明|解释|并|and|explain)[^。.!?\n]{0,60}"
+        r"(?:是否|whether|if)",
+        problem,
+        re.IGNORECASE,
+    ))
+    if truth_query and not value_after_verdict and not result_then_support:
         return "truth"
+    if re.search(
+        r"(?:映射|函数)[^。！？!?\n]{0,50}(?:个数|多少个)|"
+        r"\b(?:number of|how many)\s+(?:(?:surjective|injective|bijective)\s+)?(?:functions?|maps?)\b",
+        lowered,
+        re.IGNORECASE,
+    ):
+        return "number"
     if re.search(r"最大右侧存在区间|maximal right(?:-hand)? interval", lowered) and re.search(
         r"方程|求解|solve", lowered
     ):
         return "expression"
-    if re.search(r"(?:解|solve).*(?:不等式|inequal)|(?:区间|interval|range|domain)", lowered):
+    if re.search(
+        r"(?:解|solve).*(?:不等式|inequal)|区间|\b(?:interval|range|domain)\b",
+        lowered,
+    ):
+        return "interval"
+    if re.search(
+        r"\b(?:determine|find)\s+all\s+real\s+(?:numbers?|values?)\b",
+        lowered,
+    ) and re.search(r"(?:inequal|>=|<=|\\ge|\\le|holds?\s+for\s+every)", lowered):
         return "interval"
     if re.search(r"高斯曲率|hessian", lowered):
         return "expression"
+    if re.search(
+        r"范数|\|\|[^\n]{0,40}\|\||\bnorm\b",
+        problem,
+        re.IGNORECASE,
+    ):
+        return "expression"
     if re.search(r"矩阵|matrix|determinant|行列式", lowered):
         return "matrix"
+    if re.search(
+        r"多项式.*(?:所有)?(?:根|零点)|"
+        r"\bfind\s+(?:all\s+|the\s+)?(?:roots?|zeros?)\s+of\s+(?:the\s+|a\s+)?polynomial\b",
+        lowered,
+    ):
+        return "roots"
+    if re.search(
+        r"\b(?:find\s+the\s+complete\s+set\s+of|find\s+all|determine\s+all)\s+integers?\b",
+        lowered,
+    ):
+        return "roots"
     if re.search(r"微分方程|热方程|波动方程|laplace方程|曲线|曲面|函数|function|导数|derivative|积分|integral|极限|limit", lowered):
         return "expression"
     if re.search(r"数列|递推|sequence|recurrence", lowered):

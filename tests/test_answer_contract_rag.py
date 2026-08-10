@@ -184,8 +184,10 @@ class AnswerContractTest(unittest.TestCase):
                 for requirement in goal.requirements
             }
             self.assertIn("euler_formula_check", names)
-            self.assertIn("euler_formula_check", spec.answer_contract.support_requirements)
-            self.assertEqual(spec.answer_contract.mode, "answer_with_support")
+            self.assertIn(
+                "euler_formula_check", spec.answer_contract.parts[0].result_requirements
+            )
+            self.assertEqual(spec.answer_contract.mode, "answer_only")
             self.assertFalse(assess_candidate("F=8", "incomplete", spec, ()).accepted)
             self.assertTrue(assess_candidate(complete_answer, "complete", spec, ()).accepted)
 
@@ -244,7 +246,12 @@ class AnswerContractTest(unittest.TestCase):
                 for term in goal.required_terms
             ))
             self.assertIn(
-                "surface_second_derivatives", spec.answer_contract.support_requirements
+                "surface_second_derivatives",
+                {
+                    name
+                    for part in spec.answer_contract.parts
+                    for name in part.result_requirements
+                },
             )
 
         symbolic = r"\kappa_1=\kappa_2=2,\ K=4;\ z_{xx}=z_{yy}=2,\ z_{xy}=0"
@@ -422,7 +429,7 @@ class AnswerContractTest(unittest.TestCase):
 
 
 class HighConfidenceRagTest(unittest.TestCase):
-    def test_curated_fact_is_reused_by_verification_and_arbitration(self):
+    def test_verifier_is_candidate_blind_but_arbitration_can_use_curated_fact(self):
         card = KnowledgeCard(
             "fact.test", "theorem", "抽象代数", "换位子群为2阶。", ("换位子群",),
         )
@@ -436,7 +443,7 @@ class HighConfidenceRagTest(unittest.TestCase):
             "判断换位子群的阶数。", spec, cards, [], (),
         )
 
-        self.assertIn("换位子群为2阶", verification)
+        self.assertNotIn("换位子群为2阶", verification)
         self.assertIn("换位子群为2阶", arbitration)
         self.assertIn("必须使用", arbitration)
 

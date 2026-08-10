@@ -7,3 +7,9 @@ Euclid 算法计算 gcd(a,b)，并可写出 Bezout 恒等式 ax+by=gcd(a,b)。�
 群作用的轨道-稳定子定理：|Gx|=|G|/|G_x|。类方程可用于 p 群中心非平凡等结论。
 
 环同态的核是理想，第一同构定理 R/ker phi 同构于 im phi。证明同构需验证良定义、同态性、单射和满射。
+
+For x^2 congruent to 1 modulo an odd prime power p^a there are exactly two roots. Modulo 2 there is one root, modulo 4 two roots, and modulo 2^a for a>=3 four roots. Combine prime-power roots by CRT, then count complete residue periods plus the bounded remainder when a range is imposed.
+For a factorial quotient or multinomial, compute every prime valuation with Legendre's formula v_p(n!)=sum_{j>=1} floor(n/p^j). A power of a composite base divides it only up to the minimum valuation divided by the corresponding base exponent.
+The equation 1/x+1/y=1/n is equivalent to (x-n)(y-n)=n^2. Positive ordered or unordered solutions therefore reduce to divisors of n^2, with the symmetry convention checked explicitly.
+To count integers with a prescribed divisor number, write n=product p_i^{a_i}, enumerate multiplicative partitions product(a_i+1)=d, and assign larger exponents to smaller primes when minimizing or bounding n.
+For Pell-type equations, derive solutions from powers of the fundamental unit and prove monotone growth before truncating at a stated bound. A numerical search without an exhaustiveness argument is not a certificate.

@@ -219,7 +219,7 @@ def audit_problem_specs(items: list[dict]) -> dict:
         verification += int(spec.verification_required)
         empty_goals += int(not spec.goals or any(not goal.instruction.strip() for goal in spec.goals))
         evidence = SubmissionAgent._tool_evidence(
-            sympy.hints_for(item["problem"]),
+            sympy.results_for(item["problem"]),
             spec,
         )
         if any(entry.scope == "whole_goal" and entry.verified for entry in evidence):

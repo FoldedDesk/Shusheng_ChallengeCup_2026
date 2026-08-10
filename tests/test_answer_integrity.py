@@ -5,6 +5,7 @@ import unittest
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from classifier.problem_spec import build_problem_spec
+from core.submission_agent import SubmissionAgent
 from core.stage_budget import plan_stage_budget
 from reasoning.candidate_selector import ToolEvidence, assess_candidate, choose_candidate
 from reasoning.finalizer import Finalizer
@@ -277,13 +278,13 @@ class AnswerIntegrityTest(unittest.TestCase):
     def test_newton_formula_is_not_replaced_by_sympy_root(self):
         problem = "用牛顿法求方程x^2-3=0的迭代公式，并由x_0=2计算x_1。"
         spec = build_problem_spec(problem)
-        evidence = ReasoningAgent(RecordingClient([])).agent._tool_evidence(
-            ["SymPy 方程解: x=-sqrt(3)，x=sqrt(3)"], spec
-        )
+        agent = ReasoningAgent(RecordingClient([])).agent
+        evidence = agent._tool_evidence(agent.sympy.results_for(problem), spec)
         candidate = r"x_{n+1}=(x_n+3/x_n)/2，x_1=7/4"
 
         self.assertFalse(spec.tool_can_answer_whole)
         self.assertEqual(evidence[0].scope, "subexpression")
+        self.assertTrue(evidence[0].verified)
         self.assertTrue(assess_candidate(candidate, "solve", spec, evidence).accepted)
         self.assertFalse(assess_candidate("x=sqrt(3)", "sympy_verified", spec, evidence).complete_goals)
 
@@ -299,7 +300,10 @@ class AnswerIntegrityTest(unittest.TestCase):
     def test_missing_multi_part_candidate_loses_to_complete_review(self):
         spec = build_problem_spec("令f_n=n·1_(0,1/n)，说明f_n逐点收敛到何函数，并计算其积分以说明不可直接交换极限。")
         partial = assess_candidate("逐点极限为0。", "solve", spec, ())
-        complete = assess_candidate("逐点极限为0，积分恒为1。", "review", spec, ())
+        complete = assess_candidate(
+            "逐点极限为0，积分恒为1，因此两者极限不等，不能直接交换极限。",
+            "review", spec, (),
+        )
 
         self.assertFalse(partial.accepted)
         self.assertTrue(partial.coverage_uncertain)
@@ -375,7 +379,7 @@ class AnswerIntegrityTest(unittest.TestCase):
     def test_repair_recovers_when_both_prior_candidates_are_scratchpads(self):
         client = RecordingClient(["Thinking Process: unfinished", "FINAL: 4"])
 
-        result = ReasoningAgent(client).solve("给出一个满足条件的构造。", {})
+        result = ReasoningAgent(client).solve("某项统计量已知为四，求其数值。", {})
 
         self.assertEqual(result["final_response"], "4")
         self.assertEqual(next(item for item in result["trace"] if item["step"] == "selection")["content"]["source"], "rescue")
@@ -430,10 +434,14 @@ class AnswerIntegrityTest(unittest.TestCase):
         self.assertTrue(assess_candidate(
             "极点位于围道内，积分值为2πi。", "solve", location_spec, ()
         ).accepted)
-        self.assertFalse(assess_candidate(r"\frac{\pi i}{2}", "solve", symbolic_spec, ()).accepted)
-        self.assertTrue(assess_candidate(
+        bare = assess_candidate(r"\frac{\pi i}{2}", "solve", symbolic_spec, ())
+        supported = assess_candidate(
             r"由柯西积分公式，积分值为\frac{\pi i}{2}。", "solve", symbolic_spec, ()
-        ).accepted)
+        )
+        self.assertTrue(bare.accepted)
+        self.assertFalse(all(bare.support_coverage))
+        self.assertTrue(supported.accepted)
+        self.assertTrue(all(supported.support_coverage))
 
     def test_regression_invariance_is_a_valid_judgement(self):
         spec = build_problem_spec(
@@ -460,20 +468,22 @@ class AnswerIntegrityTest(unittest.TestCase):
 
         self.assertTrue(budget.allow_review)
         self.assertTrue(budget.allow_repair)
-        self.assertEqual(budget.repair_tokens, 4096)
+        self.assertEqual(budget.repair_tokens, 2048)
         self.assertEqual(budget.solve_tokens, 8192)
+        self.assertEqual(budget.review_tokens, 6144)
         self.assertTrue(budget.require_independent_review)
-        self.assertEqual(budget.emergency_tokens, 2048)
+        self.assertEqual(budget.emergency_tokens, 1024)
+        self.assertEqual(budget.max_calls, 4)
 
     def test_complete_high_risk_answer_is_independently_verified(self):
         client = RecordingClient([
-            "【最终答案】x=2",
-            "【校验】通过\n【最终答案】x=2",
+            "【最终答案】取x=2，代入得2^2=4且2>0，满足条件。",
+            "【校验】通过\n【最终答案】取x=2，代入得2^2=4且2>0，满足条件。",
         ])
 
-        result = ReasoningAgent(client).solve("给出一个满足条件的构造。", {})
+        result = ReasoningAgent(client).solve("构造一个整数x，使x^2=4且x>0。", {})
 
-        self.assertEqual(result["final_response"], "x=2")
+        self.assertIn("x=2", result["final_response"])
         self.assertEqual(len(client.responses), 0)
         admission = next(item for item in result["trace"] if item["step"] == "review_admission")["content"]
         self.assertTrue(admission["admitted"])
@@ -538,7 +548,7 @@ class AnswerIntegrityTest(unittest.TestCase):
 
         self.assertEqual(choose_candidate([solve, solve_variant, verify]).source, "verify")
 
-    def test_complete_second_arbitration_candidate_has_arbitration_priority(self):
+    def test_novel_arbitration_candidate_has_no_priority(self):
         spec = build_problem_spec("求这个数值。")
         solve = assess_candidate("42", "solve", spec, ())
         verify = assess_candidate("43", "verify", spec, ())
@@ -546,7 +556,7 @@ class AnswerIntegrityTest(unittest.TestCase):
 
         self.assertEqual(
             choose_candidate([solve, verify, arbitration]).source,
-            "arbitration#2",
+            "verify",
         )
 
     def test_echoed_answer_instruction_is_not_an_explicit_answer(self):
@@ -756,7 +766,7 @@ class AnswerIntegrityTest(unittest.TestCase):
         )
 
         self.assertTrue(result.valid)
-        self.assertEqual(result.method, "proof_conclusion_fallback")
+        self.assertEqual(result.method, "tagged_answer_body")
         self.assertNotIn("设集合A", result.answer)
 
     def test_complementary_late_conclusion_does_not_replace_a_complete_proof_block(self):
@@ -861,7 +871,7 @@ class AnswerIntegrityTest(unittest.TestCase):
         self.assertIn("inclusion-exclusion", result.answer.lower())
         self.assertNotRegex(result.answer.lower(), r"\*\*|solution steps|(?:^|\n)steps\s*:")
 
-    def test_explicit_calculation_methods_are_strict_goals(self):
+    def test_explicit_calculation_methods_do_not_override_result_correctness(self):
         cases = (
             ("求长度为10的二进制串中恰有4个1且不含相邻两个1的串数，要求先选取1的位置再计算。", "35"),
             ("求满足x_1+x_2+x_3+x_4=13且每个x_i为正整数、x_1≥3的解数，需通过变量平移化为隔板问题。", "120"),
@@ -871,15 +881,17 @@ class AnswerIntegrityTest(unittest.TestCase):
             ("求a+b+c=15且a≤b≤c的正整数解数，需要按a分类讨论。", "19"),
         )
         for problem, bare_answer in cases:
-            candidate = assess_candidate(bare_answer, "solve", build_problem_spec(problem), ())
-            self.assertFalse(candidate.accepted, problem)
-            self.assertIn("missing_required_goal", candidate.rejected_reasons)
+            spec = build_problem_spec(problem)
+            rendered = SubmissionAgent._render_answer(bare_answer, spec)
+            candidate = assess_candidate(rendered, "solve", spec, ())
+            self.assertTrue(candidate.accepted, problem)
+            self.assertFalse(all(candidate.support_coverage), problem)
 
     def test_recurrence_tool_rejects_a_conflicting_closed_form(self):
         problem = "求递推a_n=3a_{n-1}-2且a_1=1的通项，并利用不动点平移验证结果。"
         agent = ReasoningAgent(RecordingClient([])).agent
         spec = build_problem_spec(problem)
-        evidence = agent._tool_evidence(agent.sympy.hints_for(problem), spec)
+        evidence = agent._tool_evidence(agent.sympy.results_for(problem), spec)
 
         wrong = assess_candidate("不动点平移后 a_n=3^{n-1}。", "solve", spec, evidence)
         correct = assess_candidate("不动点为1，令b_n=a_n-1，则b_n=3b_{n-1}, b_1=0，故a_n=1。", "solve", spec, evidence)
