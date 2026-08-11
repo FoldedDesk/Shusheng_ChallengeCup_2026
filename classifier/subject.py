@@ -36,7 +36,7 @@ _SUBJECT_SIGNALS = (
     _SubjectSignal("线性回归", "regression-diagnostics", r"异方差|决定系数|回归系数|\bR\^2\b|heteroscedastic|coefficient of determination", 5),
     _SubjectSignal("统计推断", "inference", r"无偏估计|估计量|置信区间|假设检验|\b(?:unbiased estimator|confidence interval|hypothesis test)\b", 7),
     _SubjectSignal("统计推断", "descriptive-statistics", r"样本均值|标准差|时间序列|时间数列|季节调整|数据分散|\b(?:sample mean|standard deviation|time series)\b", 4),
-    _SubjectSignal("随机过程", "stochastic-process", r"布朗运动|平稳过程|马尔可夫|随机过程|随机游走|\b(?:brownian motion|markov chain|stochastic process|random walk)\b", 7),
+    _SubjectSignal("随机过程", "stochastic-process", r"布朗运动|泊松过程|更新过程|平稳过程|马尔可夫|随机过程|随机游走|\b(?:brownian motion|poisson process|renewal process|markov chain|stochastic process|random walk)\b", 7),
     _SubjectSignal("随机过程", "covariance-function", r"协方差函数|covariance function", 4),
     _SubjectSignal("泛函分析", "functional-analysis", r"Banach|Hilbert|算子范数|有界线性(?:算子|泛函)|\b(?:operator norm|bounded linear operator|bounded linear functional)\b", 7),
     _SubjectSignal("拓扑学", "topology", r"紧致|开覆盖|同胚|拓扑空间|\b(?:compactness|open cover|homeomorphism|topological space)\b", 7),
@@ -59,9 +59,12 @@ _SUBJECT_SIGNALS = (
     _SubjectSignal("复分析", "complex-analysis", r"留数|复可导|柯西积分|Laurent|全纯|\b(?:residue|holomorphic|contour integral|laurent series|cauchy integral)\b", 7),
     _SubjectSignal("复分析", "complex-analytic", r"解析函数.{0,40}(?:复|区域)|\banalytic function\b.{0,40}\bcomplex\b", 5),
     _SubjectSignal("测度积分", "measure-theory", r"勒贝格|可测|几乎处处|单调收敛定理|支配收敛定理|\b(?:lebesgue|measurable|almost everywhere|dominated convergence theorem)\b", 7),
-    _SubjectSignal("概率论", "probability", r"概率|随机变量|条件概率|Bernoulli|\b(?:probability|random variable|conditional probability|bernoulli)\b", 6),
+    _SubjectSignal("概率论", "probability", r"概率|随机变量|条件概率|几何分布|Bernoulli|\b(?:probability|random variable|conditional probability|geometric distribution|bernoulli)\b", 6),
+    _SubjectSignal("概率论", "event-probability", r"(?:事件|独立)[^。！？!?\n]{0,100}P\s*\(\s*[A-Z]\s*\)|\bindependent\s+events?\b[^.!?\n]{0,100}\bP\s*\(", 6),
     _SubjectSignal("概率论", "moments", r"期望|方差|\b(?:expectation|expected value|variance)\b", 4),
-    _SubjectSignal("数论", "number-theory", r"同余|整除|素数|最大公约数|丢番图|\b(?:positive integers?|integer solutions?|diophantine|divisibility|divisible|congruence|modulo|primes?|prime numbers?|gcd|lcm)\b", 6),
+    # A bare domain declaration such as "positive integer n" occurs throughout
+    # combinatorics, geometry, and games. It is not field evidence by itself.
+    _SubjectSignal("数论", "number-theory", r"同余|整除|素数|最大公约数|丢番图|\b(?:integer solutions?|diophantine|divisibility|divisible|congruence|modulo|primes?|prime numbers?|gcd|lcm)\b", 6),
     _SubjectSignal("数论", "mod-notation", r"\bmod\s*\d+|\\pmod\s*\{?\d+\}?", 4),
     _SubjectSignal("离散数学", "graph-theory", r"图论|简单图|有向图|无向图|二分图|图的顶点|图的边|生成树|\b(?:graph theory|graphs?|simple graph|directed graph|undirected graph|bipartite graph|vertices and edges|spanning trees?)\b", 7),
     _SubjectSignal("离散数学", "combinatorics", r"排列|组合|计数|鸽巢|容斥|\b(?:combinatorics?|permutations?|combinations?|counting|colorings?|pigeonhole|inclusion.exclusion|arrangements?|bracelets?|necklaces?|binary strings?|lattice paths?|linear extensions?)\b", 6),

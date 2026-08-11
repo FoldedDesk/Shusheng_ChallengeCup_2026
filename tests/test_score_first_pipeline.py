@@ -54,7 +54,10 @@ class ScoreFirstPipelineTest(unittest.TestCase):
                 finish_reason="length",
             ),
             ModelCallResult(r"FINAL: \boxed{42}"),
-            ModelCallResult(r"FINAL: \boxed{42}"),
+            ModelCallResult(
+                "FINAL: \\boxed{42}\nVERDICT: CONFIRMED\n"
+                "CHECK: direct substitution gives 42=42."
+            ),
         ])
 
         result = ReasoningAgent(client).solve(
@@ -80,7 +83,10 @@ class ScoreFirstPipelineTest(unittest.TestCase):
                 finish_reason="length",
             ),
             ModelCallResult(r"FINAL: \boxed{x=2}"),
-            ModelCallResult(r"FINAL: \boxed{x=2}"),
+            ModelCallResult(
+                "FINAL: \\boxed{x=2}\nVERDICT: CONFIRMED\n"
+                "CHECK: substituting x=2 satisfies the equation."
+            ),
         ])
 
         result = ReasoningAgent(client).solve("求 x。", {})
@@ -104,7 +110,10 @@ class ScoreFirstPipelineTest(unittest.TestCase):
         client = StructuredRecordingClient([
             ModelCallResult("Analysis: derive the invariant and now consider", finish_reason="length"),
             ModelCallResult(r"the last case. Therefore FINAL: \boxed{x=2}"),
-            ModelCallResult(r"FINAL: \boxed{x=2}"),
+            ModelCallResult(
+                "FINAL: \\boxed{x=2}\nVERDICT: CONFIRMED\n"
+                "CHECK: substituting x=2 verifies the invariant."
+            ),
         ])
 
         result = ReasoningAgent(client).solve("求 x。", {})
@@ -120,7 +129,8 @@ class ScoreFirstPipelineTest(unittest.TestCase):
         self.assertFalse(client.calls[1]["thinking_mode"])
         self.assertEqual(client.calls[1]["max_tokens"], 1024)
         self.assertEqual(len(client.calls[2]["messages"]), 2)
-        self.assertNotIn("x=2", client.calls[2]["messages"][1]["content"])
+        self.assertIn("x=2", client.calls[2]["messages"][1]["content"])
+        self.assertFalse(client.calls[2]["thinking_mode"])
         self.assertEqual(
             self._step(result, "equivalence")["content"]["repair_mode"],
             "verify_recovered",
@@ -130,7 +140,10 @@ class ScoreFirstPipelineTest(unittest.TestCase):
         client = StructuredRecordingClient([
             ModelCallResult("Analysis: after substitution x =", finish_reason="stop"),
             ModelCallResult(r"FINAL: \boxed{x=2}"),
-            ModelCallResult(r"FINAL: \boxed{x=2}"),
+            ModelCallResult(
+                "FINAL: \\boxed{x=2}\nVERDICT: CONFIRMED\n"
+                "CHECK: direct substitution gives x=2."
+            ),
         ])
 
         result = ReasoningAgent(client).solve("求 x。", {})
@@ -162,11 +175,14 @@ class ScoreFirstPipelineTest(unittest.TestCase):
         self.assertNotIn("second half", client.calls[2]["messages"][1]["content"])
         self.assertFalse(client.calls[2]["thinking_mode"])
 
-    def test_recovered_hard_answer_is_independently_recomputed_and_corrected(self):
+    def test_recovered_hard_answer_is_adversarially_audited_and_corrected(self):
         client = StructuredRecordingClient([
             ModelCallResult("Deep analysis: unfinished", finish_reason="length"),
             ModelCallResult(r"FINAL: \boxed{9}"),
-            ModelCallResult(r"FINAL: \boxed{45}"),
+            ModelCallResult(
+                "FINAL: \\boxed{45}\nVERDICT: CORRECTED\n"
+                "CHECK: 45^2=2025 is divisible by 2025, while 9^2 is not."
+            ),
         ])
         problem = (
             "Find the least positive integer n in this Diophantine divisibility problem "
@@ -179,11 +195,11 @@ class ScoreFirstPipelineTest(unittest.TestCase):
         self.assertEqual(result["final_response"], r"\boxed{45}")
         self.assertTrue(client.calls[0]["thinking_mode"])
         self.assertFalse(client.calls[1]["thinking_mode"])
-        self.assertEqual(client.calls[1]["max_tokens"], 1024)
-        self.assertTrue(client.calls[2]["thinking_mode"])
-        self.assertEqual(client.calls[2]["max_tokens"], 6144)
+        self.assertEqual(client.calls[1]["max_tokens"], 2048)
+        self.assertFalse(client.calls[2]["thinking_mode"])
+        self.assertEqual(client.calls[2]["max_tokens"], 4096)
         self.assertEqual(len(client.calls[2]["messages"]), 2)
-        self.assertNotIn("FINAL: \\boxed{9}", client.calls[2]["messages"][1]["content"])
+        self.assertIn("9", client.calls[2]["messages"][1]["content"])
         self.assertEqual(
             self._step(result, "model_call_solve")["content"]["routing_role"],
             "deep_reasoning",
@@ -194,17 +210,20 @@ class ScoreFirstPipelineTest(unittest.TestCase):
         )
         self.assertEqual(
             self._step(result, "model_call_verify_recovered")["content"]["routing_role"],
-            "deep_reasoning",
+            "quick_response",
         )
         selection = self._step(result, "selection")["content"]
         self.assertEqual(selection["source"], "verify_recovered")
         self.assertEqual(selection["recovered_answer_verification"], "complete")
 
-    def test_truncated_independent_verifier_gets_quick_answer_completion(self):
+    def test_truncated_independent_verifier_is_replaced_by_fresh_candidate_audit(self):
         client = StructuredRecordingClient([
             ModelCallResult(r"FINAL: \boxed{9}"),
             ModelCallResult("Independent deep calculation: unfinished", finish_reason="length"),
-            ModelCallResult(r"FINAL: \boxed{45}"),
+            ModelCallResult(
+                "FINAL: \\boxed{45}\nVERDICT: CORRECTED\n"
+                "CHECK: 45^2=2025 is divisible by 2025, while 9^2 is not."
+            ),
         ])
         problem = (
             "Find the least positive integer n in this Diophantine divisibility problem "
@@ -217,17 +236,18 @@ class ScoreFirstPipelineTest(unittest.TestCase):
         self.assertEqual(result["final_response"], r"\boxed{45}")
         self.assertTrue(client.calls[1]["thinking_mode"])
         self.assertFalse(client.calls[2]["thinking_mode"])
-        self.assertEqual(client.calls[2]["max_tokens"], 1024)
+        self.assertEqual(client.calls[2]["max_tokens"], 4096)
         self.assertEqual(
             [message["role"] for message in client.calls[2]["messages"]],
-            ["system", "user", "assistant", "user"],
+            ["system", "user"],
         )
-        self.assertIn("Independent deep calculation", client.calls[2]["messages"][2]["content"])
+        self.assertNotIn("Independent deep calculation", client.calls[2]["messages"][1]["content"])
+        self.assertIn("9", client.calls[2]["messages"][1]["content"])
         self.assertEqual(
             self._step(result, "equivalence")["content"]["repair_mode"],
-            "continue_verify",
+            "retry_verify",
         )
-        self.assertEqual(self._step(result, "selection")["content"]["source"], "continue_verify")
+        self.assertEqual(self._step(result, "selection")["content"]["source"], "retry_verify")
 
     def test_truncated_verifier_continuation_cannot_override_complete_primary(self):
         client = StructuredRecordingClient([
@@ -242,33 +262,43 @@ class ScoreFirstPipelineTest(unittest.TestCase):
                 r"FINAL: \boxed{35}" "\nYet the direct count gives $\binom{10}{3}=120$, and now $",
                 finish_reason="length",
             ),
+            ModelCallResult(
+                "FINAL: \\boxed{120}\nVERDICT: CONFIRMED\n"
+                "CHECK: the direct count is binom(10,3)=120."
+            ),
         ])
 
         result = ReasoningAgent(client).solve(
-            "求满足x_1+x_2+x_3+x_4=13且每个x_i为正整数、"
+            r"求满足\sum_{i=1}^4 x_i=13且每个x_i为正整数、"
             "x_1>=3的解数，需通过变量平移化为隔板问题。",
             {},
         )
 
-        self.assertEqual(result["final_response"], "120")
-        self.assertEqual(len(client.calls), 3)
+        self.assertIn("120", result["final_response"])
+        self.assertNotIn("35", result["final_response"])
+        self.assertNotIn("VERDICT", result["final_response"])
+        self.assertNotIn("CHECK:", result["final_response"])
+        self.assertEqual(len(client.calls), 4)
         self.assertEqual(
             self._step(result, "equivalence")["content"]["repair_mode"],
-            "continue_verify",
+            "retry_verify",
         )
         validation = self._step(result, "validation")["content"]
         self.assertIn(
             "provider_truncated_ambiguous_box",
-            validation["continue_verify"]["rejected_reasons"],
+            validation["retry_verify"]["rejected_reasons"],
         )
-        self.assertEqual(self._step(result, "selection")["content"]["source"], "solve")
+        self.assertEqual(self._step(result, "selection")["content"]["source"], "audit_retry")
 
-    def test_truncated_recovered_answer_completes_the_independent_verifier(self):
+    def test_uncertified_recovered_answer_audit_gets_a_fresh_retry(self):
         client = StructuredRecordingClient([
             ModelCallResult("Primary deep analysis: unfinished", finish_reason="length"),
             ModelCallResult(r"FINAL: \boxed{9}"),
-            ModelCallResult("Independent verifier analysis: unfinished", finish_reason="length"),
-            ModelCallResult(r"FINAL: \boxed{45}"),
+            ModelCallResult("FINAL: \\boxed{45}\nVERDICT: CORRECTED"),
+            ModelCallResult(
+                "FINAL: \\boxed{45}\nVERDICT: CORRECTED\n"
+                "CHECK: 45^2=2025 is divisible by 2025, while 9^2 is not."
+            ),
         ])
         problem = (
             "Find the least positive integer n in this Diophantine divisibility problem "
@@ -282,17 +312,17 @@ class ScoreFirstPipelineTest(unittest.TestCase):
         self.assertEqual(len(client.calls), 4)
         self.assertEqual(
             [call["thinking_mode"] for call in client.calls],
-            [True, False, True, False],
+            [True, False, False, False],
         )
         self.assertEqual(
             [call["max_tokens"] for call in client.calls],
-            [8192, 1024, 6144, 1024],
+            [8192, 2048, 4096, 2048],
         )
         equivalence = self._step(result, "equivalence")["content"]
         self.assertTrue(equivalence["final_verification_completion_used"])
         self.assertEqual(equivalence["repair_mode"], "verify_recovered")
         selection = self._step(result, "selection")["content"]
-        self.assertEqual(selection["source"], "continue_verify")
+        self.assertEqual(selection["source"], "audit_retry")
         self.assertEqual(selection["recovered_answer_verification"], "complete")
 
     def test_conflicting_complete_answers_trigger_third_round_arbitration(self):
@@ -352,6 +382,28 @@ class ScoreFirstPipelineTest(unittest.TestCase):
         self.assertEqual(selection["source"], "fallback")
         self.assertEqual(selection["degraded_reason"], "degraded_all_empty")
 
+    def test_best_effort_never_mines_an_unlabelled_multiline_draft(self):
+        problem = "求这个数值。"
+        spec = build_problem_spec(problem)
+
+        answer, reason = SubmissionAgent._best_effort_answer(
+            (("Assume n=10.\n2+3=5", False),), spec, problem
+        )
+
+        self.assertEqual(answer, "0")
+        self.assertEqual(reason, "degraded_all_empty")
+
+    def test_best_effort_can_keep_a_standalone_bare_scalar(self):
+        problem = "求这个数值。"
+        spec = build_problem_spec(problem)
+
+        answer, reason = SubmissionAgent._best_effort_answer(
+            (("42", False),), spec, problem
+        )
+
+        self.assertEqual(answer, "42")
+        self.assertEqual(reason, "degraded_finalized_candidate")
+
     def test_remember_to_box_contract_is_preserved(self):
         client = StructuredRecordingClient([
             ModelCallResult(r"FINAL: \boxed{715}"),
@@ -380,7 +432,10 @@ class ScoreFirstPipelineTest(unittest.TestCase):
         self.assertFalse(budget.require_independent_review)
         self.assertEqual(budget.solve_tokens, 4096)
         self.assertEqual(budget.review_tokens, 4096)
+        self.assertEqual(budget.repair_tokens, 2048)
+        self.assertEqual(budget.review_min_remaining_seconds, 0)
         self.assertEqual(budget.emergency_tokens, 1024)
+        self.assertEqual(budget.max_calls, 4)
 
     def test_boxed_wrapper_is_not_a_deep_reasoning_signal(self):
         contest = build_problem_spec(
@@ -404,7 +459,10 @@ class ScoreFirstPipelineTest(unittest.TestCase):
 
         self.assertTrue(SubmissionAgent._use_deep_reasoning(spec, problem))
         self.assertEqual(budget.solve_tokens, 8192)
-        self.assertEqual(budget.review_tokens, 6144)
+        self.assertEqual(budget.review_tokens, 8192)
+        self.assertEqual(budget.repair_tokens, 4096)
+        self.assertEqual(budget.review_min_remaining_seconds, 0)
+        self.assertEqual(budget.emergency_tokens, 2048)
         self.assertEqual(budget.max_calls, 4)
         self.assertTrue(budget.require_independent_review)
 
@@ -438,7 +496,7 @@ class ScoreFirstPipelineTest(unittest.TestCase):
             ModelCallResult(r"FINAL: \boxed{B,D}"),
         ])
         problem = (
-            "设$D_8$是正方形上的二面体群，下列正确的是：\n"
+            "设$D_8$是正方形上的二面体群，请判断下列命题中全部正确的是：\n"
             r"\begin{itemize}" "\n"
             r"\item[A.] $D_8$中存在$8$阶元." "\n"
             r"\item[B.] $D_8$的四阶子群一定是Abel群." "\n"
@@ -463,10 +521,13 @@ class ScoreFirstPipelineTest(unittest.TestCase):
         client = StructuredRecordingClient([
             ModelCallResult("Deep option analysis: unfinished", finish_reason="length"),
             ModelCallResult(r"FINAL: \boxed{B,D}"),
-            ModelCallResult(r"FINAL: \boxed{B,D}"),
+            ModelCallResult(
+                "FINAL: \\boxed{B,D}\nVERDICT: CONFIRMED\n"
+                "CHECK: A=false, B=true, C=false, D=true by direct option checks."
+            ),
         ])
         problem = (
-            "设$D_8$是正方形上的二面体群，下列正确的是：\n"
+            "设$D_8$是正方形上的二面体群，请判断下列命题中全部正确的是：\n"
             r"\begin{itemize}" "\n"
             r"\item[A.] $D_8$中存在$8$阶元." "\n"
             r"\item[B.] $D_8$的四阶子群一定是Abel群." "\n"

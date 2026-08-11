@@ -153,7 +153,7 @@ def test_certified_statistical_and_numerical_routes_bypass_the_model():
             r"\boxed{(N-1)\sum_{j=1}^{N-1}\frac{1}{j}}",
         ),
         (
-            r"计算函数 f(x,y)=x^2+y^2 在圆周 x^2+y^2=1 上的拉普拉斯算子。"
+            r"计算函数 f(x,y)=x^2+y^2 在圆周 x^2+y^2=1 上的欧氏环境拉普拉斯算子。"
             r"Remember to put your final answer within \boxed{}.",
             r"\boxed{4}",
         ),
@@ -179,13 +179,16 @@ def test_centered_difference_is_a_certified_whole_answer():
     assert len(evidence) == 1
     assert evidence[0].operation == "central_difference"
     assert evidence[0].scope == "whole_goal"
+    assert "中心差分公式" in evidence[0].result
+    assert r"\approx 0.7059" in evidence[0].result
 
     result = ReasoningAgent(_NoModelClient()).solve(
         r"使用中心差分公式计算函数 f(x)=\sin(x) 在 x=\pi/4 处的一阶导数，取 h=0.1。"
         r"Remember to put your final answer within \boxed{}.",
         {},
     )
-    assert result["final_response"] == r"\boxed{0.7059}"
+    assert "中心差分公式" in result["final_response"]
+    assert r"\approx 0.7059" in result["final_response"]
 
 
 def test_embedded_equations_cannot_replace_the_requested_function_result():

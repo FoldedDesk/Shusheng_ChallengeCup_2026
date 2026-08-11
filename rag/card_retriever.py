@@ -58,6 +58,15 @@ class RetrievalBundle:
     def review_context(self) -> str:
         return _render(self.review_cards, self.language)
 
+    def verification_fact_context(self) -> str:
+        """Return at most one high-confidence theorem fact for a fresh review."""
+        if self.subject_confidence != "high":
+            return ""
+        for card, score in zip(self.solve_cards, self.solve_scores):
+            if card.kind == "theorem" and score >= 14:
+                return card.render(self.language)
+        return ""
+
     def trace_content(self) -> dict:
         return {
             "solve_card_ids": [card.id for card in self.solve_cards],
@@ -187,7 +196,7 @@ _METHOD_CARDS = (
     KnowledgeCard(
         "fact.lz78.encoding", "theorem", "离散数学",
         "LZ78 从只含空串的字典出发；每次输出（最长已有前缀的索引，下一个新字符），再把“前缀+新字符”加入字典。编码串必须同时编码索引和新字符，不能只串联新字符的代码；应明确索引起点与字段宽度。",
-        ("lempel", "ziv", "lz78", "phrases", "decomposition", "encoded", "string", "dictionary"),
+        ("lempel", "ziv", "lz78", "phrase", "phrases", "decomposition", "encode", "encoded", "string", "dictionary"),
         text_en=(
             "LZ78 starts with a dictionary containing only the empty string. At each step, output "
             "(the index of the longest dictionary prefix, the next new character), then insert prefix+character. "
@@ -336,6 +345,10 @@ class CardRetriever:
         for card in self.cards:
             if not card.supports(language):
                 continue
+            if card.id == "fact.lz78.encoding" and not re.search(
+                r"\bLZ[- ]?\s*78\b", problem_text, re.IGNORECASE
+            ):
+                continue
             if card.topics and topic not in card.topics:
                 continue
             card_domains = set(card.effective_domains)
@@ -362,6 +375,10 @@ class CardRetriever:
                 1 for term in _OPERATION_TERMS
                 if term in problem_text and term in card_text
             )
+            if card.id == "fact.lz78.encoding" and re.search(
+                r"\bLZ[- ]?\s*78\b", problem_text, re.IGNORECASE
+            ):
+                score += 3
             if card.kind == "method" and (
                 (
                     subject_confidence != "low"

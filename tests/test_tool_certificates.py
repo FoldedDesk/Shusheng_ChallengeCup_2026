@@ -9,7 +9,7 @@ from tools.sympy_tool import SympyTool
 from tools.tool_contract import result_from_legacy_hint
 
 
-AMBIENT = r"计算函数 f(x,y)=x^2+y^2 在圆周 x^2+y^2=1 上的拉普拉斯算子。"
+AMBIENT = r"计算函数 f(x,y)=x^2+y^2 在圆周 x^2+y^2=1 上的欧氏环境拉普拉斯算子。"
 
 
 def _only(problem: str):
@@ -38,11 +38,21 @@ def test_ambient_circle_laplacian_is_four_with_a_structured_certificate():
 
 def test_circle_radius_perturbation_does_not_change_ambient_laplacian():
     result = _only(
-        r"Compute the Laplacian of f(x,y)=x^2+y^2 on the circle x^2+y^2=R^2."
+        r"Compute the ambient Euclidean Laplacian of f(x,y)=x^2+y^2 on the circle x^2+y^2=R^2."
     )
 
     assert result.operation == "circle_laplacian"
     assert result.result == "4"
+
+
+def test_unqualified_circle_laplacian_is_verification_only():
+    result = _only(r"计算函数 f(x,y)=x^2+y^2 在圆周 x^2+y^2=1 上的拉普拉斯算子。")
+
+    assert result.operation == "circle_laplacian_ambiguous"
+    assert result.verified
+    assert not result.whole_answer_eligible
+    assert "=2+2=4" in result.result
+    assert "值为 \\(0\\)" in result.result
 
 
 def test_explicit_laplace_beltrami_of_the_restriction_is_zero():

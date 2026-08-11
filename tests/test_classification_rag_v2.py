@@ -61,6 +61,53 @@ class PrimaryTaskContractTest(unittest.TestCase):
             set(operator.answer_contract.parts[0].result_requirements)
         ))
 
+    def test_simplification_and_numeric_result_keep_support_subordinate(self):
+        simplification = build_problem_spec(
+            "设布尔代数中x+y=1且xy=0，化简表达式(x+z)(y+z)，并使用分配律说明。"
+        )
+        coefficient = build_problem_spec(
+            "已知相关系数r=-0.8，在线性回归含截距情形求决定系数R^2并解释其含义。"
+        )
+
+        self.assertEqual(simplification.profile.problem_type, "calculation")
+        self.assertEqual(simplification.profile.answer_shape, "expression")
+        self.assertEqual(simplification.answer_contract.mode, "answer_with_support")
+        self.assertIn(
+            "distributive_step",
+            simplification.answer_contract.parts[0].support_requirements,
+        )
+        self.assertEqual(coefficient.profile.problem_type, "calculation")
+        self.assertEqual(coefficient.profile.answer_shape, "number")
+        self.assertEqual(coefficient.answer_contract.mode, "answer_with_support")
+        self.assertIn("reasoning", coefficient.answer_contract.parts[0].support_requirements)
+
+    def test_why_request_before_state_clause_remains_explanation(self):
+        spec = build_problem_spec(
+            "设X为赋范空间，说明有限维子空间为何闭，并写出该结论对极限点的含义。"
+        )
+
+        self.assertEqual(spec.profile.problem_type, "explanation")
+        self.assertEqual(spec.profile.answer_shape, "proof")
+        self.assertEqual(spec.answer_contract.mode, "answer_with_support")
+
+    def test_quadrature_domain_interval_does_not_become_interval_answer_shape(self):
+        spec = build_problem_spec(
+            "用复化中点公式将区间[0,2]等分为两段，近似计算积分∫_0^2 x^2 dx，并与精确值比较。"
+        )
+
+        self.assertEqual(spec.profile.answer_shape, "expression")
+        integral_value = next(
+            item
+            for item in spec.goals[0].requirements
+            if item.name == "integral_value"
+        )
+        self.assertTrue(integral_value.matches(
+            r"近似值 2.5，精确值 \frac{8}{3}"
+        ))
+        self.assertTrue(integral_value.matches(
+            r"\text{近似值 }2.5,\ \text{精确值 }\frac{8}{3}"
+        ))
+
     def test_pure_proof_and_explanation_keep_their_task_kind(self):
         cases = (
             ("证明素数有无穷多个。", "proof"),
@@ -116,6 +163,31 @@ class PrimaryTaskContractTest(unittest.TestCase):
 
 
 class WeightedSubjectRoutingTest(unittest.TestCase):
+    def test_positive_integer_domain_alone_is_not_number_theory_evidence(self):
+        combinatorics = classify_subjects(
+            "For a positive integer k, place k dominoes on a checkerboard and count the configurations."
+        )
+        number_theory = classify_subjects(
+            "Find all positive integers n such that n is divisible by 12."
+        )
+
+        self.assertNotEqual(combinatorics.primary, "数论")
+        self.assertFalse(any(
+            signal == "数论:number-theory"
+            for signal in combinatorics.matched_signals
+        ))
+        self.assertEqual(number_theory.primary, "数论")
+
+        grid_extremum = build_problem_spec(
+            "For a positive integer k, mark cells in a square grid. Determine the smallest k for which the condition holds."
+        ).profile
+        self.assertNotEqual(grid_extremum.topic, "olympiad_number_theory")
+
+        integer_pairs = build_problem_spec(
+            "Find all pairs of positive integers (a,b) satisfying a^2-b^2=15."
+        ).profile
+        self.assertEqual(integer_pairs.topic, "olympiad_number_theory")
+
     def test_profile_exposes_ranked_bilingual_subject_evidence(self):
         cases = (
             "Use Newton method to find the roots of a monic polynomial.",

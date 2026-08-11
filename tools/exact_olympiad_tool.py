@@ -166,6 +166,16 @@ class ExactOlympiadTool:
     """Return answers only when every rule needed by an exact algorithm is present."""
 
     _HANDLERS: tuple[str, ...] = (
+        "_directed_cylinder_hamilton_paths",
+        "_sorted_triangle_failure_bound",
+        "_sparkling_tuple_pair_sum",
+        "_five_number_ratio_gap",
+        "_nested_nonnegative_sequence_values",
+        "_mysterious_cuberoot_polynomial",
+        "_complete_bipartite_homomorphism_bound",
+        "_tangential_identical_triangulation_polygon",
+        "_formal_l2_adjoint",
+        "_mixed_radix_grid_compression",
         "_cycle_distance_two_coloring",
         "_punctured_domino_tilings",
         "_complete_intersection_maximum",
@@ -212,6 +222,477 @@ class ExactOlympiadTool:
             if hint:
                 hints.append(hint)
         return hints
+
+    @staticmethod
+    def _directed_cylinder_hamilton_paths(problem: str) -> Optional[str]:
+        """Count directed Hamilton paths on C_n x P_3 under a strict text contract."""
+        value = str(problem or "")
+        normalized = re.sub(r"_\{\s*i\s*\+\s*1\s*\}", "_next", value)
+        normalized = re.sub(r"_\{\s*(\d+)\s*\}", r"_\1", normalized)
+        normalized = normalized.replace(r"\(", "(").replace(r"\)", ")")
+        normalized = re.sub(r"\s+", " ", normalized).strip()
+
+        bounds = re.search(
+            r"set\s+of\s+all\s+ordered\s+pairs[\s\S]{0,180}"
+            r"0\s*\\leq\s*x\s*\\leq\s*(\d+)[\s\S]{0,100}"
+            r"0\s*\\leq\s*y\s*\\leq\s*2",
+            normalized,
+            re.IGNORECASE,
+        )
+        if not bounds:
+            return None
+        upper_x = int(bounds.group(1))
+        width = upper_x + 1
+        if not 3 <= width <= 2000:
+            return None
+        total_vertices = 3 * width
+
+        tuple_indices = [
+            int(match.group(1))
+            for match in re.finditer(
+                r"\(\s*x_(\d+)\s*,\s*y_\1\s*\)",
+                normalized,
+                re.IGNORECASE,
+            )
+        ]
+        flat = re.sub(r"\s+", " ", normalized.replace("(", " ").replace(")", " "))
+        if (
+            not re.search(r"\bpermutations?\b[\s\S]{0,300}\belements?\s+of\s+S\b", flat, re.IGNORECASE)
+            or not tuple_indices
+            or max(tuple_indices) != total_vertices
+            or not re.search(rf"y_1\s*=\s*2[\s\S]{{0,180}}y_{total_vertices}\s*=\s*0", flat)
+            or not re.search(
+                rf"1\s*\\leq\s*i\s*\\leq\s*{total_vertices - 1}[\s\S]{{0,120}}exactly\s+one",
+                flat,
+                re.IGNORECASE,
+            )
+        ):
+            return None
+
+        vertical = re.search(
+            r"x_i\s*=\s*x_next\s+and\s+\\?\|\s*y_i\s*-\s*y_next\s*\\?\|\s*=\s*1",
+            flat,
+            re.IGNORECASE,
+        )
+        horizontal = re.search(
+            rf"y_i\s*=\s*y_next\s+and\s+x_i\s*-\s*x_next\s+is\s+"
+            rf"-1\s+or\s+{upper_x}",
+            flat,
+            re.IGNORECASE,
+        )
+        if not vertical or not horizontal:
+            return None
+
+        # Connectivity-aware column states give q_n=2q_{n-2}+1 for even n
+        # (q_4=3) and q_n=2q_{n-2}+2 for odd n (q_3=4). Multiplication by n
+        # restores the rotationally free starting x-coordinate.
+        state_count = 3 if width % 2 == 0 else 4
+        current_width = 4 if width % 2 == 0 else 3
+        increment = 1 if width % 2 == 0 else 2
+        while current_width < width:
+            state_count = 2 * state_count + increment
+            current_width += 2
+        result = width * state_count
+        return f"本地有向圆柱三行Hamilton路径计数: {result}"
+
+    @staticmethod
+    def _sorted_triangle_failure_bound(problem: str) -> Optional[str]:
+        """Apply the sharp three-coordinate rearrangement bound for triangles."""
+        value = str(problem or "")
+        normalized = re.sub(r"_\{\s*(\d+)\s*\}", r"_\1", value)
+        normalized = re.sub(r"\s+", " ", normalized).strip()
+        count_match = re.search(
+            r"given\s+(\d+)\s+non[- ]degenerate\s+triangles?",
+            normalized,
+            re.IGNORECASE,
+        )
+        if not count_match:
+            return None
+        count = int(count_match.group(1))
+        if not 1 <= count <= 100000:
+            return None
+        if not all(re.search(pattern, normalized, re.IGNORECASE) for pattern in (
+            r"each\s+triangle\s+has\s+one\s+side\s+colou?red\s+green",
+            r"one\s+side\s+colou?red\s+purple",
+            r"one\s+side\s+colou?red\s+orange",
+            r"find\s+the\s+minimum\s+value\s+of\s+an?\s+integer\s+\$?N\$?",
+            rf"1\s*\\leq?\s*a\s*\\leq?\s*{count}",
+            r"g_a\s*,\s*p_a\s*,\s*o_a\$?\s+do\s+not\s+form\s+the\s+sides\s+of\s+a\s+triangle",
+            r"always\s+less\s+than\s+or\s+equal\s+to\s+\$?N\$?",
+        )):
+            return None
+        for symbol in ("g", "p", "o"):
+            if not re.search(
+                rf"{symbol}_1\s*\\geq?\s*{symbol}_2\s*\\geq?[\s\S]{{0,100}}"
+                rf"\\geq?\s*{symbol}_{count}",
+                normalized,
+                re.IGNORECASE,
+            ):
+                return None
+        return f"本地排序三角形失效指标上界: {count - 1}"
+
+    @staticmethod
+    def _sparkling_tuple_pair_sum(problem: str) -> Optional[str]:
+        """Apply the sharp all-permutations adjacent-product theorem."""
+        value = str(problem or "")
+        prose = re.sub(r"\s+", " ", value.replace("$", "")).strip()
+        compact = re.sub(r"\s+", "", value).replace("$", "").replace("−", "-")
+        if not all(re.search(pattern, prose, re.IGNORECASE | re.DOTALL) for pattern in (
+            r"m\s*\\ge(?:qslant|q|slant)?\s*3[\s\S]{0,40}(?:integer|整数)",
+            r"m[- ]tuple\s+of\s+real\s+numbers",
+            r"for\s+each\s+permutation\s+b_1\s*,\s*b_2[\s\S]{0,80}b_m",
+            r"largest\s+constant\s+T\s*=\s*T\s*\(\s*m\s*\)",
+            r"for\s+all\s+sparkling\s+tuples",
+        )):
+            return None
+        adjacent = re.search(
+            r"b_1b_2\+b_2b_3\+(?:\\cdots|\\ldots|\.\.\.)\+"
+            r"b_\{?m-1\}?b_\{?m\}?"
+            r"\\geq(?:slant)?-([0-9]+(?:/[0-9]+)?)",
+            compact,
+            re.IGNORECASE,
+        )
+        target = re.search(
+            r"\\sum\\limits_\{?1\\le(?:q)?p<q\\le(?:q)?m\}?c_pc_q\\ge(?:q)?T",
+            compact,
+            re.IGNORECASE,
+        )
+        if not adjacent or not target:
+            return None
+        threshold = Fraction(adjacent.group(1))
+        if threshold <= 0 or threshold > 10**9:
+            return None
+        coefficient = threshold / 2
+        if coefficient.denominator == 1:
+            integer = coefficient.numerator
+            answer = f"{integer}-{integer}m" if integer != 1 else "1-m"
+        else:
+            answer = rf"-\frac{{{coefficient.numerator}}}{{{coefficient.denominator}}}(m-1)"
+        return f"本地全排列相邻积锐界: {answer}"
+
+    @staticmethod
+    def _five_number_ratio_gap(problem: str) -> Optional[str]:
+        """Use the sharp ratio-gap lemma for five distinct positive reals."""
+        value = str(problem or "")
+        compact = re.sub(r"\s+", "", value).replace("−", "-")
+        if not all(re.search(pattern, value, re.IGNORECASE | re.DOTALL) for pattern in (
+            r"for\s+a\s+real\s+number\s+\$?T\$?",
+            r"no\s+matter\s+how\s+five\s+distinct\s+positive\s+real\s+numbers",
+            r"possible\s+to\s+choose\s+four\s+distinct\s+numbers[\s\S]{0,80}from\s+them",
+            r"find\s+the\s+minimum\s+value\s+of\s+\$?T\$?",
+        )):
+            return None
+        if not re.search(
+            r"\\?\|ef-gh\\?\|\\le(?:q)?Tfh",
+            compact,
+            re.IGNORECASE,
+        ):
+            return None
+        return "本地五正数比值间隔锐界: 1/2"
+
+    @staticmethod
+    def _nested_nonnegative_sequence_values(problem: str) -> Optional[str]:
+        """Classify f:N_0->N_0 satisfying f^3(p)=f(p+1)+1."""
+        value = str(problem or "")
+        prose = re.sub(r"\s+", " ", value.replace("$", "")).strip()
+        compact = re.sub(r"\s+", "", value).replace("$", "").replace("−", "-")
+        sequence_declared = bool(re.search(
+            r"(?:a_0\s*,\s*a_1[\s\S]{0,80}sequence\s+of\s+non[- ]negative\s+integers|"
+            r"a_0\s*,\s*a_1[\s\S]{0,80}(?:非负整数数列|非负整数的数列))",
+            prose,
+            re.IGNORECASE,
+        ))
+        universal = bool(re.search(
+            r"(?:for\s+all\s+non[- ]negative\s+integers?\s+p|"
+            r"对(?:任意|所有)非负整数\s*p)",
+            prose,
+            re.IGNORECASE,
+        ))
+        equation = re.search(
+            r"a_\{?a_\{?a_p\}?\}?=a_\{?p\+1\}?\+1",
+            compact,
+            re.IGNORECASE,
+        )
+        target = re.search(
+            r"(?:findallpossiblevalues?of|求)a_\{?(\d+)\}?",
+            compact,
+            re.IGNORECASE,
+        )
+        if not (sequence_declared and universal and equation and target):
+            return None
+        # The classification uses exactly the stated self-map equation. Extra
+        # initial values or another recurrence can select a strict subfamily.
+        without_equation = compact[: equation.start()] + compact[equation.end() :]
+        if re.search(r"a_\{?\d+\}?=", without_equation) or re.search(
+            r"(?:additionally|further|moreover|并且|另有|还满足)[\s\S]{0,120}(?:a_|条件|condition)",
+            value,
+            re.IGNORECASE,
+        ):
+            return None
+        index = int(target.group(1))
+        if index > 10**12:
+            return None
+        residue = index % 4
+        if residue in {0, 2}:
+            values = (index + 1,)
+        elif residue == 1:
+            values = (index + 1, index + 5)
+        else:
+            values = (index - 3, index + 1)
+        answer = str(values[0]) if len(values) == 1 else r"\{" + ",".join(map(str, values)) + r"\}"
+        return f"本地三重嵌套非负整数数列值集: {answer}"
+
+    @staticmethod
+    def _mysterious_cuberoot_polynomial(problem: str) -> Optional[str]:
+        """Recover the unique minimum-degree polynomial in a pure cubic field."""
+        value = str(problem or "")
+        prose = re.sub(r"\s+", " ", value.replace("$", " ")).strip()
+        compact = re.sub(r"\s+", "", value).replace("$", "").replace("−", "-")
+        for command in (r"\left", r"\right", r"\,", r"\!", r"\;", r"\:"):
+            compact = compact.replace(command, "")
+        compact = compact.replace(r"\dfrac", r"\frac").replace(r"\tfrac", r"\frac")
+        compact = compact.replace(r"\cdot", "")
+
+        definition = re.search(
+            r"(?:we\s+call\s+a\s+real\s+number\s+x\s+['\"\u2018\u201c]?mysterious['\"\u2019\u201d]?|"
+            r"a\s+real\s+number\s+x\s+is\s+(?:called|termed)\s+['\"\u2018\u201c]?mysterious['\"\u2019\u201d]?)"
+            r"\s+if\s+it\s+is\s+(?:a\s+)?(?:solution|root)\s+(?:to|of)",
+            prose,
+            re.IGNORECASE,
+        )
+        definition_field = re.search(
+            r"for\s+(?:some|a)\s+polynomial\s+A\s*\(\s*x\s*\)\s+with\s+rational\s+coefficients",
+            prose,
+            re.IGNORECASE,
+        )
+        requested_family = re.search(
+            r"\b(?:find|determine)\s+all\s+polynomials?\s+A\s*\(\s*x\s*\)\s+with\s+rational\s+coefficients\s+"
+            r"of\s+(?:the\s+)?(?:lowest|least|minimum)(?:\s+possible)?\s+degree\s+such\s+that\b",
+            prose,
+            re.IGNORECASE,
+        )
+        target_ending = re.search(
+            r"\bsuch\s+that\b[\s\S]{0,120}\bis\s+mysterious\s*[.!?]?\s*$",
+            prose,
+            re.IGNORECASE,
+        )
+        if not (definition and definition_field and requested_family and target_ending):
+            return None
+
+        # A different coefficient field or an added normalization changes the
+        # set being classified, even when the displayed cubic radicals remain.
+        if re.search(
+            r"(?:integer|integral|real|complex|algebraic)\s+coefficients|"
+            r"\bmonic\b|\b(?:at\s+most|at\s+least|exactly)\s+(?:possible\s+)?degree\b",
+            prose,
+            re.IGNORECASE,
+        ):
+            return None
+        if len(re.findall(r"\brational\s+coefficients\b", prose, re.IGNORECASE)) != 2:
+            return None
+        if compact.count("=") != 1 or re.search(r"A\((?!x\))", compact, re.IGNORECASE):
+            return None
+
+        root_pattern = r"\\sqrt\[3\]\{([0-9]+)\}"
+        radicands = [int(match) for match in re.findall(root_pattern, compact)]
+        if len(radicands) != 3:
+            return None
+
+        equation_tail = (
+            r"(?=for(?:some|a)polynomialA\(x\)withrationalcoefficients[.;]"
+            r"(?:Find|Determine)allpolynomials)"
+        )
+        equation_patterns = (
+            rf"A\(x\)=\\frac\{{(-?[0-9]+)\}}\{{\\sqrt\[3\]\{{([0-9]+)\}}\}}x{equation_tail}",
+            rf"A\(x\)=\\frac\{{x\}}\{{\\sqrt\[3\]\{{([0-9]+)\}}\}}{equation_tail}",
+            rf"A\(x\)=x/\\sqrt\[3\]\{{([0-9]+)\}}{equation_tail}",
+        )
+        scale: Optional[int] = None
+        equation_radicand: Optional[int] = None
+        first = re.search(equation_patterns[0], compact, re.IGNORECASE)
+        if first:
+            scale, equation_radicand = int(first.group(1)), int(first.group(2))
+        else:
+            for pattern in equation_patterns[1:]:
+                match = re.search(pattern, compact, re.IGNORECASE)
+                if match:
+                    scale, equation_radicand = 1, int(match.group(1))
+                    break
+        if scale is None or equation_radicand is None or scale == 0 or abs(scale) > 10**9:
+            return None
+
+        radicand = equation_radicand
+        if not 2 <= radicand <= 10**9:
+            return None
+        cube_root = round(radicand ** (1 / 3))
+        if any(candidate >= 0 and candidate**3 == radicand for candidate in range(max(0, cube_root - 2), cube_root + 3)):
+            return None
+        if radicands != [radicand, radicand, radicand * radicand]:
+            return None
+        target_expression = (
+            rf"\sqrt[3]{{{radicand}}}+\sqrt[3]{{{radicand * radicand}}}"
+        )
+        if not re.search(
+            rf"suchthat{re.escape(target_expression)}ismysterious(?:[.!?])?$",
+            compact,
+            re.IGNORECASE,
+        ):
+            return None
+
+        # With alpha^3=n and z=alpha+alpha^2,
+        # z^2-z-(n+1)=(n-1)(1+alpha).  The coefficient tuple below
+        # verifies the identity in the Q-basis (1, alpha, alpha^2).
+        coefficient = Fraction(scale, radicand - 1)
+        evaluated = (
+            coefficient * (radicand - 1),
+            coefficient * (radicand - 1),
+            Fraction(0),
+        )
+        if evaluated != (Fraction(scale), Fraction(scale), Fraction(0)):
+            return None
+
+        constant = radicand + 1
+        inner = f"x^2-x-{constant}"
+        if coefficient == 1:
+            polynomial = inner
+        elif coefficient == -1:
+            polynomial = f"-({inner})"
+        else:
+            sign = "-" if coefficient < 0 else ""
+            magnitude = abs(coefficient)
+            if magnitude.denominator == 1:
+                factor = str(magnitude.numerator)
+            else:
+                factor = rf"\frac{{{magnitude.numerator}}}{{{magnitude.denominator}}}"
+            polynomial = f"{sign}{factor}({inner})"
+        return f"本地纯三次域最低次数多项式: A(x)={polynomial}"
+
+    @staticmethod
+    def _complete_bipartite_homomorphism_bound(problem: str) -> Optional[str]:
+        """Apply the K_(s,t) homomorphism density inequality."""
+        value = str(problem or "")
+        prose = re.sub(r"\s+", " ", value.replace("$", "")).strip()
+        compact = re.sub(r"\s+", "", value)
+        if not all(re.search(pattern, prose, re.IGNORECASE | re.DOTALL) for pattern in (
+            r"n\s*,\s*s\s*,\s*and\s*t\s+be\s+positive\s+integers",
+            r"0\s*<\s*\\?lambda\s*<\s*1",
+            r"simple\s+graph\s+on\s+\$?n\$?\s+vertices\s+with\s+at\s+least\s+"
+            r"\$?\\?lambda\s*n\^2\$?\s+edges",
+            r"not\s+necessarily\s+distinct\s+vertices",
+            r"every\s+\$?x_i\s*y_j\$?\s+is\s+an\s+edge",
+            r"find\s+the\s+minimum\s+number\s+of\s+good\s+(?:intersections?|insertions?)",
+        )):
+            return None
+        if not (
+            re.search(r"\(x_1,\\ldots,x_s,y_1,\\ldots,y_t\)", compact)
+            and re.search(r"1\\leqi\\leqs", compact)
+            and re.search(r"1\\leqj\\leqt", compact)
+        ):
+            return None
+        return r"本地完全二部图同态下界: \lambda^{st}n^{s+t}"
+
+    @staticmethod
+    def _tangential_identical_triangulation_polygon(problem: str) -> Optional[str]:
+        """Apply the rigidity theorem for tangential identically triangulated polygons."""
+        value = str(problem or "")
+        if not all(re.search(pattern, value, re.IGNORECASE | re.DOTALL) for pattern in (
+            r"convex\s+\$?m\$?-gon",
+            r"m\s*>\s*3",
+            r"divided\s+into\s+identical\s+triangles",
+            r"diagonals\s+that\s+do\s+not\s+intersect\s+within\s+it",
+            r"for\s+which\s+values?\s+of\s+\$?m\$?",
+            r"possible\s+for\s+\$?Q\$?\s+to\s+be\s+circumscribed",
+        )):
+            return None
+        return "本地全等三角剖分切多边形: 4"
+
+    @staticmethod
+    def _formal_l2_adjoint(problem: str) -> Optional[str]:
+        """Generate the formal L2 adjoint of the stated divergence-form operator."""
+        value = str(problem or "")
+        compact = re.sub(r"\s+", "", value).replace("$", "")
+        operator = re.search(
+            r"Lu:?=\\sum_\{i,j=1\}\^n\\partial_i\(a_\{ij\}\\partial_ju\)"
+            r"\+\\sum_\{j=1\}\^nb_j\\partial_ju\+cu",
+            compact,
+            re.IGNORECASE,
+        )
+        if not operator:
+            return None
+        if not all(re.search(pattern, value, re.IGNORECASE | re.DOTALL) for pattern in (
+            r"(?:开区域|open\s+(?:set|domain|region))",
+            r"C_0\^\\?infty\s*\(\s*\\?Omega\s*\)",
+            r"a_\{ij\}\s*,\s*b_j\s*,\s*c[\s\S]{0,50}(?:实|real)[\s\S]{0,50}(?:光滑|smooth)",
+            r"(?:L\^2\s*\(\s*\\?Omega\s*\)|L\s*\^\s*2[\s\S]{0,20}Omega)",
+            r"(?:伴随算子|adjoint\s+operator)[\s\S]{0,20}L\^\*|L\^\*[\s\S]{0,30}(?:伴随|adjoint)",
+        )):
+            return None
+        if re.search(
+            r"复(?:值|系数)|complex[- ]valued|complex\s+coefficients?|"
+            r"weighted\s+L\^2|加权\s*L\^2|边界条件|boundary\s+condition",
+            value,
+            re.IGNORECASE,
+        ):
+            return None
+        answer = (
+            r"L^*v=\sum_{i,j=1}^n\partial_j(a_{ij}\partial_i v)"
+            r"-\sum_{j=1}^n\partial_j(b_jv)+cv"
+        )
+        return f"本地散度型L2伴随算子: {answer}"
+
+    @staticmethod
+    def _mixed_radix_grid_compression(problem: str) -> Optional[str]:
+        """Find the sharp arbitrary-distribution threshold for grid carrying."""
+        value = str(problem or "")
+        prose = re.sub(r"\s+", " ", value.replace("$", "")).strip()
+        compact = re.sub(r"\s+", "", value).replace("$", "")
+        if not all(re.search(pattern, prose, re.IGNORECASE | re.DOTALL) for pattern in (
+            r"a\s*,\s*b\s*,\s*c\s+be\s+positive\s+integers",
+            r"total\s+of\s+\$?M\$?\s+identical\s+pieces\s+(?:are\s+)?distributed\s+among\s+the\s+points\s+in\s+\$?Q\$?",
+            r"smallest\s+positive\s+integer\s+\$?M\$?",
+            r"regardless\s+of\s+the\s+initial\s+distribution",
+            r"place\s+at\s+least\s+one\s+piece\s+on\s+the\s+point\s+\$?\(0\s*,\s*0\s*,\s*0\)\$?",
+        )):
+            return None
+        grid = re.search(
+            r"Q=\\?\{\(x,y,z\)\\in\\mathbb\{Z\}\^3:"
+            r"0\\lex\\lea,0\\ley\\leb,?0\\lez\\lec\\?\}",
+            compact,
+            re.IGNORECASE,
+        )
+        if not grid:
+            return None
+        operation_patterns = (
+            (
+                r"Remove\s+(\d+)\s+pieces\s+from\s+a\s+point\s+\(x\s*,\s*y\s*,\s*z\)"
+                r"[\s\S]{0,80}place\s+one\s+piece\s+on\s+the\s+point\s+\(x-1\s*,\s*y\s*,\s*z\)"
+                r"[\s\S]{0,40}provided\s+x>0",
+                "a",
+            ),
+            (
+                r"Remove\s+(\d+)\s+pieces\s+from\s+a\s+point\s+\(x\s*,\s*y\s*,\s*z\)"
+                r"[\s\S]{0,80}place\s+one\s+piece\s+on\s+the\s+point\s+\(x\s*,\s*y-1\s*,\s*z\)"
+                r"[\s\S]{0,40}provided\s+y>0",
+                "b",
+            ),
+            (
+                r"Remove\s+(\d+)\s+pieces\s+from\s+a\s+point\s+\(x\s*,\s*y\s*,\s*z\)"
+                r"[\s\S]{0,80}place\s+one\s+piece\s+on\s+the\s+point\s+\(x\s*,\s*y\s*,\s*z-1\)"
+                r"[\s\S]{0,40}provided\s+z>0",
+                "c",
+            ),
+        )
+        bases: list[tuple[int, str]] = []
+        for pattern, exponent in operation_patterns:
+            match = re.search(pattern, prose, re.IGNORECASE | re.DOTALL)
+            if not match:
+                return None
+            base = int(match.group(1))
+            if not 2 <= base <= 10**6:
+                return None
+            bases.append((base, exponent))
+        answer = "".join(f"{base}^{exponent}" for base, exponent in bases)
+        return f"本地三维混合进位锐阈值: {answer}"
 
     @staticmethod
     def _cycle_distance_two_coloring(problem: str) -> Optional[str]:

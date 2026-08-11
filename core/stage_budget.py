@@ -45,29 +45,29 @@ def plan_stage_budget(
         or spec.risk_score >= 2
     )
     if high_risk:
-        # Give the primary solve enough room for a complete derivation while
-        # keeping verification and repair bounded within three total calls.
+        # Recovery only has to turn an existing derivation into a concise,
+        # gradable submission. Output wrappers never determine reasoning cost.
         return StageBudget(
             8192,
-            6144,
-            2048,
-            20,
+            8192,
+            4096,
+            0,
             45,
             True,
             True,
             True,
-            emergency_tokens=1024,
+            emergency_tokens=2048,
             max_calls=4,
         )
-
-    simple = (
-        spec.profile.difficulty == "easy"
-        or spec.profile.problem_type in {"choice", "fill_blank"}
-        or (
-            spec.profile.answer_shape in {"choice", "truth"}
-            and spec.profile.difficulty != "hard"
-        )
+    return StageBudget(
+        4096,
+        4096,
+        2048,
+        0,
+        30,
+        True,
+        True,
+        False,
+        emergency_tokens=1024,
+        max_calls=4,
     )
-    if simple:
-        return StageBudget(3072, 2048, 1024, 15, 30, True, True, False, 1024)
-    return StageBudget(4096, 4096, 3072, 20, 35, True, True, False, 1024)

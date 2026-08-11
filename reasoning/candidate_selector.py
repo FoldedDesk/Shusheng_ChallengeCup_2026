@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import ast
 from dataclasses import dataclass
+from fractions import Fraction
 import math
 import re
 from typing import TYPE_CHECKING
@@ -24,6 +26,7 @@ class ToolEvidence:
     certificate_method: str = ""
     certificate_checks: tuple[str, ...] = ()
     certificate_issues: tuple[str, ...] = ()
+    support: str = ""
 
 
 @dataclass(frozen=True)
@@ -88,6 +91,11 @@ def assess_candidate(
         )
         else value
     )
+    explicit_result_value = (
+        extracted_value.answer
+        if extracted_value.valid and extracted_value.answer
+        else semantic_value
+    )
     formatting_reasons = Finalizer.validate_structure(value)
     contract = getattr(spec, "answer_contract", None)
     proof_contract = getattr(contract, "mode", "") == "proof"
@@ -113,7 +121,13 @@ def assess_candidate(
         not construction_required or _has_construction_object(semantic_value)
     )
     result_coverage = tuple(
-        _result_covered(semantic_value, goal) and construction_object_present
+        _result_covered(semantic_value, goal)
+        and all(
+            requirement.matches(explicit_result_value)
+            for requirement in goal.result_requirements
+            if requirement.name.startswith("parameter_dependency_")
+        )
+        and construction_object_present
         for goal in spec.goals
     )
     support_coverage = tuple(
@@ -148,9 +162,19 @@ def assess_candidate(
             requirement.category in {"result", "format"}
             or (support_required and requirement.category == "support")
         )
-        and not requirement.matches(semantic_value)
+        and not requirement.matches(
+            explicit_result_value
+            if requirement.name.startswith("parameter_dependency_")
+            else semantic_value
+        )
         for goal in spec.goals
         for requirement in goal.requirements
+    )
+    parameter_result_missing = any(
+        requirement.name.startswith("parameter_dependency_")
+        and not requirement.matches(explicit_result_value)
+        for goal in spec.goals
+        for requirement in goal.result_requirements
     )
     shape_valid = (
         _valid_shape(semantic_value, spec.profile.answer_shape)
@@ -164,8 +188,7 @@ def assess_candidate(
         extraction_method=extraction_method,
         explicit_answer=explicit_answer,
     ))
-    if _has_false_binomial_identity(value):
-        reasons.append("numeric_identity_conflict")
+    reasons.extend(candidate_consistency_reasons(value, spec))
     if not shape_valid:
         reasons.append("invalid_answer_shape")
     if tool_status == "conflict":
@@ -181,6 +204,8 @@ def assess_candidate(
         reasons.append("missing_construction_object")
     if reasoning_missing or construction_verification_missing:
         reasons.append("missing_required_support")
+    if parameter_result_missing:
+        reasons.append("missing_parameter_dependency")
     missing_required = missing_strict or (len(spec.goals) > 1 and not complete)
     if not complete:
         reasons.append("missing_required_goal")
@@ -193,6 +218,8 @@ def assess_candidate(
         "unclosed_group_delimiter",
         "trailing_fragment", "truncated_sentence",
         "numeric_identity_conflict",
+        "final_conclusion_conflict",
+        "verification_unresolved", "missing_verification_certificate",
         "unlabelled_process_body", "unlabelled_intermediate_result",
         "unlabelled_future_action", "unlabelled_unfinished_body",
     }
@@ -252,10 +279,10 @@ def choose_candidate(candidates: list[CandidateAssessment]) -> CandidateAssessme
         key=lambda item: (
             item.validation_tier == "complete",
             item.tool_status == "pass",
-            agreement[id(item)],
             sum(item.goal_coverage),
             item.complete_goals,
             item.formatting_valid,
+            agreement[id(item)],
             sum(item.support_coverage) if agreement[id(item)] > 0 else 0,
             item.score if agreement[id(item)] > 0 else 0,
             -len(item.answer) if agreement[id(item)] > 0 else 0,
@@ -378,6 +405,12 @@ def _unlabelled_body_reasons(
 
     theoretical_body = task_kind in {"proof", "derivation", "explanation"}
     if not theoretical_body:
+        lines = [line.rstrip() for line in value.splitlines() if line.strip()]
+        if len(lines) > 1:
+            # Non-proof stages are required to mark their final answer.  A
+            # multi-line unlabelled body is indistinguishable from an
+            # unfinished scratchpad, even when it happens to contain numbers.
+            reasons.append("unlabelled_process_body")
         if re.search(
             r"(?im)^\s*(?:(?:计算|求解|推导|分析|证明)\s*)?过程(?:如下|为)?\s*[:：]?|"
             r"^\s*(?:solution|calculation|derivation|analysis)\s+(?:process|steps?)\s*[:：]",
@@ -515,6 +548,7 @@ def _source_stage(source: str) -> str:
         "verify_recovered": "verify",
         "continue_verify": "verify",
         "retry_verify": "verify",
+        "audit_retry": "verify",
         "last_chance": "rescue",
     }.get(raw, raw)
 
@@ -529,6 +563,12 @@ def _tool_status(answer: str, evidence: tuple[ToolEvidence, ...]) -> str:
     if whole:
         return "conflict"
     partial = [item for item in evidence if item.scope == "subexpression" and item.verified]
+    for item in partial:
+        if item.operation != "lz78_encoding_check":
+            continue
+        lz78_status = _lz78_fixed_width_status(answer, item.result)
+        if lz78_status:
+            return lz78_status
     if any(
         equivalent_answers(answer, item.result)
         or (_compact(item.result) and _compact(item.result) in normalized)
@@ -542,6 +582,99 @@ def _tool_status(answer: str, evidence: tuple[ToolEvidence, ...]) -> str:
         if lhs and lhs in normalized:
             return "conflict"
     return "unknown"
+
+
+def _lz78_fixed_width_status(answer: str, evidence: str) -> str:
+    """Validate a model bit string against its stated standard LZ78 phrases.
+
+    A generic "Lempel-Ziv" prompt may omit the index-width convention, so all
+    feasible fixed widths are accepted.  A candidate is rejected only when it
+    uses the exact verified phrase sequence but its bits cannot encode the
+    corresponding (prefix-index, symbol) pairs under any fixed width.
+    """
+    evidence_text = str(evidence or "")
+    phrase_match = re.search(r"Phrases:\s*([^;]+);", evidence_text, re.IGNORECASE)
+    pair_match = re.search(r"pairs:\s*([^;]+);", evidence_text, re.IGNORECASE)
+    chunk_match = re.search(
+        r"candidate encoded string:\s*([01]+(?:\s+[01]+)+)",
+        evidence_text,
+        re.IGNORECASE,
+    )
+    if not (phrase_match and pair_match and chunk_match):
+        return ""
+
+    expected_phrases = tuple(
+        part.strip() for part in phrase_match.group(1).split(",") if part.strip()
+    )
+    pairs = tuple(
+        (int(index), symbol)
+        for index, symbol in re.findall(
+            r"\(\s*(\d+)\s*,\s*([A-Za-z0-9])\s*\)",
+            pair_match.group(1),
+        )
+    )
+    reference_chunks = tuple(chunk_match.group(1).split())
+    if not expected_phrases or len(pairs) != len(expected_phrases):
+        return ""
+    if len(reference_chunks) != len(pairs) or len({len(chunk) for chunk in reference_chunks}) != 1:
+        return ""
+
+    extracted = Finalizer.extract_result(str(answer or ""))
+    candidate = extracted.answer if extracted.valid and extracted.answer else str(answer or "")
+    before_bits = candidate.split(";", 1)[0]
+    before_bits = re.sub(
+        r"^(?:phrases?|短语(?:分解)?)\s*[:：]?\s*",
+        "",
+        before_bits.strip(),
+        flags=re.IGNORECASE,
+    )
+    candidate_phrases = tuple(
+        part.strip(" `'$\\{}")
+        for part in re.split(r"[,，]", before_bits)
+        if part.strip(" `'$\\{}")
+    )
+    if candidate_phrases != expected_phrases:
+        return ""
+
+    bit_matches = re.findall(r"(?<![01])(?:[01][01\s]{8,}[01])(?![01])", candidate)
+    if not bit_matches:
+        return ""
+    candidate_bits = re.sub(r"\s+", "", bit_matches[-1])
+    if not candidate_bits or len(candidate_bits) % len(pairs):
+        return "conflict"
+
+    reference_width = len(reference_chunks[0])
+    symbol_codes: dict[str, str] = {}
+    letter_width = 0
+    for index_width in range(1, reference_width):
+        codes: dict[str, str] = {}
+        valid = True
+        for (index, symbol), chunk in zip(pairs, reference_chunks):
+            if int(chunk[:index_width], 2) != index:
+                valid = False
+                break
+            code = chunk[index_width:]
+            if symbol in codes and codes[symbol] != code:
+                valid = False
+                break
+            codes[symbol] = code
+        if valid and len(set(codes.values())) == len(codes):
+            symbol_codes = codes
+            letter_width = reference_width - index_width
+            break
+    if not symbol_codes or letter_width <= 0:
+        return ""
+
+    chunk_width = len(candidate_bits) // len(pairs)
+    index_width = chunk_width - letter_width
+    minimum_width = max(1, max(index for index, _ in pairs).bit_length())
+    if index_width < minimum_width:
+        return "conflict"
+    expected_bits = "".join(
+        f"{index:0{index_width}b}{symbol_codes[symbol]}"
+        for index, symbol in pairs
+    )
+    return "partial_pass" if candidate_bits == expected_bits else "conflict"
 
 
 def _is_scratchpad(answer: str) -> bool:
@@ -579,6 +712,422 @@ def _compact(value: str) -> str:
     return re.sub(r"[\s{}()\[\]\\,，。；;：:_]", "", str(value or "").lower()).replace("−", "-")
 
 
+def candidate_consistency_reasons(answer: str, spec=None) -> tuple[str, ...]:
+    """Return hard contradictions found inside one model candidate.
+
+    The checks are intentionally closed-world.  Arithmetic is evaluated only
+    when both sides of ``=`` contain numeric literals and elementary
+    operators.  Conclusion comparison requires an explicit final label, or a
+    single standalone box for a single-goal problem, plus comparable targets.
+    """
+    value = str(answer or "")
+    reasons: list[str] = []
+    if _has_false_numeric_identity(value) or _has_false_binomial_identity(value):
+        reasons.append("numeric_identity_conflict")
+
+    labelled = [
+        result.answer
+        for result in Finalizer.extract_explicit_results(value)
+        if result.valid
+        and result.answer
+        and result.method in {"label", "label_boxed", "bracket_label"}
+    ]
+    for index, first in enumerate(labelled):
+        if any(_conclusions_conflict(first, other) for other in labelled[index + 1:]):
+            reasons.append("final_conclusion_conflict")
+            break
+
+    terminal = _last_terminal_conclusion(value)
+    if terminal:
+        explicit_finals = list(labelled)
+        if not explicit_finals:
+            standalone = _single_standalone_box(value, spec)
+            if standalone:
+                explicit_finals.append(standalone)
+        if any(_conclusions_conflict(item, terminal) for item in explicit_finals):
+            reasons.append("final_conclusion_conflict")
+    concluding_box = _last_concluding_box(value)
+    if concluding_box and any(
+        _conclusions_conflict(item, concluding_box) for item in labelled
+    ):
+        reasons.append("final_conclusion_conflict")
+    return tuple(dict.fromkeys(reasons))
+
+
+def _numeric_plain_text(value: str) -> str:
+    text = str(value or "").replace("−", "-").replace("×", "*").replace("÷", "/")
+    text = re.sub(r"\\(?:left|right)", "", text)
+    text = re.sub(r"\\(?:cdot|times)", "*", text)
+    text = re.sub(r"\\div", "/", text)
+    fraction = re.compile(
+        r"\\(?:d?frac)\s*\{\s*([0-9.\s()+\-*/^]+)\s*\}"
+        r"\s*\{\s*([0-9.\s()+\-*/^]+)\s*\}"
+    )
+    for _ in range(6):
+        updated = fraction.sub(r"((\1)/(\2))", text)
+        if updated == text:
+            break
+        text = updated
+    text = text.replace(r"\(", " ").replace(r"\)", " ")
+    text = text.replace(r"\[", " ").replace(r"\]", " ").replace("$", " ")
+    text = text.replace("{", "(").replace("}", ")")
+    return re.sub(r"(?<!\*)\^(?!\*)", "**", text)
+
+
+def _eval_numeric_expression(expression: str) -> Fraction | None:
+    value = str(expression or "").strip().rstrip(".").strip()
+    if (
+        not value
+        or len(value) > 120
+        or not re.search(r"\d", value)
+        or not re.fullmatch(r"[0-9.\s()+\-*/]+", value)
+    ):
+        return None
+    try:
+        root = ast.parse(value, mode="eval").body
+    except (SyntaxError, ValueError):
+        return None
+
+    def evaluate(node) -> Fraction:
+        if isinstance(node, ast.Constant) and type(node.value) in {int, float}:
+            return Fraction(str(node.value))
+        if isinstance(node, ast.UnaryOp) and isinstance(node.op, (ast.UAdd, ast.USub)):
+            operand = evaluate(node.operand)
+            return operand if isinstance(node.op, ast.UAdd) else -operand
+        if not isinstance(node, ast.BinOp):
+            raise ValueError("unsupported numeric syntax")
+        left = evaluate(node.left)
+        right = evaluate(node.right)
+        if isinstance(node.op, ast.Add):
+            return left + right
+        if isinstance(node.op, ast.Sub):
+            return left - right
+        if isinstance(node.op, ast.Mult):
+            return left * right
+        if isinstance(node.op, ast.Div):
+            if right == 0:
+                raise ZeroDivisionError
+            return left / right
+        if isinstance(node.op, ast.Pow):
+            if right.denominator != 1 or abs(right.numerator) > 20:
+                raise ValueError("unsupported exponent")
+            if left == 0 and right.numerator < 0:
+                raise ZeroDivisionError
+            return left ** right.numerator
+        raise ValueError("unsupported numeric operator")
+
+    try:
+        return evaluate(root)
+    except (ArithmeticError, OverflowError, ValueError):
+        return None
+
+
+def _numeric_rounding_tolerance(left: str, right: str) -> Fraction:
+    decimal_places = [
+        len(match.group(1))
+        for match in re.finditer(r"(?<![\d.])\d+\.(\d+)", f"{left} {right}")
+    ]
+    if not decimal_places:
+        return Fraction(0)
+    # Treat the least precise displayed decimal as a possible rounded value.
+    # This guard is for clear contradictions, not for policing notation such
+    # as 1/3=0.333 or 0.3333=0.333 in a numerical derivation.
+    return Fraction(1, 2 * (10 ** min(decimal_places)))
+
+
+def _has_false_numeric_identity(answer: str) -> bool:
+    """Check only closed elementary equalities, never variable assignments."""
+    value = _numeric_plain_text(answer)
+    for match in re.finditer(r"(?<![<>=!])=(?!=)", value):
+        left_tail = re.search(r"([0-9.\s()+\-*/]+)$", value[: match.start()])
+        right_head = re.match(r"([0-9.\s()+\-*/]+)", value[match.end() :])
+        if not left_tail or not right_head:
+            continue
+        prefix = value[: left_tail.start(1)].rstrip()
+        if prefix and (
+            prefix[-1].isalnum()
+            or prefix[-1] in "\\_,!)]}'\u2032\u2033"
+        ):
+            # The trailing digits in x_0=1, C(9,3), binom(9)(3), f(2),
+            # f'(0), or 9! are identifiers/arguments, not a closed numeric
+            # left-hand side.
+            continue
+        left_text = left_tail.group(1).strip()
+        right_text = right_head.group(1).strip().rstrip(". ")
+        suffix = value[match.end() + right_head.end(1):].lstrip()
+        if suffix and (suffix[0].isalnum() or suffix[0] in r"\_"):
+            # In 12*5=2E or 2=2*pi, the numeric prefix is a coefficient,
+            # not the complete right-hand side.
+            continue
+        left_value = _eval_numeric_expression(left_text)
+        right_value = _eval_numeric_expression(right_text)
+        if left_value is None or right_value is None:
+            continue
+        tolerance = _numeric_rounding_tolerance(left_text, right_text)
+        if abs(left_value - right_value) > tolerance:
+            return True
+    return False
+
+
+def _strip_final_wrapper(value: str) -> str:
+    text = str(value or "").strip().strip("` ")
+    boxed = Finalizer._last_boxed(text)
+    if boxed:
+        text = boxed
+    text = re.sub(
+        r"^\s*(?:(?:the\s+)?(?:final\s+)?answer\s*(?:is|equals|[:=])|"
+        r"(?:最终)?答案\s*(?:为|是|[:：=])|(?:结论|结果)\s*(?:为|是|[:：=]))\s*",
+        "",
+        text,
+        flags=re.IGNORECASE,
+    )
+    return text.strip().rstrip("。.!！?？；;").strip()
+
+
+def _assignment_values(value: str) -> dict[str, tuple[str, ...]]:
+    text = _strip_final_wrapper(value)
+    text = re.sub(
+        r"\s+(?:and|且|以及)\s+(?=[A-Za-z\\][A-Za-z0-9_{}\\()]*\s*=)",
+        ",",
+        text,
+        flags=re.IGNORECASE,
+    )
+    assignments: dict[str, list[str]] = {}
+    pattern = re.compile(
+        r"(?<![A-Za-z0-9_])"
+        r"((?:E|P|Pr|Var|Cov)\s*(?:\[[^,，;\n=]+\]|\([^,，;\n=]*\))"
+        r"|\\operatorname\{(?:Var|Cov)\}\s*\([^,，;\n=]*\)"
+        r"|[A-Za-z](?:_[{]?[A-Za-z0-9+\-]+[}]?)?(?:\([^,，;\n=]*\))?"
+        r"|\\[A-Za-z]+(?:_[{][^{}]+[}])?)"
+        r"\s*=\s*([^,，;\n]+)",
+        re.IGNORECASE,
+    )
+    for match in pattern.finditer(text):
+        target = re.sub(r"[\s{}\\]", "", match.group(1)).lower()
+        result = _strip_final_wrapper(match.group(2))
+        if target and result and "=" not in result:
+            assignments.setdefault(target, []).append(result)
+    return {key: tuple(values) for key, values in assignments.items()}
+
+
+def _simple_final_atom(value: str) -> bool:
+    text = _strip_final_wrapper(value)
+    if not text or len(text) > 160:
+        return False
+    if _eval_numeric_expression(_numeric_plain_text(text)) is not None:
+        return True
+    if re.fullmatch(
+        r"(?:[A-E](?:\s*[,，、]\s*[A-E])*|正确|错误|是|否|成立|不成立|"
+        r"无解|不存在|no\s+solutions?|true|false)",
+        text,
+        re.IGNORECASE,
+    ):
+        return True
+    if not re.search(r"[0-9=+\-*/^<>≤≥∈\\]", text):
+        return False
+    if re.search(r"\b(?:because|since|therefore|hence|thus)\b|因为|由于|因此|所以", text, re.IGNORECASE):
+        return False
+    return bool(re.fullmatch(r"[A-Za-z0-9_{}()[\].,+\-*/^=<>≤≥∈\\\s]+", text))
+
+
+def _same_conclusion_value(first: str, second: str) -> bool:
+    return bool(
+        _compact(first) == _compact(second)
+        or equivalent_answers(first, second)
+    )
+
+
+def _closed_numeric_value(value: str) -> str:
+    """Return a standalone numeric value, including a chain's final RHS.
+
+    This deliberately excludes symbolic assignments.  It is used only by the
+    contradiction guard, where a false positive is more damaging than failing
+    to notice an unusual prose contradiction.
+    """
+    text = _strip_final_wrapper(value)
+    if not text:
+        return ""
+    parts = re.split(r"(?<![<>=!])=(?!=)", text)
+    candidate = _strip_final_wrapper(parts[-1])
+    # Keep LaTeX braces intact: stripping ``{}`` would turn ``\frac{1}{8}``
+    # into an invalid fragment before the numeric parser sees it.
+    candidate = candidate.strip().strip("$ `").rstrip(".,;:，。；：").strip()
+    if not candidate:
+        return ""
+    return candidate if _eval_numeric_expression(_numeric_plain_text(candidate)) is not None else ""
+
+
+def _closed_categorical_value(value: str) -> str:
+    candidate = _strip_final_wrapper(value).strip()
+    if re.fullmatch(
+        r"(?:[A-E]|正确|错误|是|否|成立|不成立|true|false|yes|no)",
+        candidate,
+        re.IGNORECASE,
+    ):
+        return candidate.lower()
+    return ""
+
+
+def _assignment_target_conflicts(
+    first_values: tuple[str, ...], second_values: tuple[str, ...]
+) -> bool:
+    comparable = [
+        (left, right)
+        for left in first_values
+        for right in second_values
+        if _simple_final_atom(left) and _simple_final_atom(right)
+    ]
+    return bool(comparable) and not any(
+        _same_conclusion_value(left, right) for left, right in comparable
+    )
+
+
+def _conclusions_conflict(first: str, second: str) -> bool:
+    first_value = _strip_final_wrapper(first)
+    second_value = _strip_final_wrapper(second)
+    if not first_value or not second_value or _same_conclusion_value(first_value, second_value):
+        return False
+    first_assignments = _assignment_values(first_value)
+    second_assignments = _assignment_values(second_value)
+    overlap = set(first_assignments) & set(second_assignments)
+    if overlap:
+        return any(
+            _assignment_target_conflicts(
+                first_assignments[target], second_assignments[target]
+            )
+            for target in overlap
+        )
+    if first_assignments and second_assignments:
+        return False
+    if (
+        len(first_assignments) == 1
+        and not second_assignments
+        and "=" not in second_value
+        and _closed_numeric_value(second_value)
+    ):
+        only_values = next(iter(first_assignments.values()))
+        numeric_values = tuple(filter(None, map(_closed_numeric_value, only_values)))
+        return bool(numeric_values) and not any(
+            _same_conclusion_value(item, second_value) for item in numeric_values
+        )
+    if (
+        len(second_assignments) == 1
+        and not first_assignments
+        and "=" not in first_value
+        and _closed_numeric_value(first_value)
+    ):
+        only_values = next(iter(second_assignments.values()))
+        numeric_values = tuple(filter(None, map(_closed_numeric_value, only_values)))
+        return bool(numeric_values) and not any(
+            _same_conclusion_value(first_value, item) for item in numeric_values
+        )
+
+    first_numeric = _closed_numeric_value(first_value)
+    second_numeric = _closed_numeric_value(second_value)
+    if (
+        not first_assignments
+        and not second_assignments
+        and first_numeric
+        and second_numeric
+    ):
+        return not _same_conclusion_value(first_numeric, second_numeric)
+    first_category = _closed_categorical_value(first_value)
+    second_category = _closed_categorical_value(second_value)
+    return bool(
+        not first_assignments
+        and not second_assignments
+        and first_category
+        and second_category
+        and first_category != second_category
+    )
+
+
+def _last_terminal_conclusion(answer: str) -> str:
+    pattern = re.compile(
+        r"(?:^|[\n，,。.!?！？；;])\s*"
+        r"(?:因此|所以|故而?|综上(?:所述)?|从而|可得|therefore\b|hence\b|thus\b)"
+        r"[ \t]*[,，:：]?[ \t]*([^\n。！？；;]+)",
+        re.IGNORECASE | re.MULTILINE,
+    )
+    matches = list(pattern.finditer(str(answer or "")))
+    if not matches:
+        return ""
+    value = matches[-1].group(1).strip()
+    value = re.split(r"\.(?=\s+[A-Z\u4e00-\u9fff])", value, maxsplit=1)[0]
+    value = re.sub(r"^(?:有|得到|可知|知)\s*", "", value)
+    stated_value = re.search(
+        r"(?:答案|结论|结果|数量|个数|置换数|顶点数|边数|概率|近似值|精确值)"
+        r"\s*(?:为|是|等于|=)\s*(.+)$|"
+        r"(?:answer|result|number|count|probability|value)"
+        r"\s*(?:is|equals|=|:)\s*(.+)$",
+        value,
+        re.IGNORECASE,
+    )
+    if stated_value:
+        value = next(group for group in stated_value.groups() if group is not None).strip()
+    if not re.search(r"[A-Za-z0-9\u4e00-\u9fff]", value):
+        # A connective followed by a display opener ("所以：\n\\[")
+        # introduces the next calculation; it is not a terminal conclusion.
+        return ""
+    return _strip_final_wrapper(value)
+
+
+def _last_concluding_box(answer: str) -> str:
+    """Return a terminal correction box, excluding ordinary check boxes."""
+    text = str(answer or "")
+    boxes = [item for item in Finalizer._boxed_values(text) if item[2]]
+    if len(boxes) < 2:
+        return ""
+    position, result, _ = boxes[-1]
+    marker = re.search(r"\\boxed\s*\{", text[position:])
+    if not marker:
+        return ""
+    opening = position + marker.end() - 1
+    depth = 0
+    closing = -1
+    for index in range(opening, len(text)):
+        character = text[index]
+        if character == "{" and (index == 0 or text[index - 1] != "\\"):
+            depth += 1
+        elif character == "}" and (index == 0 or text[index - 1] != "\\"):
+            depth -= 1
+            if depth == 0:
+                closing = index + 1
+                break
+    if closing < 0 or not re.fullmatch(
+        r"[\s$\\\[\].。!！]*", text[closing:]
+    ):
+        return ""
+    context = text[max(0, position - 320):position]
+    if not re.search(
+        r"(?:因此|所以|故|综上|最终|答案|结论|"
+        r"\b(?:therefore|hence|thus|finally|final\s+answer|conclusion)\b)",
+        context,
+        re.IGNORECASE,
+    ):
+        return ""
+    return result
+
+
+def _single_standalone_box(answer: str, spec=None) -> str:
+    boxes = [item for item in Finalizer._boxed_values(str(answer or "")) if item[2]]
+    goal_count = len(getattr(spec, "goals", ())) if spec is not None else 1
+    if len(boxes) != 1 or goal_count != 1:
+        return ""
+    position, result, _ = boxes[0]
+    text = str(answer or "")
+    line_start = text.rfind("\n", 0, position) + 1
+    line_end = text.find("\n", position)
+    line = text[line_start : len(text) if line_end < 0 else line_end].strip()
+    if not re.fullmatch(
+        r"(?:\\\[|\$\$?)?\s*\\boxed\{.*\}\s*(?:\\\]|\$\$?)?[。.!]?",
+        line,
+        re.DOTALL,
+    ):
+        return ""
+    return result
+
+
 def _has_false_binomial_identity(answer: str) -> bool:
     """Reject closed, directly checkable binomial equalities that are false."""
     value = str(answer or "").replace("−", "-")
@@ -605,6 +1154,15 @@ def _has_false_binomial_identity(answer: str) -> bool:
     )
     for pattern in patterns:
         for match in pattern.finditer(value):
+            prefix = value[: match.start()].rstrip()
+            if prefix and re.search(
+                r"(?:\\(?:cdot|times)|[+\-*×·/−]|[0-9)}\]])$",
+                prefix,
+                re.IGNORECASE,
+            ):
+                # In products such as binom(5,2)binom(4,1)=40, the
+                # matched final factor is not asserted to equal the rhs.
+                continue
             n, k, stated = map(int, match.groups())
             expected = math.comb(n, k) if 0 <= k <= n else 0
             if stated != expected:

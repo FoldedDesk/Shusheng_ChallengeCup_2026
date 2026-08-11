@@ -468,11 +468,12 @@ class AnswerIntegrityTest(unittest.TestCase):
 
         self.assertTrue(budget.allow_review)
         self.assertTrue(budget.allow_repair)
-        self.assertEqual(budget.repair_tokens, 2048)
+        self.assertEqual(budget.repair_tokens, 4096)
         self.assertEqual(budget.solve_tokens, 8192)
-        self.assertEqual(budget.review_tokens, 6144)
+        self.assertEqual(budget.review_tokens, 8192)
+        self.assertEqual(budget.review_min_remaining_seconds, 0)
         self.assertTrue(budget.require_independent_review)
-        self.assertEqual(budget.emergency_tokens, 1024)
+        self.assertEqual(budget.emergency_tokens, 2048)
         self.assertEqual(budget.max_calls, 4)
 
     def test_complete_high_risk_answer_is_independently_verified(self):
@@ -547,6 +548,16 @@ class AnswerIntegrityTest(unittest.TestCase):
         verify = assess_candidate("43", "verify", spec, ())
 
         self.assertEqual(choose_candidate([solve, solve_variant, verify]).source, "verify")
+
+    def test_cross_stage_agreement_outvotes_one_corrected_verifier(self):
+        spec = build_problem_spec("求这个数值。")
+        solve = assess_candidate("42", "solve", spec, ())
+        rescue = assess_candidate("6*7", "rescue", spec, ())
+        verify = assess_candidate(
+            "43", "verify", spec, (), verification_verdict="corrected"
+        )
+
+        self.assertEqual(choose_candidate([solve, rescue, verify]).answer, "42")
 
     def test_novel_arbitration_candidate_has_no_priority(self):
         spec = build_problem_spec("求这个数值。")
@@ -908,7 +919,7 @@ class AnswerIntegrityTest(unittest.TestCase):
             ("设曲面为图形z=f(x,y)，且在一点∇f=0，写出高斯曲率用Hessian行列式表示的公式。", ("K=", "f_{xy}^2")),
             ("对热方程u_t=u_{xx}，验证u(x,t)=e^{-t}sin x是否为解，需分别求时间和空间导数。", ("u_t=", "u_{xx}=", "是解")),
             ("求拉普拉斯方程u_{xx}+u_{yy}=0中函数u=x^2-y^2是否调和，并进行二阶求导。", ("u_{xx}=2", "u_{yy}=-2", "是调和")),
-            ("求所有满足a+b+c=15、a≤b≤c且a,b,c为正整数的三元组个数，需要按a分类讨论。", ("按a分类", "共19个")),
+            ("求所有满足a+b+c=15、a≤b≤c且a,b,c为正整数的三元组个数，需要按a分类讨论。", ("19",)),
             ("简单对称随机游走S_n从0出发，求E[S_5]与Var(S_5)，利用独立增量性质。", ("独立增量", "E[S_5]=0", "Var(S_5)=5")),
             ("设简单图有8个顶点且每个顶点度数至少4，证明该图必含长度为3的路径，并给出所用度数条件。", ("最长路径", "k≥4", "δ(G)≥4")),
             ("给定命题(p→q)∧(q→r)∧p，写出其合取范式下必然推出的最简结论，并说明推理规则。", ("假言推理", "得 q", "得 r")),

@@ -32,6 +32,11 @@ _SUPPORT_REQUIREMENT_NAMES = frozenset({
     "characteristic_equation",
     "separation_of_variables",
     "independent_increments",
+    "geometric_distribution_identification",
+    "independence_use",
+    "iid_variance_scaling",
+    "strong_law",
+    "central_difference_formula",
     "inference_rule",
     "continuity_contradiction",
     "open_cover_step",
@@ -66,6 +71,11 @@ class Requirement:
 
     def matches(self, compact_answer: str) -> bool:
         raw_answer = str(compact_answer or "").lower()
+        raw_answer = re.sub(
+            r"\\(?:text|mathrm)\s*\{([^{}]*)\}",
+            r"\1",
+            raw_answer,
+        )
         normalized = _compact(raw_answer)
         latex_flat = (
             raw_answer.replace(r"\,", "")
@@ -73,6 +83,31 @@ class Requirement:
             .replace(r"\ ", "")
             .replace(r"\quad", "")
         )
+        if self.name.startswith("parameter_dependency_"):
+            symbol = self.name.removeprefix("parameter_dependency_")
+            math_text = re.sub(r"\\[A-Za-z]+", " ", raw_answer)
+            return bool(symbol) and bool(re.search(
+                rf"(?<![A-Za-z]){re.escape(symbol)}(?![A-Za-z])",
+                math_text,
+                re.IGNORECASE,
+            ))
+        if self.name == "target_e":
+            # ``E[...]`` is expectation notation, not a missing scalar label
+            # merely because the target extractor also represents it as E.
+            return bool(re.search(r"(?<![A-Za-z])e\s*(?:=|\[|\()", raw_answer))
+        if self.name == "exhaustive_result":
+            return bool(re.search(
+                r"(?:所有|全部|仅|只有|唯一|恰为|且无其他|无其他|不存在其他|任意|"
+                r"\b(?:all|only|exactly|no\s+others?)\b|"
+                r"(?:共|合计|总计)\s*(?:为|是|=|[:：])?\s*(?:\$|\\\(|\\boxed\s*\{)?\s*\d+|"
+                r"\b(?:a\s+)?total(?:\s+(?:number|count))?\s*(?:of|is|=|:)?\s*"
+                r"(?:\$|\\\(|\\boxed\s*\{)?\s*\d+|"
+                r"\b\d+\s+(?:items?|values?|solutions?|tuples?)?\s*in\s+total\b|"
+                r"\\?\{[^{}]*\}|\.\.\.|\\ldots|\\dots|"
+                r"[^,\n]+,[^,\n]+)",
+                raw_answer,
+                re.IGNORECASE,
+            ))
         if self.name == "judgement":
             return bool(re.search(
                 r"(?:是|否|可以|不可以|正确|错误|成立|不成立|属于|不属于|收敛|发散|"
@@ -88,6 +123,21 @@ class Requirement:
                 raw_answer,
                 re.IGNORECASE,
             ))
+        if self.name == "almost_everywhere_zero":
+            zero_statement = bool(re.search(
+                r"(?<![A-Za-z])f\s*(?:\([^)]*\))?\s*"
+                r"(?:=|\\equiv|为|是)\s*0(?!\s*[<>])",
+                raw_answer,
+                re.IGNORECASE,
+            ))
+            ae_qualifier = bool(re.search(
+                r"几乎(?:处处|到处)|"
+                r"(?:\\?mu\s*[-‐‑–—]?\s*)?a\s*\.?\s*e\s*\.?\b|"
+                r"almost\s+everywhere",
+                raw_answer,
+                re.IGNORECASE,
+            ))
+            return zero_statement and ae_qualifier
         if self.name == "iteration_formula":
             return bool(re.search(
                 r"x\^?[a-z]\+1=[^=]{1,240}",
@@ -157,14 +207,88 @@ class Requirement:
                 raw_answer,
                 re.IGNORECASE | re.DOTALL,
             ))
-            return indexed_phrases or labelled_phrases or described_decomposition
+            compact_phrase_and_bits = bool(re.search(
+                r"(?:^|[:：])\s*[A-Za-z0-9]+"
+                r"(?:\s*[,，]\s*[A-Za-z0-9]+){2,}\s*[;；]\s*"
+                r"[01](?:[01\s]{4,})[01]\s*$",
+                raw_answer,
+                re.IGNORECASE,
+            ))
+            return (
+                indexed_phrases
+                or labelled_phrases
+                or described_decomposition
+                or compact_phrase_and_bits
+            )
+        if self.name == "conditional_sample_space":
+            ordered_outcomes = re.findall(
+                r"\(\s*[^,，()]+\s*[,，]\s*[^()]+\)",
+                raw_answer,
+            )
+            named_space = bool(re.search(
+                r"条件样本空间|conditional\s+sample\s+space|"
+                r"(?:omega|\\omega)\s*_?\s*\{?[^=\s]*\}?\s*=",
+                raw_answer,
+                re.IGNORECASE,
+            ))
+            braced_enumeration = bool(re.search(
+                r"(?:\\?\{|\\left\\\{)[^{}\n]*"
+                r"\([^()]+[,，][^()]+\)[^{}\n]*(?:\\?\}|\\right\\\})",
+                raw_answer,
+                re.IGNORECASE,
+            ))
+            # A conditional sample space must be enumerated, not merely
+            # described by its cardinality.  A named singleton is allowed,
+            # while an unlabelled list needs at least two ordered outcomes.
+            return bool(ordered_outcomes) and (
+                named_space or braced_enumeration or len(ordered_outcomes) >= 2
+            )
+        if self.name == "variance_identification":
+            centered_moment = bool(re.search(
+                r"(?:^|mathbb|operatorname)e(?:x-p)(?:\^|\*\*)?2",
+                normalized,
+                re.IGNORECASE,
+            ))
+            variance_named = "varx" in normalized or bool(re.search(
+                r"(?:var(?:iance)?\s*(?:\(|\[)?\s*x|方差)",
+                raw_answer,
+                re.IGNORECASE,
+            ))
+            explicitly_linked = "=" in raw_answer or bool(re.search(
+                r"(?:即为|就是|等于|识别为)[^。.!?\n]{0,30}方差|"
+                r"\b(?:is|equals?|identif(?:y|ied)\s+as)\s+(?:the\s+)?variance\b",
+                raw_answer,
+                re.IGNORECASE,
+            ))
+            return centered_moment and variance_named and explicitly_linked
+        if self.name in {"distribution_result", "variance_result"}:
+            normal_parameters = bool(re.search(
+                r"(?:\\mathcal\s*\{?n\}?|(?<![A-Za-z])n)\s*"
+                r"\(\s*[^,，()]+\s*[,，]\s*[^()]+\)",
+                raw_answer,
+                re.IGNORECASE,
+            ))
+            if self.name == "distribution_result":
+                return normal_parameters or bool(re.search(
+                    r"分布|\\sim|~|\bdistribution\b",
+                    raw_answer,
+                    re.IGNORECASE,
+                ))
+            return normal_parameters or bool(re.search(
+                r"方差|\\?operatorname\s*\{?var\}?|\bvariance\b|\bvar\s*\(",
+                raw_answer,
+                re.IGNORECASE,
+            ))
         if self.name == "all_correct_choices":
             # The public problem does not reveal how many options are correct;
             # this obligation can validate label syntax, while the solve and
             # verification prompts must determine and return the complete set.
             return bool(answer_choice_labels(compact_answer))
         if self.name == "encoded_string":
-            return bool(re.search(r"(?:[01]{3,}[\s\\,]*){2,}", raw_answer))
+            return bool(re.search(
+                r"(?:[01]{3,}[\s\\,]*){2,}|(?<![01])[01]{6,}(?![01])",
+                raw_answer,
+            ))
         if self.name == "exhaustive_result":
             return bool(re.search(
                 r"(?:所有|全部|仅|只有|唯一|恰为|且无其他|任意|"
@@ -252,7 +376,14 @@ class Requirement:
         if self.name == "laplace_second_derivatives":
             return all(term in normalized for term in ("uxx", "uyy"))
         if self.name == "first_second_derivatives":
-            return bool(re.search(r"(?:一阶|['′]).*(?:二阶|['′]{2})|(?:gamma|γ)\s*['′].*(?:gamma|γ)\s*(?:''|′′)", raw_answer, re.DOTALL | re.IGNORECASE))
+            return bool(re.search(
+                r"(?:一阶|['′]).*(?:二阶|['′]{2})|"
+                r"(?:gamma|γ)\s*['′].*(?:gamma|γ)\s*(?:''|′′)|"
+                r"\bfirst(?:[- ]order)?\s+derivative\b.*"
+                r"\bsecond(?:[- ]order)?\s+derivative\b",
+                raw_answer,
+                re.DOTALL | re.IGNORECASE,
+            ))
         if self.name == "two_steps":
             return all(term in normalized for term in ("y1", "y2")) or "两步" in raw_answer
         if self.name == "domain":
@@ -260,6 +391,11 @@ class Requirement:
         if self.name == "integral_value":
             return bool(re.search(
                 r"(?:积分|integral|∫).*(?:为|=)|(?:级数|总和|结果|近似值|精确值).*(?:为|=)",
+                raw_answer,
+                re.IGNORECASE,
+            )) or bool(re.search(
+                r"(?:积分值|近似值|精确值)\s*(?:为|是|=|[:：])?\s*"
+                r"(?:\$?\s*)?(?:[-+]?\d|\\(?:d?frac|sqrt)\s*\{|π|\\pi)",
                 raw_answer,
                 re.IGNORECASE,
             )) or bool(re.fullmatch(
@@ -469,6 +605,27 @@ def build_problem_spec(problem: str) -> ProblemSpec:
     risks = _risks(semantic_text, profile, len(goals))
     risk_score = _risk_score(semantic_text, profile, goals, risks)
     primary, alternative = _METHODS.get(profile.subject, ("definition_and_case_analysis", "direct_check"))
+    topic = getattr(profile, "topic", "general")
+    if "global_connectivity" in risks:
+        primary, alternative = (
+            "frontier_state_dp_with_connectivity",
+            "exact_small_case_enumeration_and_subtour_check",
+        )
+    elif topic == "olympiad_inequality":
+        primary, alternative = (
+            "sharp_inequality_with_equality_or_limit_case",
+            "extremal_family_and_parameter_check",
+        )
+    elif topic == "olympiad_combinatorics":
+        primary, alternative = (
+            "bijection_recurrence_or_state_dp",
+            "exact_small_case_enumeration",
+        )
+    elif topic == "olympiad_sequence":
+        primary, alternative = (
+            "invariant_and_recurrence",
+            "construct_candidates_then_exclude_others",
+        )
     answer_frame = _answer_frame(extract_target_clause(semantic_text), profile)
     contract = _answer_contract(text, semantic_text, profile, goals, answer_frame)
     return ProblemSpec(
@@ -513,6 +670,15 @@ def _answer_frame(text: str, profile: ProblemProfile) -> AnswerFrame:
         # bare yes/no sentence (notably in English, where "verify" is often
         # classified as a truth-shaped request).
         return AnswerFrame("math", predicate="公式核验", question_kind="math")
+    if profile.answer_shape == "truth" and re.search(
+        r"不可约|可约|\b(?:ir)?reducible\b",
+        text,
+        re.IGNORECASE,
+    ):
+        # Reducibility is naturally reported as a mathematical predicate
+        # ("f is irreducible"), not as a bare yes/no sentence.  The strict
+        # judgement requirement below still enforces an explicit verdict.
+        return AnswerFrame("math", predicate="不可约性判断", question_kind="math")
     age = re.search(r"问\s*([\u4e00-\u9fff]{2,6})(?:多少|几)岁", text)
     if not age:
         age = re.search(r"([\u4e00-\u9fff]{2,6})(?:今年|的年龄|现年)", text)
@@ -694,6 +860,25 @@ def _goals(text: str, profile: ProblemProfile) -> list[Goal]:
         elif re.search(r"填[^。\n]*(?:是[^。\n]*否|否[^。\n]*是)|yes\s+or\s+no", target, re.IGNORECASE):
             part_shape = "truth"
         requirements = list(_requirements(target, part_shape))
+        if (
+            _requires_almost_everywhere_zero_conclusion(item)
+            and not any(
+                requirement.name == "almost_everywhere_zero"
+                for requirement in requirements
+            )
+        ):
+            requirements.append(Requirement(
+                "almost_everywhere_zero",
+                (("f=0", "几乎处处"), ("f=0", "almost everywhere")),
+                strict=True,
+            ))
+        if len(selected) == 1:
+            existing_names = {requirement.name for requirement in requirements}
+            requirements.extend(
+                requirement
+                for requirement in _parallel_result_requirements(item)
+                if requirement.name not in existing_names
+            )
         if conditional_followup and part_shape == "truth":
             requirements = [item for item in requirements if item.name != "judgement"]
             requirements.append(Requirement(
@@ -903,6 +1088,38 @@ def _required_terms(text: str, answer_shape: str) -> tuple[str, ...]:
     return tuple(dict.fromkeys(required))
 
 
+def _requires_almost_everywhere_zero_conclusion(text: str) -> bool:
+    """Recognize the standard zero-integral theorem's requested corollary."""
+    return all((
+        re.search(
+            r"(?<![A-Za-z])f\s*(?:≥|\\geq?|\\ge)\s*0|"
+            r"\bnonnegative\b[^。.!?\n]{0,35}\bf\b|"
+            r"\bf\b[^。.!?\n]{0,35}\bnonnegative\b",
+            text,
+            re.IGNORECASE,
+        ),
+        re.search(
+            r"(?:∫|\\int)[^。.!?\n]{0,60}\bf\b[^。.!?\n]{0,60}"
+            r"(?:=|等于|为|is|equals?)\s*0",
+            text,
+            re.IGNORECASE,
+        ),
+        re.search(
+            r"(?:\{\s*f\s*(?:≥|\\geq?|\\ge)|level\s+set)[^。.!?\n]{0,100}"
+            r"(?:零测集|测度为零|measure\s+(?:is\s+)?zero|measure\s+0)",
+            text,
+            re.IGNORECASE,
+        ),
+        re.search(
+            r"写出(?:其|最后|最终)?结论|得出(?:其|最后|最终)?结论|"
+            r"\b(?:state|write|give)\s+(?:the\s+)?conclusion\b|"
+            r"\band\s+conclude\b",
+            text,
+            re.IGNORECASE,
+        ),
+    ))
+
+
 def _requirements(text: str, answer_shape: str) -> tuple[Requirement, ...]:
     requirements: list[Requirement] = []
     alternative_result = _is_result_or_nonexistence_alternative(text)
@@ -910,6 +1127,12 @@ def _requirements(text: str, answer_shape: str) -> tuple[Requirement, ...]:
         requirements.append(Requirement(
             "alternative_result",
             (("number",), ("does not exist",), ("不存在",)),
+            strict=True,
+        ))
+    for parameter in _answer_parameters(text):
+        requirements.append(Requirement(
+            f"parameter_dependency_{parameter.lower()}",
+            ((parameter,),),
             strict=True,
         ))
     if answer_shape == "truth" and re.search(
@@ -992,7 +1215,18 @@ def _requirements(text: str, answer_shape: str) -> tuple[Requirement, ...]:
             (("k", "="), ("高斯曲率",), ("gaussian curvature",)),
             strict=True,
         ))
-    if re.search(
+    surface_derivative_context = bool(re.search(
+        r"曲面|二阶偏导|黑塞|\\?operatorname\s*\{?Hess|\b(?:surface|hessian)\b|"
+        r"\bsecond[- ](?:order\s+)?partial\s+derivatives?\b",
+        text,
+        re.IGNORECASE,
+    ))
+    curve_derivative_request = not surface_derivative_context and bool(re.search(
+        r"曲线|\\?gamma|γ|\bcurve\b",
+        text,
+        re.IGNORECASE,
+    ))
+    if not curve_derivative_request and re.search(
         r"(?:写出|给出|列出|计算|求|说明)[^。.!?\n]{0,30}二阶导数|"
         r"二阶导数[^。.!?\n]{0,12}(?:依据|值|矩阵)|"
         r"\b(?:give|write|state|list|compute|show)\b[^.!?\n]{0,60}"
@@ -1005,8 +1239,67 @@ def _requirements(text: str, answer_shape: str) -> tuple[Requirement, ...]:
             (("f_xx", "f_xy", "f_yy"), ("hessian",)),
             strict=True,
         ))
+    if re.search(
+        r"(?:列出|写出|给出|枚举)[^。.!?\n]{0,30}条件样本空间|"
+        r"条件样本空间[^。.!?\n]{0,30}(?:列出|写出|给出|枚举)|"
+        r"\b(?:list|write|give|state|enumerate)\b[^.!?\n]{0,50}"
+        r"\bconditional\s+sample\s+space\b",
+        text,
+        re.IGNORECASE,
+    ):
+        requirements.append(Requirement(
+            "conditional_sample_space",
+            (("条件样本空间",), ("conditional sample space",), ("omega", "=")),
+            strict=True,
+        ))
+    if re.search(
+        r"(?:识别|认出|指出)[^。.!?\n]{0,30}(?:其|为|是)?[^。.!?\n]{0,12}方差|"
+        r"\b(?:identify|recognize)\b[^.!?\n]{0,50}\bvariance\b",
+        text,
+        re.IGNORECASE,
+    ):
+        requirements.append(Requirement(
+            "variance_identification",
+            (("e[(x-p)^2]", "var(x)"), ("方差",), ("variance",)),
+            strict=True,
+        ))
+    if re.search(
+        r"(?:说明|指出|识别|认出|写出)[^。.!?\n]{0,40}几何分布|"
+        r"\b(?:identify|recognize|describe|state)\b[^.!?\n]{0,55}"
+        r"\bgeometric\s+distribution\b",
+        text,
+        re.IGNORECASE,
+    ):
+        requirements.append(Requirement(
+            "geometric_distribution_identification",
+            (("几何分布",), ("geometric", "distribution"), ("geom",)),
+            strict=True,
+        ))
+    distribution_is_support = bool(re.search(
+        r"(?:求|计算)[^。.!?\n]{0,120}概率[^。.!?\n]{0,80}"
+        r"(?:说明|指出|识别|认出)[^。.!?\n]{0,40}几何分布|"
+        r"\b(?:find|compute|calculate)\b[^.!?\n]{0,120}\bprobability\b"
+        r"[^.!?\n]{0,80}\b(?:identify|recognize|describe|state)\b"
+        r"[^.!?\n]{0,40}\bgeometric\s+distribution\b",
+        text,
+        re.IGNORECASE,
+    ))
+    if answer_shape != "choice" and not distribution_is_support and re.search(
+        r"(?:求|确定|写出|给出)[^。.!?\n]{0,80}(?:条件)?(?<!初始)(?<!同)分布(?:律)?|"
+        r"\b(?:find|determine|write|give)\s+(?:the\s+)?distribution\s+of\b|"
+        r"\b(?:find|determine|write|give)\b[^.!?\n]{0,100}"
+        r"\b(?:conditional|joint|marginal|sampling|limiting|stationary|probability)\s+distribution\b|"
+        r"\bwhat\s+is\b[^.!?\n]{0,80}\bdistribution\b",
+        text,
+        re.IGNORECASE,
+    ):
+        requirements.append(Requirement(
+            "distribution_result",
+            (("分布",), ("distribution",), (r"\sim",), ("poisson",), ("normal",)),
+            strict=True,
+        ))
     if not alternative_result and re.search(
-        r"说明.*(?:理由|为何|原因)|证明|prove|show|explain|justify|show\s+your\s+work",
+        r"说明.*(?:理由|为何|原因)|解释|证明|prove|show|explain|justify|show\s+your\s+work",
         text,
         re.IGNORECASE,
     ):
@@ -1096,6 +1389,166 @@ def _requirements(text: str, answer_shape: str) -> tuple[Requirement, ...]:
     return tuple(requirements)
 
 
+def _parallel_result_requirements(text: str) -> tuple[Requirement, ...]:
+    """Capture named result components inside one independent problem.
+
+    These obligations deliberately do not create additional goals.  Each rule
+    requires an explicit request plus a small, recognizable group of named
+    outputs, so ordinary conjunctions in hypotheses remain untouched.
+    """
+    value = str(text or "")
+    request = r"(?:求|问|试问|计算|写出|给出|find|determine|calculate|compute|give)"
+    groups: tuple[
+        tuple[str, tuple[tuple[str, tuple[tuple[str, ...], ...]], ...]], ...
+    ] = (
+        (
+            rf"{request}[\s\S]{{0,520}}(?:产量|quantity)[\s\S]{{0,260}}(?:利润|profit)|"
+            rf"{request}[\s\S]{{0,520}}(?:利润|profit)[\s\S]{{0,260}}(?:产量|quantity)",
+            (
+                ("production_quantity", (("产量",), ("生产",), ("quantity",), ("q=",))),
+                ("profit_value", (("利润",), ("profit",))),
+            ),
+        ),
+        (
+            rf"{request}[\s\S]{{0,520}}(?:产量|quantity)[\s\S]{{0,260}}(?:价格|price)|"
+            rf"{request}[\s\S]{{0,520}}(?:价格|price)[\s\S]{{0,260}}(?:产量|quantity)",
+            (
+                ("production_quantity", (("产量",), ("生产",), ("quantity",), ("q=",))),
+                ("price_value", (("价格",), ("price",), ("p=",))),
+            ),
+        ),
+        (
+            rf"{request}[\s\S]{{0,420}}(?:最大高度|maximum\s+height)[\s\S]{{0,220}}(?:所需)?时间|"
+            rf"{request}[\s\S]{{0,420}}(?:所需)?时间[\s\S]{{0,220}}(?:最大高度|maximum\s+height)",
+            (
+                ("maximum_height", (("最大高度",), ("maximum", "height"))),
+                ("time_to_peak", (("时间",), ("time",))),
+            ),
+        ),
+        (
+            rf"(?:问|求)[\s\S]{{0,420}}折起高度[\s\S]{{0,220}}(?:最大)?截面积",
+            (
+                ("fold_height", (("折起高度",), ("高度",))),
+                ("cross_section_area", (("截面积",), ("cross", "section", "area"))),
+            ),
+        ),
+        (
+            rf"{request}[\s\S]{{0,420}}(?:长和宽|长、宽|length\s+and\s+width)"
+            rf"[\s\S]{{0,220}}(?:最大)?面积",
+            (
+                ("length_value", (("长",), ("length",))),
+                ("width_value", (("宽",), ("width",))),
+                ("area_value", (("面积",), ("area",))),
+            ),
+        ),
+        (
+            rf"{request}[\s\S]{{0,420}}(?:位移|displacement)[\s\S]{{0,220}}(?:速度|velocity)|"
+            rf"{request}[\s\S]{{0,420}}(?:速度|velocity)[\s\S]{{0,220}}(?:位移|displacement)",
+            (
+                ("displacement_value", (("位移",), ("displacement",))),
+                ("velocity_value", (("速度",), ("velocity",))),
+            ),
+        ),
+        (
+            rf"{request}[\s\S]{{0,520}}(?:边长|side\s+length)[\s\S]{{0,220}}(?:最大)?面积",
+            (
+                ("side_length", (("边长",), ("side", "length"))),
+                ("area_value", (("面积",), ("area",))),
+            ),
+        ),
+        (
+            r"(?:市场价格|prices?)[\s\S]{0,300}(?:p_?1|p1)[\s\S]{0,120}(?:p_?2|p2)|"
+            r"(?:p_?1|p1)[\s\S]{0,120}(?:p_?2|p2)[\s\S]{0,300}(?:市场价格|prices?)",
+            (
+                ("market_price_p1", (("p1=",), ("p_1=",), ("甲地", "价格"))),
+                ("market_price_p2", (("p2=",), ("p_2=",), ("乙地", "价格"))),
+            ),
+        ),
+        (
+            rf"{request}[\s\S]{{0,420}}(?:最优解|optimal\s+solution)"
+            rf"[\s\S]{{0,180}}(?:最优值|optimal\s+value)",
+            (
+                ("optimal_solution", (("最优解",), ("optimal", "solution"), ("(x,y)=",))),
+                ("optimal_value", (("最优值",), ("optimal", "value"))),
+            ),
+        ),
+        (
+            rf"{request}[\s\S]{{0,420}}极大元[\s\S]{{0,140}}极小元"
+            rf"[\s\S]{{0,180}}最长链",
+            (
+                ("maximal_element", (("极大元",),)),
+                ("minimal_element", (("极小元",),)),
+                ("longest_chain", (("最长链",),)),
+            ),
+        ),
+        (
+            rf"{request}[\s\S]{{0,420}}(?:平均曲率|mean\s+curvature)"
+            rf"[\s\S]{{0,180}}(?:高斯曲率|gaussian\s+curvature)",
+            (
+                ("mean_curvature", (("平均曲率",), ("mean", "curvature"))),
+                ("gaussian_curvature", (("高斯曲率",), ("gaussian", "curvature"), ("k=",))),
+            ),
+        ),
+        (
+            rf"{request}[\s\S]{{0,420}}(?:分布|distribution)"
+            rf"[\s\S]{{0,180}}(?:方差|variance)",
+            (
+                ("distribution_result", (("分布",), ("distribution",), ("x+y", "~"))),
+                ("variance_result", (("方差",), ("variance",), ("var",))),
+            ),
+        ),
+        (
+            r"(?:展开|写出[^。.!?\n]{0,80}(?:展开式|幂级数)|"
+            r"\bexpand\b|\bwrite\b[^.!?\n]{0,80}\bpower\s+series)"
+            r"[\s\S]{0,420}(?:幂级数|power\s+series)"
+            rf"[\s\S]{{0,180}}(?:收敛半径|radius\s+of\s+convergence)",
+            (
+                ("series_expansion", (("级数",), ("series",), ("sum",), ("Σ",))),
+                ("convergence_radius", (("收敛半径",), ("radius", "convergence"), ("r=",))),
+            ),
+        ),
+        (
+            rf"{request}[\s\S]{{0,420}}(?:平衡点|equilibrium)"
+            rf"[\s\S]{{0,180}}(?:稳定性|stability)",
+            (
+                ("equilibrium_point", (("平衡点",), ("原点",), ("equilibrium",), ("origin",))),
+                ("stability_type", (("稳定",), ("stability",), ("saddle",), ("鞍点",))),
+            ),
+        ),
+    )
+    found: list[Requirement] = []
+    seen: set[str] = set()
+    for pattern, components in groups:
+        if not re.search(pattern, value, re.IGNORECASE):
+            continue
+        for name, alternatives in components:
+            if name not in seen:
+                found.append(Requirement(name, alternatives, strict=True))
+                seen.add(name)
+    return tuple(found)
+
+
+def _answer_parameters(text: str) -> tuple[str, ...]:
+    """Return parameters that the requested result must explicitly retain."""
+    value = str(text or "")
+    parameters: list[str] = []
+    for match in re.finditer(
+        r"\b([A-Za-z])\s*=\s*\1\s*\(\s*([A-Za-z](?:\s*,\s*[A-Za-z])*)\s*\)",
+        value,
+        re.IGNORECASE,
+    ):
+        parameters.extend(re.findall(r"[A-Za-z]", match.group(2)))
+    for match in re.finditer(
+        r"\b(?:as\s+a\s+function\s+of|in\s+terms\s+of)\s+"
+        r"(?:the\s+parameters?\s+)?\(?\s*\$?"
+        r"([A-Za-z](?:\s*(?:,|and)\s*[A-Za-z])*)(?![A-Za-z])",
+        value,
+        re.IGNORECASE,
+    ):
+        parameters.extend(re.findall(r"[A-Za-z]", match.group(1)))
+    return tuple(dict.fromkeys(parameter.lower() for parameter in parameters))
+
+
 def _asks_for_euler_formula_check(text: str) -> bool:
     return bool(re.search(
         r"(?:验证|检验|核验)[^。.!?\n]{0,40}欧拉公式|"
@@ -1157,7 +1610,11 @@ def _explicit_method_requirements(text: str) -> list[Requirement]:
         (r"位置压缩", "position_compression", (("位置压缩",), ("压缩",), ("j-1",))),
         (r"使用分配律", "distributive_step", (("分配律",),)),
         (r"列出两步递推", "two_steps", (("y_1", "y_2"), ("两步",))),
-        (r"一阶和二阶导数", "first_second_derivatives", (("一阶", "二阶"), ("γ'", "γ''"))),
+        (
+            r"一阶和二阶导数|\bfirst(?:[- ]order)?\s+and\s+second(?:[- ]order)?\s+derivatives?\b",
+            "first_second_derivatives",
+            (("一阶", "二阶"), ("γ'", "γ''"), ("first", "second", "derivative")),
+        ),
         (r"按不交集合分解", "disjoint_decomposition", (("不交",), ("分解",))),
         (r"使用组合数计算", "combination_calculation", (("组合数",), ("binom",), ("c_",))),
         (r"先作部分分式", "partial_fraction", (("部分分式",),)),
@@ -1166,7 +1623,36 @@ def _explicit_method_requirements(text: str) -> list[Requirement]:
         (r"使用积分因子", "integrating_factor", (("积分因子",),)),
         (r"先写特征方程", "characteristic_equation", (("特征方程",),)),
         (r"通过分离变量", "separation_of_variables", (("分离变量",),)),
-        (r"利用独立增量", "independent_increments", (("独立增量",),)),
+        (
+            r"(?:利用|使用|说明)[^。.!?\n]{0,30}独立增量|"
+            r"\b(?:use|using|explain|show)\b[^.!?\n]{0,45}\bindependent\s+increments?\b",
+            "independent_increments",
+            (("独立增量",), ("independent", "increment")),
+        ),
+        (
+            r"说明[^。.!?\n]{0,35}独立性[^。.!?\n]{0,25}(?:用在|用途|作用|何处)|"
+            r"\b(?:explain|state|show)\b[^.!?\n]{0,60}\b(?:where|how)\b"
+            r"[^.!?\n]{0,35}\bindependence\b[^.!?\n]{0,20}\bused\b",
+            "independence_use",
+            (("独立",), ("independence",)),
+        ),
+        (
+            r"说明[^。.!?\n]{0,30}独立同分布(?:假设)?|"
+            r"\b(?:explain|state|use)\b[^.!?\n]{0,45}"
+            r"\b(?:i\.?i\.?d\.?|independent\s+and\s+identically\s+distributed)\b",
+            "iid_variance_scaling",
+            (("独立同分布",), ("iid",), ("i.i.d",), ("independent", "identically distributed")),
+        ),
+        (
+            r"强大数律|\bstrong\s+law(?:\s+of\s+large\s+numbers)?\b",
+            "strong_law",
+            (("强大数律",), ("strong", "law")),
+        ),
+        (
+            r"(?:使用|利用)中心差分公式|\b(?:use|using)\s+(?:the\s+)?central\s+difference\s+formula\b",
+            "central_difference_formula",
+            (("中心差分公式",), ("central", "difference", "formula")),
+        ),
         (r"说明推理规则", "inference_rule", (("假言推理",), ("假言三段论",), ("modus ponens",))),
         (r"使用极值或连续性反证", "continuity_contradiction", (("反证",), ("连续性",))),
         (r"开覆盖限制到闭子集", "open_cover_step", (("开覆盖", "补集"), ("有限子覆盖",))),
@@ -1208,7 +1694,11 @@ def _risk_score(text: str, profile: ProblemProfile, goals: list[Goal], risks: li
         score += 1
     if getattr(profile, "topic", "").startswith("olympiad_"):
         score += 2
-    if set(risks) & {"exhaustiveness_required", "integer_constraints", "functional_equation", "diagram_dependency"}:
+    if set(risks) & {
+        "exhaustiveness_required", "integer_constraints", "functional_equation",
+        "diagram_dependency", "parameter_dependency", "extremal_two_sided_bound",
+        "global_connectivity",
+    }:
         score += 2
     if re.search(r"最大右侧存在区间|maximal right(?:-hand)? interval", text, re.IGNORECASE):
         score += 2
@@ -1409,8 +1899,35 @@ def _risks(text: str, profile: ProblemProfile, goal_count: int) -> list[str]:
         risks.append("integer_constraints")
     if topic == "olympiad_functional_equation":
         risks.append("functional_equation")
-    if topic == "olympiad_geometry":
+    geometry_relations = set(re.findall(
+        r"\b(?:angle|parallel|perpendicular|similar|congruent|cyclic|tangent|collinear|"
+        r"concurrent|circumcircle|incircle|orthocenter|circumcenter|incenter|"
+        r"角|平行|垂直|相似|全等|共圆|切线|共线|共点|外接圆|内切圆)\b",
+        text,
+        re.IGNORECASE,
+    ))
+    if topic == "olympiad_geometry" and (
+        len(geometry_relations) >= 2
+        or re.search(r"\b(?:diagram|figure)\b|如图|图中", text, re.IGNORECASE)
+    ):
         risks.append("diagram_dependency")
     if topic in {"olympiad_combinatorics", "olympiad_sequence"}:
         risks.append("case_analysis")
+    if _answer_parameters(text):
+        risks.append("parameter_dependency")
+    if re.search(
+        r"\b(?:minimum|maximum|smallest|largest|least|greatest|best)\s+"
+        r"(?:possible\s+)?(?:value|constant|integer|number|[A-Za-z])\b|"
+        r"最小|最大|最优|最佳常数",
+        text,
+        re.IGNORECASE,
+    ):
+        risks.append("extremal_two_sided_bound")
+    if re.search(
+        r"\bpermutations?\b[\s\S]{0,1800}\b(?:consecutive|exactly\s+one)\b|"
+        r"排列[\s\S]{0,1800}(?:相邻|恰有一个)",
+        text,
+        re.IGNORECASE | re.DOTALL,
+    ):
+        risks.append("global_connectivity")
     return list(dict.fromkeys(risks))

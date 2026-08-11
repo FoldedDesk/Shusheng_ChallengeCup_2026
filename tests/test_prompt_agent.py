@@ -7,6 +7,9 @@ import unittest
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from classifier import classify_profile
+from classifier.problem_spec import build_problem_spec
+from core.submission_agent import SubmissionAgent
+from rag.card_retriever import CardRetriever
 from tools.sympy_tool import SympyTool
 from user_agent import ReasoningAgent
 
@@ -36,6 +39,50 @@ class SubmissionContractTest(unittest.TestCase):
 
         self.assertEqual(init, ["self", "client", "args", "kwargs"])
         self.assertEqual(solve, ["self", "problem", "metadata"])
+
+    def test_submission_prompt_requires_checked_stage_specific_final_placement(self):
+        prompt = (Path("prompts") / "submission.txt").read_text(encoding="utf-8")
+
+        self.assertIn("within 3000 reasoning tokens", prompt)
+        self.assertIn("Complete the decisive calculation or check before committing to FINAL", prompt)
+        self.assertIn("quick-response stages require a short check first", prompt)
+        self.assertIn("put the object in FINAL", prompt)
+        self.assertIn("complete label set in FINAL", prompt)
+
+    def test_quick_and_deep_requests_use_different_final_placement(self):
+        quick_problem = "一棵树有20个顶点和5个叶子，求度为3的顶点数。"
+        deep_problem = "证明每个有限维赋范空间的子空间都是闭集。"
+        quick_spec = build_problem_spec(quick_problem)
+        deep_spec = build_problem_spec(deep_problem)
+
+        quick = SubmissionAgent._stage_answer_instruction(quick_spec, quick_problem)
+        deep = SubmissionAgent._stage_answer_instruction(deep_spec, deep_problem)
+
+        self.assertIn("最后一行", quick)
+        self.assertIn("不得先写暂定答案", quick)
+        self.assertIn("第一行", deep)
+        self.assertIn("隐藏推理", deep)
+
+    def test_truth_verifier_gets_at_most_one_high_confidence_theorem_fact(self):
+        problem = "在多项式环F_2[x]中判断x^3+x+1是否不可约，并说明理由。"
+        spec = build_problem_spec(problem)
+        cards = CardRetriever().retrieve(spec)
+        fact = cards.verification_fact_context()
+
+        request = SubmissionAgent._verification_request(
+            problem, spec, cards, (), []
+        )
+
+        self.assertTrue(fact)
+        self.assertIn("一条经校订的领域事实", request)
+        self.assertEqual(request.count(fact), 1)
+
+    def test_low_confidence_verifier_does_not_reuse_solve_method_card(self):
+        problem = "证明每个有限集合都有有限个子集。"
+        spec = build_problem_spec(problem)
+        cards = CardRetriever().retrieve(spec)
+
+        self.assertEqual(cards.verification_fact_context(), "")
 
     def test_verified_tool_route_uses_one_public_client_call(self):
         client = RecordingClient([

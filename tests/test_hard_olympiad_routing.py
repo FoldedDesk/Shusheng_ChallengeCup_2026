@@ -84,4 +84,6 @@ def test_most_english_contest_section_problems_reach_hard_retrieval():
         spec = build_problem_spec(row["problem"])
         routed += int(spec.profile.difficulty == "hard" and SubmissionAgent._should_retrieve(spec))
 
-    assert routed >= 75
+    # Bare "positive integer" declarations are intentionally no longer
+    # promoted to number theory, so a few generic grid/game stems stay out.
+    assert routed >= 72

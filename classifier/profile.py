@@ -65,7 +65,7 @@ _OLYMPIAD_TOPICS = (
         r"[A-Za-z]\s*\([^)]*\)\s*=\s*[^.!?]{0,300}[A-Za-z]\s*\(",
     ),
     ("olympiad_geometry", r"\b(triangles?|quadrilaterals?|polygons?|hexagons?|circle|cyclic|tangent|collinear|concurrent|circumcircle|incircle|orthocenter|circumcenter|incenter|angle bisector)\b"),
-    ("olympiad_number_theory", r"\b(positive integers?|integer solutions?|pairs? of integers|triples? of integers|diophantine|divisibility|divisible|divides|congruence|modulo|prime numbers?|gcd|lcm|totient|pell equation|factorials?|positive divisors?)\b|\\pmod|\\mid"),
+    ("olympiad_number_theory", r"\b(integer solutions?|pairs?\s+of\s+(?:(?:positive|nonnegative|nonzero)\s+)?integers?|triples?\s+of\s+(?:(?:positive|nonnegative|nonzero)\s+)?integers?|diophantine|divisibility|divisible|divides|congruence|modulo|prime numbers?|gcd|lcm|totient|pell equation|factorials?|positive divisors?)\b|\\pmod|\\mid"),
     (
         "olympiad_combinatorics",
         r"\b(colorings?|arrangements?|permutations?|combinations?|pigeonhole|double counting|"
@@ -107,6 +107,23 @@ _COMBINATORIAL_OBJECT_PRIORITY = re.compile(
     r"\b(?:famil(?:y|ies).{0,50}subsets?|set systems?|blocks?|surjective functions?|"
     r"injective functions?|bracelets?|necklaces?|binary strings?|lattice paths?|"
     r"linear extensions?|spanning trees?|labeled trees?|tournaments?|colorings?)\b",
+    re.IGNORECASE | re.DOTALL,
+)
+
+
+_GEOMETRIC_COLLECTION_COMBINATORICS = re.compile(
+    r"\b(?:\d+|n|m)\s+(?:non[- ]degenerate\s+)?triangles?\b[\s\S]{0,1000}"
+    r"(?:colou?r(?:ed|ing)?|sort(?:ed)?|increasing\s+order|indices?|permutation|"
+    r"at\s+least|at\s+most|minimum|maximum|how\s+many)",
+    re.IGNORECASE | re.DOTALL,
+)
+
+
+_PARAMETRIC_INEQUALITY_PRIORITY = re.compile(
+    r"(?:\binequalit\w*\b|\\geq|\\leq|[≤≥])[^.!?]{0,800}"
+    r"(?:largest|greatest|smallest|least|best|optimal)\s+(?:real\s+)?constant|"
+    r"(?:largest|greatest|smallest|least|best|optimal)\s+(?:real\s+)?constant"
+    r"[^.!?]{0,800}(?:\binequalit\w*\b|\\geq|\\leq|[≤≥])",
     re.IGNORECASE | re.DOTALL,
 )
 
@@ -192,6 +209,10 @@ def classify_profile(problem: str) -> ProblemProfile:
 
 def _classify_topic(lowered: str) -> str:
     has_olympiad_signal = bool(_OLYMPIAD_SIGNAL.search(lowered))
+    if _GEOMETRIC_COLLECTION_COMBINATORICS.search(lowered):
+        return "olympiad_combinatorics"
+    if _PARAMETRIC_INEQUALITY_PRIORITY.search(lowered):
+        return "olympiad_inequality"
     if has_olympiad_signal and _COMBINATORIAL_OBJECT_PRIORITY.search(lowered):
         return "olympiad_combinatorics"
     geometry_markers = set(_OLYMPIAD_GEOMETRY_MARKERS.findall(lowered))
@@ -227,6 +248,39 @@ def _answer_shape(problem: str, problem_type: str, target: str = "") -> str:
         return "expression"
     if has_choice_options(problem):
         return "choice"
+    if re.search(
+        r"(?:化简|简化)[^。.!?\n]{0,120}(?:表达式|式子)|"
+        r"\bsimplif(?:y|ication)\b[^.!?\n]{0,120}\b(?:expression|formula)\b",
+        target_text,
+        re.IGNORECASE,
+    ):
+        return "expression"
+    distribution_is_support = bool(re.search(
+        r"(?:求|计算)[^。.!?\n]{0,120}概率[^。.!?\n]{0,80}"
+        r"(?:说明|指出|识别|认出)[^。.!?\n]{0,40}几何分布|"
+        r"\b(?:find|compute|calculate)\b[^.!?\n]{0,120}\bprobability\b"
+        r"[^.!?\n]{0,80}\b(?:identify|recognize|describe|state)\b"
+        r"[^.!?\n]{0,40}\bgeometric\s+distribution\b",
+        target_text,
+        re.IGNORECASE,
+    ))
+    if not distribution_is_support and re.search(
+        r"(?:求|确定|写出|给出)[^。.!?\n]{0,80}(?:条件)?(?<!初始)(?<!同)分布(?:律)?|"
+        r"\b(?:find|determine|write|give)\s+(?:the\s+)?distribution\s+of\b|"
+        r"\b(?:find|determine|write|give)\b[^.!?\n]{0,100}"
+        r"\b(?:conditional|joint|marginal|sampling|limiting|stationary|probability)\s+distribution\b|"
+        r"\bwhat\s+is\b[^.!?\n]{0,80}\bdistribution\b",
+        target_text,
+        re.IGNORECASE,
+    ):
+        return "expression"
+    if re.search(
+        r"\b(?:as\s+a\s+function\s+of|in\s+terms\s+of)\s+\$?[A-Za-z](?![A-Za-z])|"
+        r"\b[A-Za-z]\s*=\s*[A-Za-z]\s*\(\s*[A-Za-z]\s*\)",
+        target_text,
+        re.IGNORECASE,
+    ):
+        return "expression"
     # Verification and yes/no questions frequently contain equations, but do
     # not ask for equation roots (for example PDE solution checks).
     value_after_verdict = bool(re.search(
@@ -264,6 +318,19 @@ def _answer_shape(problem: str, problem_type: str, target: str = "") -> str:
         r"方程|求解|solve", lowered
     ):
         return "expression"
+    # For quadrature and definite integrals, an interval is the integration
+    # domain rather than the shape of the requested result.
+    if re.search(r"积分|∫|\\int|\bintegral\b", lowered, re.IGNORECASE) and re.search(
+        r"计算|近似|数值|精确值|compute|calculate|approx(?:imate|imation)?|exact\s+value",
+        lowered,
+        re.IGNORECASE,
+    ) and not re.search(
+        r"参数[^。.!?\n]{0,30}(?:区间|范围)|"
+        r"(?:parameter|values?\s+of)[^.!?\n]{0,40}(?:range|interval)",
+        lowered,
+        re.IGNORECASE,
+    ):
+        return "expression"
     if re.search(
         r"(?:解|solve).*(?:不等式|inequal)|区间|\b(?:interval|range|domain)\b",
         lowered,
@@ -295,6 +362,14 @@ def _answer_shape(problem: str, problem_type: str, target: str = "") -> str:
         lowered,
     ):
         return "roots"
+    if re.search(
+        r"(?:一个)?(?:指标|方法|定理|性质|图形|统计量|概念)(?:是|为)?\s*"
+        r"(?:[（(]\s*[）)]\s*)?$|"
+        r"导致[^。！？!?\n]{0,60}(?:方向|变化|方差)\s*[（(]\s*[）)]\s*$",
+        target_text,
+        re.IGNORECASE,
+    ):
+        return "expression"
     if re.search(r"微分方程|热方程|波动方程|laplace方程|曲线|曲面|函数|function|导数|derivative|积分|integral|极限|limit", lowered):
         return "expression"
     if re.search(r"数列|递推|sequence|recurrence", lowered):

@@ -7,6 +7,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from classifier.problem_spec import build_problem_spec
 from core.submission_agent import SubmissionAgent
 from reasoning.candidate_selector import assess_candidate
+from reasoning.math_equivalence import equivalent_answers
 from tools.sympy_tool import SympyTool
 from user_agent import ReasoningAgent
 
@@ -15,16 +16,19 @@ PROBLEMS = (
     (
         "求长度为10的二进制串中恰有4个1且不含相邻两个1的串数，要求先选取1的位置再计算。",
         "nonadjacent_binary_string_count",
+        "35",
         (r"\binom{7}{4}=35", "7个空位"),
     ),
     (
         "在5个不同元素的排列中，求元素a在b之前且c不在首位的排列数，使用容斥或条件计数。",
         "precedence_permutation_count",
+        "48",
         ("60-12=48", "条件计数"),
     ),
     (
         "求从集合{1,2,3,4}到{a,b,c}的满射个数，要求使用容斥原理而非直接枚举。",
         "surjection_count",
+        "36",
         ("=36", "容斥原理"),
     ),
 )
@@ -41,14 +45,17 @@ def _evidence(problem: str):
 
 
 def test_standard_counting_contracts_are_certified_whole_answers():
-    for problem, operation, terms in PROBLEMS:
+    for problem, operation, expected, support_terms in PROBLEMS:
         evidence = _evidence(problem)
         result = ReasoningAgent(_NoModelClient()).solve(problem, {})
 
         assert evidence[0].operation == operation
         assert evidence[0].scope == "whole_goal"
         assert evidence[0].verified
-        assert all(term in result["final_response"] for term in terms)
+        assert expected in evidence[0].result
+        assert all(term in evidence[0].support for term in support_terms)
+        assert expected in result["final_response"]
+        assert all(term in result["final_response"] for term in support_terms)
         assert next(
             step for step in result["trace"] if step["step"] == "selection"
         )["content"]["source"] == "sympy_verified"
@@ -59,26 +66,28 @@ def test_equivalent_english_counting_contracts_return_english_answers():
         (
             "Find the number of binary strings of length 10 with exactly 4 ones and no two ones adjacent.",
             "nonadjacent_binary_string_count",
-            "Position selection",
+            "35",
         ),
         (
             "Among permutations of 5 distinct elements, how many have a before b and c is not first?",
             "precedence_permutation_count",
-            "Conditional counting",
+            "48",
         ),
         (
             "Find the number of surjections from a four-element set to a three-element set using inclusion-exclusion.",
             "surjection_count",
-            "Inclusion-exclusion",
+            "36",
         ),
     )
-    for problem, operation, prefix in cases:
+    for problem, operation, expected in cases:
         evidence = _evidence(problem)
         answer = ReasoningAgent(_NoModelClient()).solve(problem, {})["final_response"]
 
         assert evidence[0].operation == operation
         assert evidence[0].scope == "whole_goal"
-        assert answer.startswith(prefix)
+        assert expected in evidence[0].result
+        assert evidence[0].support
+        assert expected in answer
 
 
 def test_extra_proof_obligations_downgrade_counts_to_local_checks():

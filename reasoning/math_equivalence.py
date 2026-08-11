@@ -30,6 +30,7 @@ def equivalent_answers(left: str, right: str) -> bool:
         _trigonometric_family_match,
         _entropy_identity_match,
         _optimization_result_match,
+        _approximate_exact_pair_match,
         _approximate_interval_match,
         _negative_convergence_match,
     ):
@@ -115,6 +116,46 @@ def equivalence_key(value: str) -> str:
     return compact
 
 
+def _approximate_exact_pair_match(left: str, right: str) -> bool | None:
+    """Compare explicitly labelled approximation/exact-value pairs componentwise."""
+
+    def labelled_values(value: str) -> tuple[str, str] | None:
+        text = re.sub(
+            r"\\(?:text|mathrm)\s*\{([^{}]*)\}",
+            r"\1",
+            normalize_latex(str(value or "")),
+            flags=re.IGNORECASE,
+        )
+        scalar = (
+            r"(?:\\(?:d?frac)\s*\{[^{}]+\}\s*\{[^{}]+\}|"
+            r"[-+]?\d+(?:\.\d+)?(?:/[-+]?\d+(?:\.\d+)?)?)"
+        )
+
+        def extract(label: str) -> str:
+            match = re.search(
+                rf"(?:{label})\s*(?:为|是|is|=|[:：])?\s*"
+                rf"(?:\$|\\\()?\s*({scalar})",
+                text,
+                re.IGNORECASE,
+            )
+            return match.group(1).strip() if match else ""
+
+        approximate = extract(r"近似值|近似结果|approximate\s+value|approximation")
+        exact = extract(r"精确值|准确值|exact\s+value")
+        return (approximate, exact) if approximate and exact else None
+
+    left_pair = labelled_values(left)
+    right_pair = labelled_values(right)
+    if left_pair is None and right_pair is None:
+        return None
+    if left_pair is None or right_pair is None:
+        return False
+    return all(
+        _math_object_match(left_item, right_item)
+        for left_item, right_item in zip(left_pair, right_pair)
+    )
+
+
 def _answer_value(value: str) -> str:
     text = str(value or "").strip()
     try:
@@ -146,6 +187,16 @@ def _compact(value: str) -> str:
     text = _normalize_fraction_commands(
         normalize_latex(str(value or ""))
     ).lower().replace("−", "-")
+    for _ in range(3):
+        flattened = re.sub(
+            r"\\(?:text|mathrm)\s*\{([^{}]*)\}",
+            r"\1",
+            text,
+            flags=re.IGNORECASE,
+        )
+        if flattened == text:
+            break
+        text = flattened
     return re.sub(r"[\s{}\\,，。；;：:`'$]", "", text)
 
 

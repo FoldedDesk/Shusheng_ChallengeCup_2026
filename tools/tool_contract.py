@@ -8,6 +8,7 @@ explicit allow-list: an unknown label is evidence text, never a certificate.
 from __future__ import annotations
 
 from dataclasses import dataclass, replace
+import re
 from typing import Iterable, Optional
 
 
@@ -101,6 +102,7 @@ class ToolResult:
     label: str
     contract: Optional[ToolContract]
     certificate: ToolCertificate
+    support: str = ""
 
     @property
     def verified(self) -> bool:
@@ -115,7 +117,7 @@ class ToolResult:
         )
 
     def to_hint(self) -> str:
-        return f"{self.label}: {self.result}"
+        return f"{self.label}: {self.support or self.result}"
 
     def trace_content(self) -> dict:
         return {
@@ -123,7 +125,124 @@ class ToolResult:
             "result_kind": self.contract.result_kind if self.contract else "unknown",
             "whole_answer_eligible": self.whole_answer_eligible,
             "certificate": self.certificate.trace_content(),
+            "support": self.support,
         }
+
+
+def _legacy_submission_payload(operation: str, raw_result: str) -> tuple[str, str]:
+    """Split legacy explanatory text into a gradable result and its support.
+
+    Older deterministic handlers returned a proof or calculation sentence as
+    their result.  That is useful evidence, but it must not become the literal
+    final answer for ordinary calculation and judgement questions.  Each
+    extractor below is tied to one registered deterministic producer; an
+    unknown format remains unchanged instead of being guessed from arbitrary
+    text.
+    """
+
+    value = str(raw_result or "").strip()
+    compact = ""
+
+    if operation in {
+        "finite_cyclic_subgroup_count",
+        "linear_nonadjacent_selection",
+        "deleted_edge_bipartite_length_three_paths",
+        "positive_composition_lower_bounds",
+        "nonadjacent_binary_string_count",
+        "precedence_permutation_count",
+        "surjection_count",
+    }:
+        matches = re.findall(r"=\s*(-?\d+)\s*\\\)", value)
+        compact = matches[-1] if matches else ""
+    elif operation == "even_subset_count":
+        match = re.search(
+            r"(?:偶数基数子集数为|The number of even-cardinality subsets is)\s*"
+            r"\\\(([^()]+)\\\)",
+            value,
+            re.IGNORECASE,
+        )
+        compact = match.group(1).strip() if match else ""
+    elif operation == "binomial_choose_two_positive_root":
+        if re.search(
+            r"^(?:无正整数解|There is no positive-integer solution)",
+            value,
+            re.IGNORECASE,
+        ):
+            compact = (
+                "无正整数解"
+                if value.startswith("无")
+                else "No positive integer solution"
+            )
+            return compact, value
+        match = re.search(
+            r"(?:正整数解为|The positive-integer solution is)\s*\\\(([^()]+)\\\)",
+            value,
+            re.IGNORECASE,
+        )
+        compact = match.group(1).strip() if match else ""
+    elif operation == "ordered_positive_triples":
+        match = re.search(r"(?:共\s*|total(?:\s+is)?\s*)(\d+)\s*(?:个)?", value, re.IGNORECASE)
+        compact = match.group(1) if match else ""
+    elif operation == "fair_coin_geometric_tail":
+        match = re.search(
+            r"P\s*\(\s*T\s*>\s*\d+\s*\)\s*=\s*"
+            r"(?:\(1/2\)\^\{?\d+\}?\s*=\s*)?"
+            r"(\\frac\{\d+\}\{\d+\}|\d+)",
+            value,
+            re.IGNORECASE,
+        )
+        compact = match.group(1) if match else ""
+    elif operation == "poisson_process_increment":
+        match = re.search(
+            r"(N\([^()]+\)-N\([^()]+\)\\mid\s*N\([^()]+\)=\d+\\sim"
+            r"\\operatorname\{Poisson\}\([^()]+\))",
+            value,
+            re.IGNORECASE,
+        )
+        compact = match.group(1) if match else ""
+    elif operation == "independent_event_union":
+        match = re.search(
+            r"P\s*\(\s*A\s*\\cup\s*B\s*\)[^。.!?]*=\s*"
+            r"(\\frac\{\d+\}\{\d+\}|\d+(?:\.\d+)?)\\\)[。.]?\s*$",
+            value,
+            re.IGNORECASE,
+        )
+        compact = rf"P(A\cup B)={match.group(1)}" if match else ""
+    elif operation == "independent_standard_normal_sum":
+        match = re.search(
+            r"([A-Z]\+[A-Z]\\sim\s*N\(0,2\),\\quad\s*"
+            r"\\operatorname\{Var\}\([A-Z]\+[A-Z]\)=2)",
+            value,
+        )
+        compact = match.group(1) if match else ""
+    elif operation == "brownian_covariance":
+        match = re.search(
+            r"(\\operatorname\{Cov\}\(B\([a-z]\),B\([a-z]\)\)=[a-z])",
+            value,
+            re.IGNORECASE,
+        )
+        compact = match.group(1) if match else ""
+    elif operation == "sample_mean_variance":
+        matches = re.findall(
+            r"\\operatorname\{Var\}\(\\bar\s*X\)[^。.!?]*=\s*"
+            r"(\\frac\{\d+\}\{\d+\}|\d+(?:\.\d+)?)",
+            value,
+        )
+        compact = rf"\operatorname{{Var}}(\bar X)={matches[-1]}" if matches else ""
+    elif operation == "renewal_rate_limit":
+        match = re.search(
+            r"(\\lim_\{t\\to\\infty\}\\frac\{N\(t\)\}\{t\}="
+            r"(?:\\frac\{\d+\}\{\d+\}|\d+(?:\.\d+)?))",
+            value,
+        )
+        compact = match.group(1) if match else ""
+    elif operation == "central_difference":
+        match = re.search(r"\\approx\s*(-?\d+(?:\.\d+)?)\s*$", value)
+        compact = match.group(1) if match else ""
+
+    if not compact or compact == value:
+        return value, ""
+    return compact, value
 
 
 def _contract(
@@ -214,6 +333,67 @@ TOOL_CONTRACTS: dict[str, ToolContract] = {
         task_kinds=("proof",),
         answer_shapes=("proof",),
     ),
+    "even_subset_count": _contract(
+        "even_subset_count", "count_with_bijection", "parity_bijection_and_binomial_identity", True,
+        requirements=("reasoning", "counting_method"),
+        task_kinds=("calculation", "proof", "explanation"),
+        answer_shapes=("number", "expression"),
+        facts=(
+            "finite_set_with_positive_size", "all_subsets_requested",
+            "even_cardinality_constraint", "even_odd_toggle_bijection",
+            "binomial_parity_identity",
+        ),
+    ),
+    "deleted_edge_bipartite_length_three_paths": _contract(
+        "deleted_edge_bipartite_length_three_paths", "count", "two_layer_choice_product", True,
+        answer_shapes=("number",),
+        facts=(
+            "complete_bipartite_graph", "exactly_one_deleted_edge",
+            "missing_edge_endpoints", "length_three_simple_paths",
+            "two_layer_choice_product",
+        ),
+    ),
+    "positive_composition_lower_bounds": _contract(
+        "positive_composition_lower_bounds", "count", "lower_bound_shift_and_stars_bars", True,
+        requirements=("variable_shift", "stars_and_bars", "counting_method", "exhaustive_result"),
+        answer_shapes=("number",),
+        facts=(
+            "explicit_positive_integer_variables", "unit_coefficient_sum_equation",
+            "explicit_per_variable_lower_bounds", "variable_shift_to_nonnegative",
+            "stars_and_bars_recomputed",
+        ),
+    ),
+    "binomial_choose_two_positive_root": _contract(
+        "binomial_choose_two_positive_root", "positive_integer_solution", "quadratic_integer_root_filter", True,
+        requirements=("exhaustive_result", "reasoning"),
+        task_kinds=("calculation", "proof", "explanation"),
+        answer_shapes=("roots", "number", "expression"),
+        facts=(
+            "choose_two_equation", "positive_integer_domain",
+            "quadratic_discriminant_checked", "all_quadratic_roots_checked",
+            "positive_integer_roots_exhausted",
+        ),
+    ),
+    "finite_cyclic_subgroup_count": _contract(
+        "finite_cyclic_subgroup_count", "count_with_correspondence", "divisor_lattice_of_cyclic_group", True,
+        requirements=("reasoning",),
+        task_kinds=("calculation", "proof", "explanation"),
+        answer_shapes=("number",),
+        facts=(
+            "finite_cyclic_group", "explicit_group_order", "all_subgroups_count_requested",
+            "positive_divisor_correspondence", "prime_exponents_recomputed",
+        ),
+    ),
+    "linear_nonadjacent_selection": _contract(
+        "linear_nonadjacent_selection", "count", "position_compression_bijection", True,
+        requirements=("position_compression", "counting_method"),
+        answer_shapes=("number", "expression"),
+        facts=(
+            "linear_consecutive_integer_set", "exact_selection_size",
+            "pairwise_nonadjacent_constraint", "position_compression_bijection",
+            "binomial_count_recomputed",
+        ),
+    ),
     "nonadjacent_binary_string_count": _contract(
         "nonadjacent_binary_string_count", "count", "bijection_and_closed_form", True,
         requirements=("position_selection",),
@@ -239,6 +419,126 @@ TOOL_CONTRACTS: dict[str, ToolContract] = {
         "ordered_positive_triples", "count", "exact_enumeration", True,
         requirements=("case_split", "exhaustive_result"),
     ),
+    "fair_dice_conditional_probability": _contract(
+        "fair_dice_conditional_probability", "probability_and_optional_sample_space",
+        "finite_ordered_outcome_enumeration", True,
+        max_goals=2,
+        requirements=("conditional_sample_space",),
+        answer_shapes=("number", "expression"),
+        facts=(
+            "exactly_two_ordered_rolls", "fair_die", "standard_or_explicit_six_sided_die",
+            "condition_is_exact_sum", "first_outcome_target", "nonempty_conditioning_event",
+            "conditional_sample_space_enumerated", "favorable_outcome_counted",
+            "conditional_ratio_reduced", "no_extra_probability_obligation",
+        ),
+    ),
+    "bernoulli_centered_second_moment": _contract(
+        "bernoulli_centered_second_moment", "centered_moment_and_variance_identity",
+        "bernoulli_two_point_exact_expectation", True,
+        max_goals=2,
+        requirements=("target_e", "variance_identification"),
+        answer_shapes=("number", "expression"),
+        facts=(
+            "single_bernoulli_variable", "symbolic_parameter",
+            "center_matches_bernoulli_parameter", "second_power_exact", "support_zero_one",
+            "probabilities_one_minus_p_and_p", "two_point_expansion_checked",
+            "variance_identity_checked", "no_extra_statistical_obligation",
+        ),
+    ),
+    "fair_coin_geometric_tail": _contract(
+        "fair_coin_geometric_tail", "probability", "geometric_tail_identity", True,
+        requirements=("geometric_distribution_identification",),
+        answer_shapes=("number", "expression"),
+        facts=(
+            "single_fair_coin_sequence", "stop_at_first_head",
+            "geometric_support_starts_at_one", "strict_greater_than_tail_requested",
+            "tail_exponent_recomputed", "exact_reduced_probability",
+            "no_extra_probability_obligation",
+        ),
+    ),
+    "poisson_process_increment": _contract(
+        "poisson_process_increment", "conditional_distribution",
+        "poisson_independent_increment_law", True,
+        requirements=("distribution_result", "independent_increments"),
+        answer_shapes=("number", "expression"),
+        facts=(
+            "homogeneous_poisson_process", "explicit_rate", "single_forward_increment",
+            "conditioning_is_past_endpoint_count", "independent_increment_applied",
+            "increment_length_recomputed", "conditional_distribution_requested",
+            "no_extra_stochastic_obligation",
+        ),
+    ),
+    "independent_event_union": _contract(
+        "independent_event_union", "probability", "independent_union_identity", True,
+        requirements=("independence_use",),
+        answer_shapes=("number", "expression"),
+        facts=(
+            "exactly_two_independent_events", "both_marginal_probabilities_explicit",
+            "union_probability_requested", "intersection_product_recomputed",
+            "inclusion_exclusion_applied", "exact_reduced_probability",
+            "no_extra_event_obligation",
+        ),
+    ),
+    "independent_standard_normal_sum": _contract(
+        "independent_standard_normal_sum", "distribution_and_variance",
+        "normal_convolution_parameters", True,
+        requirements=("distribution_result", "variance_result", "independence_use"),
+        max_goals=2,
+        answer_shapes=("expression",),
+        facts=(
+            "exactly_two_independent_variables", "both_standard_normal",
+            "unweighted_sum_requested", "distribution_and_variance_requested",
+            "means_added", "variances_added", "no_extra_normal_obligation",
+        ),
+    ),
+    "brownian_covariance": _contract(
+        "brownian_covariance", "covariance", "brownian_independent_increment_identity", True,
+        requirements=("independent_increments",),
+        answer_shapes=("number", "expression"),
+        facts=(
+            "standard_brownian_motion", "ordered_nonnegative_times",
+            "two_time_covariance_requested", "independent_increment_decomposition",
+            "minimum_time_selected", "no_extra_brownian_obligation",
+        ),
+    ),
+    "sample_mean_variance": _contract(
+        "sample_mean_variance", "variance", "iid_variance_scaling", True,
+        requirements=("iid_variance_scaling",),
+        answer_shapes=("number", "expression"),
+        facts=(
+            "iid_sample", "explicit_population_variance", "explicit_positive_sample_size",
+            "sample_mean_variance_requested", "variance_additivity_applied",
+            "mean_scaling_squared", "no_finite_population_correction",
+            "no_extra_sampling_obligation",
+        ),
+    ),
+    "renewal_rate_limit": _contract(
+        "renewal_rate_limit", "limit", "renewal_strong_law_rate", True,
+        requirements=("strong_law",),
+        answer_shapes=("number", "expression"),
+        facts=(
+            "ordinary_renewal_process", "explicit_finite_positive_interarrival_mean",
+            "counting_rate_limit_requested", "strong_law_applied",
+            "reciprocal_mean_recomputed", "no_extra_renewal_obligation",
+        ),
+    ),
+    "finite_discrete_moments": _contract(
+        "finite_discrete_moments", "moment_pair", "exact_finite_probability_sum", True,
+        max_goals=2,
+        answer_shapes=("number", "expression"),
+        facts=(
+            "explicit_finite_support", "matching_probability_table",
+            "probabilities_sum_to_one", "expectation_and_variance_requested",
+        ),
+    ),
+    "two_sided_z_rejection": _contract(
+        "two_sided_z_rejection", "rejection_region", "standard_normal_quantile", True,
+        answer_shapes=("number", "expression"),
+        facts=(
+            "two_sided_z_test", "explicit_significance_level",
+            "rejection_region_requested", "critical_value_requested",
+        ),
+    ),
     "simple_random_walk_moments": _contract(
         "simple_random_walk_moments", "moments", "iid_moment_identity", True,
         requirements=("independent_increments",),
@@ -247,7 +547,7 @@ TOOL_CONTRACTS: dict[str, ToolContract] = {
     "two_venue_capacity": _contract("two_venue_capacity", "minimum_integer", "exact_binomial_tail", True),
     "circle_laplacian": _contract(
         "circle_laplacian", "scalar", "ambient_second_derivatives", True,
-        facts=("f=x^2+y^2", "circle_constraint", "ambient_or_unqualified_laplacian"),
+        facts=("f=x^2+y^2", "circle_constraint", "explicit_ambient_operator"),
         forbidden=("explicit_intrinsic_operator", "operator_ambiguity", "modified_operator", "extra_uncovered_obligation"),
     ),
     "circle_laplace_beltrami": _contract(
@@ -259,7 +559,11 @@ TOOL_CONTRACTS: dict[str, ToolContract] = {
         "circle_laplacian_ambiguous", "operator_alternatives", "operator_case_split",
         facts=("f=x^2+y^2", "circle_constraint", "operator_not_disambiguated"),
     ),
-    "central_difference": _contract("central_difference", "approximation", "formula_evaluation", True),
+    "central_difference": _contract(
+        "central_difference", "approximation", "formula_evaluation", True,
+        requirements=("central_difference_formula",),
+        required_requirements=("central_difference_formula",),
+    ),
     "rational_f2_constraint": _contract("rational_f2_constraint", "field_value", "constraint_propagation", True),
     "digit_sum_window": _contract("digit_sum_window", "minimum_integer", "bounded_exhaustive_search", True),
     "number_writing_game": _contract("number_writing_game", "minimum_integer", "dynamic_programming", True),
@@ -318,9 +622,241 @@ TOOL_CONTRACTS: dict[str, ToolContract] = {
         "quadratic_form_maximum", "scalar", "symmetric_eigenvalue_certificate", True,
         answer_shapes=("number", "expression"),
     ),
+    "tree_degree_census": _contract(
+        "tree_degree_census", "count", "tree_handshake_and_vertex_census", True,
+        answer_shapes=("number",),
+        facts=(
+            "finite_tree", "exact_leaf_count", "all_nonleaves_have_two_allowed_degrees",
+            "requested_degree_count", "vertex_degree_census", "tree_handshake_identity",
+            "nonnegative_integer_degree_counts",
+        ),
+    ),
+    "involution_fixed_point_count": _contract(
+        "involution_fixed_point_count", "count_with_pairing_formula",
+        "fixed_points_and_perfect_matching_bijection", True,
+        requirements=("pairing_step",),
+        required_requirements=("pairing_step",),
+        answer_shapes=("number", "expression"),
+        facts=(
+            "permutation_of_n_elements", "involution_equation_sigma_squared_identity",
+            "exact_fixed_point_count", "remaining_elements_paired", "fixed_points_chosen",
+            "perfect_matching_count", "parity_checked",
+        ),
+    ),
+    "composite_trapezoid": _contract(
+        "composite_trapezoid", "approximation_exact_value_and_error",
+        "exact_rational_composite_trapezoid", True,
+        requirements=("integral_result", "integral_value", "exact_comparison"),
+        required_requirements=("integral_result", "exact_comparison"),
+        answer_shapes=("number", "expression"),
+        facts=(
+            "composite_trapezoidal_rule", "finite_closed_interval", "equal_subinterval_count",
+            "explicit_monomial_integrand", "matching_quadrature_and_integral_bounds",
+            "endpoint_and_interior_weight_evaluation", "exact_integral_evaluation",
+            "signed_error_comparison",
+        ),
+    ),
     "cycle_distance_two_coloring": _contract(
         "cycle_distance_two_coloring", "count", "cyclic_boundary_state_dynamic_programming", True,
         answer_shapes=("number",),
+    ),
+    "directed_cylinder_hamilton_paths": _contract(
+        "directed_cylinder_hamilton_paths", "count", "connectivity_state_recurrence", True,
+        answer_shapes=("number",),
+        facts=(
+            "three_rows", "directed_cyclic_horizontal", "vertical_undirected",
+            "all_vertices_permutation", "fixed_endpoint_rows", "index_count_matches_grid",
+        ),
+    ),
+    "sorted_triangle_failure_bound": _contract(
+        "sorted_triangle_failure_bound", "minimum_integer", "sharp_rearrangement_bound", True,
+        answer_shapes=("number",),
+        facts=(
+            "nondegenerate_input_triangles", "three_distinct_side_colors",
+            "all_three_color_sequences_descending", "aligned_failure_count",
+            "universal_bound_requested", "sharp_minimum_requested",
+        ),
+    ),
+    "sparkling_tuple_pair_sum": _contract(
+        "sparkling_tuple_pair_sum", "parameter_expression",
+        "permutation_average_and_sharp_limit", True,
+        requirements=("parameter_dependency_m",),
+        required_requirements=("parameter_dependency_m",),
+        answer_shapes=("expression",),
+        facts=(
+            "real_m_tuple", "all_permutations_quantifier", "adjacent_product_lower_bound",
+            "complete_pair_sum_target", "parameterized_largest_constant",
+        ),
+    ),
+    "five_number_ratio_gap": _contract(
+        "five_number_ratio_gap", "minimum_constant", "ordered_ratio_pigeonhole_sharpness", True,
+        answer_shapes=("number", "expression"),
+        facts=(
+            "five_distinct_positive_reals", "four_distinct_selection",
+            "normalized_product_gap", "universal_existential_quantifiers", "sharp_minimum_requested",
+        ),
+    ),
+    "nested_nonnegative_sequence_values": _contract(
+        "nested_nonnegative_sequence_values", "exhaustive_value_set",
+        "translation_defect_and_residue_classification", True,
+        requirements=("exhaustive_result",),
+        required_requirements=("exhaustive_result",),
+        answer_shapes=("number", "roots", "expression"),
+        facts=(
+            "sequence_on_nonnegative_integers", "triple_self_composition",
+            "successor_plus_one_rhs", "all_nonnegative_indices",
+            "no_additional_sequence_constraints", "all_values_requested",
+        ),
+    ),
+    "mysterious_cuberoot_polynomial": _contract(
+        "mysterious_cuberoot_polynomial", "polynomial",
+        "cubic_field_basis_identity_and_minimality", True,
+        requirements=("exhaustive_result",),
+        required_requirements=("exhaustive_result",),
+        answer_shapes=("number", "expression"),
+        facts=(
+            "real_pure_cubic_field", "noncube_integer_radicand",
+            "same_radicand_in_definition_and_target", "nonzero_integer_reciprocal_scale",
+            "rational_polynomial_coefficients", "all_lowest_degree_polynomials_requested",
+            "target_is_alpha_plus_alpha_squared", "exact_polynomial_identity",
+            "degree_two_minimality", "unique_reduced_representative",
+        ),
+    ),
+    "complete_bipartite_homomorphism_bound": _contract(
+        "complete_bipartite_homomorphism_bound", "symbolic_lower_bound",
+        "holder_jensen_kst_homomorphism_bound", True,
+        requirements=("intersection",),
+        answer_shapes=("number", "expression"),
+        facts=(
+            "positive_n_s_t", "edge_density_lambda", "vertices_may_repeat",
+            "all_st_cross_edges", "minimum_good_tuple_count",
+        ),
+    ),
+    "tangential_identical_triangulation_polygon": _contract(
+        "tangential_identical_triangulation_polygon", "solution_set",
+        "tangential_triangulation_rigidity", True,
+        requirements=("numeric_result",),
+        required_requirements=("numeric_result",),
+        answer_shapes=("number",),
+        facts=(
+            "convex_m_polygon", "m_greater_than_three", "identical_triangle_triangulation",
+            "noncrossing_diagonals", "circumscribed_polygon_requested",
+        ),
+    ),
+    "formal_l2_adjoint": _contract(
+        "formal_l2_adjoint", "operator_expression", "compact_support_integration_by_parts", True,
+        answer_shapes=("number", "expression"),
+        facts=(
+            "open_domain", "compactly_supported_smooth_domain", "real_smooth_coefficients",
+            "divergence_second_order_term", "first_order_drift_term",
+            "unweighted_l2_adjoint_requested", "no_boundary_term",
+        ),
+    ),
+    "mixed_radix_grid_compression": _contract(
+        "mixed_radix_grid_compression", "parameter_expression",
+        "mixed_radix_weight_and_carry_induction", True,
+        answer_shapes=("number", "expression"),
+        facts=(
+            "finite_three_dimensional_integer_grid", "positive_symbolic_bounds",
+            "arbitrary_initial_distribution", "coordinate_decreasing_carry_operations",
+            "origin_piece_target", "universal_sharp_threshold_requested",
+        ),
+    ),
+    "square_dihedral_facts": _contract(
+        "square_dihedral_facts", "choice_set", "closed_world_group_fact_table", True,
+        requirements=("all_correct_choices",),
+        task_kinds=("choice",), answer_shapes=("choice",),
+        facts=("square_d8_order_convention", "all_options_recognized", "positive_question_polarity"),
+    ),
+    "lebesgue_integrability_facts": _contract(
+        "lebesgue_integrability_facts", "choice_set", "closed_world_integrability_fact_table", True,
+        requirements=("all_correct_choices",),
+        task_kinds=("choice",), answer_shapes=("choice",),
+        facts=("finite_closed_interval", "lebesgue_integrability", "all_options_recognized"),
+    ),
+    "compact_real_facts": _contract(
+        "compact_real_facts", "choice_set", "heine_borel_and_open_cover_definition", True,
+        requirements=("all_correct_choices",),
+        task_kinds=("choice",), answer_shapes=("choice",),
+        facts=("real_line_usual_topology", "all_options_recognized", "positive_question_polarity"),
+    ),
+    "cauchy_complete_space_facts": _contract(
+        "cauchy_complete_space_facts", "choice_set", "complete_metric_space_cauchy_theorems", True,
+        requirements=("all_correct_choices",),
+        task_kinds=("choice",), answer_shapes=("choice",),
+        facts=("complete_metric_space", "cauchy_definition", "all_options_recognized"),
+    ),
+    "linear_programming_duality_facts": _contract(
+        "linear_programming_duality_facts", "choice_set", "standard_lp_duality_fact_table", True,
+        requirements=("all_correct_choices",),
+        task_kinds=("choice",), answer_shapes=("choice",),
+        facts=("standard_linear_programming_duality", "all_options_recognized", "positive_question_polarity"),
+    ),
+    "matrix_condition_number_definition": _contract(
+        "matrix_condition_number_definition", "choice", "matrix_one_norm_condition_definition", True,
+        requirements=("all_correct_choices",),
+        task_kinds=("choice",), answer_shapes=("choice",),
+        facts=("matrix_condition_number_question", "one_norm_convention", "all_options_recognized"),
+    ),
+    "dirichlet_pde_discretization_methods": _contract(
+        "dirichlet_pde_discretization_methods", "method_set", "elliptic_pde_discretization_families", True,
+        task_kinds=("calculation", "fill_blank"), answer_shapes=("expression",),
+        facts=("poisson_equation", "dirichlet_boundary_condition", "discretization_method_requested"),
+    ),
+    "time_series_components": _contract(
+        "time_series_components", "choice_set", "classical_time_series_decomposition", True,
+        requirements=("all_correct_choices",),
+        task_kinds=("choice",), answer_shapes=("choice",),
+        facts=("time_series_components_question", "all_options_recognized", "positive_question_polarity"),
+    ),
+    "seasonal_adjustment_methods": _contract(
+        "seasonal_adjustment_methods", "method_pair", "classical_seasonal_adjustment_methods", True,
+        max_goals=2,
+        requirements=("two_items",), required_requirements=("two_items",),
+        task_kinds=("calculation", "fill_blank"), answer_shapes=("number", "expression"),
+        facts=("seasonal_adjustment_question", "two_method_blanks", "exact_statement_recognized"),
+    ),
+    "dispersion_measure_standard_deviation": _contract(
+        "dispersion_measure_standard_deviation", "concept", "descriptive_statistics_definition", True,
+        task_kinds=("calculation", "fill_blank"), answer_shapes=("number", "expression"),
+        facts=("descriptive_statistics_context", "dispersion_measure_requested", "exact_statement_recognized"),
+    ),
+    "unknown_form_regression": _contract(
+        "unknown_form_regression", "choice", "regression_model_classification", True,
+        requirements=("all_correct_choices",),
+        task_kinds=("choice",), answer_shapes=("choice",),
+        facts=("unknown_functional_form", "listed_methods_exclude_nonparametric", "all_options_recognized"),
+    ),
+    "stepwise_removal": _contract(
+        "stepwise_removal", "choice", "stepwise_retesting_criteria", True,
+        requirements=("all_correct_choices",),
+        task_kinds=("choice",), answer_shapes=("choice",),
+        facts=("stepwise_new_variable_retest", "all_of_above_option", "all_options_recognized"),
+    ),
+    "nonlinear_regression_estimation": _contract(
+        "nonlinear_regression_estimation", "choice", "nonlinear_least_squares_definition", True,
+        requirements=("all_correct_choices",),
+        task_kinds=("choice",), answer_shapes=("choice",),
+        facts=("generic_nonlinear_regression", "estimation_criterion_not_optimizer", "all_options_recognized"),
+    ),
+    "aggregate_series_ratio_truth": _contract(
+        "aggregate_series_ratio_truth", "truth", "statistical_index_definition", True,
+        task_kinds=("calculation", "choice"), answer_shapes=("truth",),
+        facts=("two_aggregate_index_series", "ratio_series_requested", "exact_statement_recognized"),
+    ),
+    "heteroscedastic_ols_variance_truth": _contract(
+        "heteroscedastic_ols_variance_truth", "truth", "heteroscedastic_variance_direction_check", True,
+        task_kinds=("calculation", "choice"), answer_shapes=("truth",),
+        facts=("ols_under_heteroscedasticity", "unqualified_variance_increase_claim", "exact_statement_recognized"),
+    ),
+    "heteroscedastic_parameter_variance_consequence": _contract(
+        "heteroscedastic_parameter_variance_consequence", "statement",
+        "heteroscedastic_ols_inference_consequences", True,
+        task_kinds=("calculation", "fill_blank"), answer_shapes=("number", "expression"),
+        facts=(
+            "heteroscedasticity_context", "parameter_estimator_variance_consequence_requested",
+            "exact_statement_recognized",
+        ),
     ),
     "punctured_domino_tilings": _contract(
         "punctured_domino_tilings", "count", "obstacle_profile_dynamic_programming", True,
@@ -481,12 +1017,30 @@ LEGACY_LABEL_TO_OPERATION: dict[str, str] = {
     "SymPy PDE核验": "pde_verification",
     "本地命题逻辑推导": "propositional_implication_chain",
     "本地图论路径证明": "minimum_degree_path_proof",
+    "本地偶基数子集计数": "even_subset_count",
+    "本地删边完全二部图三步路计数": "deleted_edge_bipartite_length_three_paths",
+    "本地正整数下界隔板计数": "positive_composition_lower_bounds",
+    "本地二项式系数正整数解": "binomial_choose_two_positive_root",
+    "本地二项式系数正整数无解": "binomial_choose_two_positive_root",
+    "本地有限循环群子群计数": "finite_cyclic_subgroup_count",
+    "本地线性区间不相邻选择": "linear_nonadjacent_selection",
     "本地不相邻二进制串计数": "nonadjacent_binary_string_count",
     "本地排列条件计数": "precedence_permutation_count",
     "本地满射容斥计数": "surjection_count",
     "本地平面图欧拉答案": "planar_euler_faces",
     "本地抛物面曲率答案": "paraboloid_curvature",
     "本地有序三元组计数": "ordered_positive_triples",
+    "本地公平六面骰条件概率": "fair_dice_conditional_probability",
+    "本地Bernoulli中心二阶矩": "bernoulli_centered_second_moment",
+    "本地公平硬币几何尾概率": "fair_coin_geometric_tail",
+    "本地泊松过程独立增量": "poisson_process_increment",
+    "本地独立事件并概率": "independent_event_union",
+    "本地独立标准正态和": "independent_standard_normal_sum",
+    "本地布朗运动协方差": "brownian_covariance",
+    "本地样本均值方差": "sample_mean_variance",
+    "本地更新过程强大数律": "renewal_rate_limit",
+    "本地有限离散分布矩": "finite_discrete_moments",
+    "本地双侧Z检验拒绝域": "two_sided_z_rejection",
     "本地随机游走矩": "simple_random_walk_moments",
     "本地完全图覆盖时间": "complete_graph_cover_time",
     "本地二项分布容量": "two_venue_capacity",
@@ -511,7 +1065,36 @@ LEGACY_LABEL_TO_OPERATION: dict[str, str] = {
     "本地条带格路计数": "strip_lattice_path_count",
     "本地嵌套模幂和": "nested_modular_power_sum",
     "本地二次型最大值": "quadratic_form_maximum",
+    "本地树度数普查": "tree_degree_census",
+    "本地对合置换不动点计数": "involution_fixed_point_count",
+    "本地复化梯形精确计算": "composite_trapezoid",
     "本地循环距离二染色计数": "cycle_distance_two_coloring",
+    "本地有向圆柱三行Hamilton路径计数": "directed_cylinder_hamilton_paths",
+    "本地排序三角形失效指标上界": "sorted_triangle_failure_bound",
+    "本地全排列相邻积锐界": "sparkling_tuple_pair_sum",
+    "本地五正数比值间隔锐界": "five_number_ratio_gap",
+    "本地三重嵌套非负整数数列值集": "nested_nonnegative_sequence_values",
+    "本地纯三次域最低次数多项式": "mysterious_cuberoot_polynomial",
+    "本地完全二部图同态下界": "complete_bipartite_homomorphism_bound",
+    "本地全等三角剖分切多边形": "tangential_identical_triangulation_polygon",
+    "本地散度型L2伴随算子": "formal_l2_adjoint",
+    "本地三维混合进位锐阈值": "mixed_radix_grid_compression",
+    "本地二面体群选择答案": "square_dihedral_facts",
+    "本地勒贝格可积选择答案": "lebesgue_integrability_facts",
+    "本地实数紧集选择答案": "compact_real_facts",
+    "本地Cauchy准则选择答案": "cauchy_complete_space_facts",
+    "本地线性规划对偶选择答案": "linear_programming_duality_facts",
+    "本地矩阵条件数选择答案": "matrix_condition_number_definition",
+    "本地Dirichlet边值离散化方法": "dirichlet_pde_discretization_methods",
+    "本地时间序列构成选择答案": "time_series_components",
+    "本地时间序列季节调整方法": "seasonal_adjustment_methods",
+    "本地数据分散程度指标": "dispersion_measure_standard_deviation",
+    "本地回归方法选择答案": "unknown_form_regression",
+    "本地逐步回归选择答案": "stepwise_removal",
+    "本地非线性回归选择答案": "nonlinear_regression_estimation",
+    "本地总量指标时间数列判断答案": "aggregate_series_ratio_truth",
+    "本地异方差OLS判断答案": "heteroscedastic_ols_variance_truth",
+    "本地异方差参数方差后果": "heteroscedastic_parameter_variance_consequence",
     "本地障碍多米诺铺法计数": "punctured_domino_tilings",
     "本地完全交集族最大值": "complete_intersection_maximum",
     "本地受界广义Pell解计数": "bounded_generalized_pell_count",
@@ -626,4 +1209,12 @@ def result_from_legacy_hint(
         checks=checks,
         issues=issues,
     )
-    return ToolResult(result, operation, label, contract, certificate)
+    submission_result, support = _legacy_submission_payload(operation, result)
+    return ToolResult(
+        submission_result,
+        operation,
+        label,
+        contract,
+        certificate,
+        support=support,
+    )

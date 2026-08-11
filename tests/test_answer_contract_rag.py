@@ -104,6 +104,83 @@ class AnswerContractTest(unittest.TestCase):
         self.assertEqual(len(numbered.goals), 2)
         self.assertEqual([part.id for part in numbered.answer_contract.parts], ["g1", "g2"])
 
+    def test_parallel_named_results_add_requirements_without_splitting(self):
+        cases = (
+            (
+                "总成本C(Q)=100+2Q+0.01Q^2，需求P=50-0.02Q。"
+                "求利润最大化的产量Q、价格P以及最大利润。",
+                {"production_quantity", "price_value", "profit_value"},
+                "Q=800，P=34，最大利润为19100。",
+                "最大利润为19100。",
+            ),
+            (
+                "物体以初速度40m/s竖直上抛，求最大高度和到达最高点所需时间。",
+                {"maximum_height", "time_to_peak"},
+                "最大高度为80m，到达最高点所需时间为4s。",
+                "最大高度为80m。",
+            ),
+            (
+                "求线性规划max(3x+2y)在给定约束下的最优解与最优值。",
+                {"optimal_solution", "optimal_value"},
+                "最优解(x,y)=(2,3)，最优值为12。",
+                "最优值为12。",
+            ),
+        )
+
+        for problem, expected, complete, incomplete in cases:
+            with self.subTest(problem=problem):
+                spec = build_problem_spec(problem)
+                self.assertEqual(len(spec.goals), 1)
+                requirements = {
+                    item.name: item for item in spec.goals[0].requirements
+                }
+                self.assertTrue(expected.issubset(requirements))
+                self.assertTrue(all(
+                    requirements[name].category == "result" for name in expected
+                ))
+                self.assertTrue(assess_candidate(
+                    complete, "complete", spec, ()
+                ).accepted)
+                self.assertFalse(assess_candidate(
+                    incomplete, "incomplete", spec, ()
+                ).accepted)
+
+    def test_parallel_result_requirements_accept_compact_equivalent_forms(self):
+        normal = build_problem_spec(
+            "设X,Y独立且均服从标准正态分布，求X+Y的分布及其方差。"
+        )
+        series = build_problem_spec(
+            "展开1/(1-z)在z=0邻域的幂级数，并给出其收敛半径。"
+        )
+        equilibrium = build_problem_spec(
+            "对线性系统x'=x,y'=-y，给出平衡点及其稳定性类型。"
+        )
+        production = build_problem_spec(
+            "工厂生产A、B两种产品，求最大利润及对应的产量。"
+        )
+        radius_only = build_problem_spec(
+            r"求幂级数\sum_{n=1}^{\infty}\frac{n}{2^n}x^n的收敛半径。"
+        )
+
+        self.assertTrue(assess_candidate("N(0,2)", "normal", normal, ()).accepted)
+        self.assertTrue(assess_candidate(
+            "Σ_{n=0}^∞z^n，收敛半径1", "series", series, ()
+        ).accepted)
+        self.assertTrue(assess_candidate(
+            "原点为鞍点，不稳定。", "equilibrium", equilibrium, ()
+        ).accepted)
+        self.assertTrue(assess_candidate(
+            "生产A 28件、B 36件，最大利润2200元。",
+            "production",
+            production,
+            (),
+        ).accepted)
+        self.assertNotIn(
+            "series_expansion",
+            {item.name for item in radius_only.goals[0].requirements},
+        )
+        self.assertTrue(assess_candidate("2", "radius", radius_only, ()).accepted)
+
     def test_shared_stem_is_preserved_in_each_split_part(self):
         spec = build_problem_spec(
             "Let a and b be positive real numbers; find x from x+a=3; determine y from y+b=4."
@@ -161,6 +238,59 @@ class AnswerContractTest(unittest.TestCase):
         self.assertEqual(spec.answer_contract.wrapper, "boxed")
         self.assertIn("reasoning", spec.answer_contract.support_requirements)
         self.assertNotIn("final answer", spec.goals[0].instruction.lower())
+
+    def test_zero_integral_level_set_proof_requires_ae_zero_conclusion(self):
+        cases = (
+            (
+                "若f≥0可测且∫f dμ=0，证明对任意ε>0集合{f≥ε}为零测集，"
+                "并写出结论。",
+                "由积分单调性可得 μ({f≥ε})=0。",
+                "由积分单调性可得 μ({f≥ε})=0，从而 f=0 几乎处处。",
+            ),
+            (
+                "Let f be a nonnegative measurable function with ∫ f dμ=0. "
+                "Prove that every level set {f≥ε}, ε>0, has measure zero and "
+                "state the conclusion.",
+                "Because ε μ({f≥ε})≤∫f dμ=0, every such level set has measure zero.",
+                "Because ε μ({f≥ε})≤∫f dμ=0, every such level set has measure zero; "
+                "therefore f=0 almost everywhere.",
+            ),
+        )
+
+        for problem, missing_conclusion, complete_answer in cases:
+            with self.subTest(problem=problem):
+                spec = build_problem_spec(problem)
+                requirements = {
+                    requirement.name
+                    for goal in spec.goals
+                    for requirement in goal.requirements
+                }
+                incomplete = assess_candidate(missing_conclusion, "solve", spec, ())
+                complete = assess_candidate(complete_answer, "verify", spec, ())
+
+                self.assertIn("almost_everywhere_zero", requirements)
+                self.assertFalse(incomplete.accepted)
+                self.assertIn("missing_required_goal", incomplete.rejected_reasons)
+                self.assertTrue(complete.accepted)
+
+    def test_conceptual_fill_blanks_accept_textual_results(self):
+        cases = (
+            ("在统计学中，用来表示数据分散程度的一个指标是", "标准差"),
+            ("异方差性会导致参数估计量的方差（ ）", "可能被低估或高估"),
+        )
+
+        for problem, answer in cases:
+            with self.subTest(problem=problem):
+                spec = build_problem_spec(problem)
+                assessment = assess_candidate(answer, "solve", spec, ())
+
+                self.assertEqual(spec.profile.answer_shape, "expression")
+                self.assertEqual(assessment.validation_tier, "complete")
+
+        numeric_variance = build_problem_spec(
+            "总体方差为1，独立样本量n=4，求样本均值的方差。"
+        )
+        self.assertEqual(numeric_variance.profile.answer_shape, "number")
 
     def test_euler_formula_verification_requires_a_checkable_equality(self):
         cases = (
@@ -277,6 +407,142 @@ class AnswerContractTest(unittest.TestCase):
         self.assertFalse(requirements["surface_second_derivatives"].matches(
             "f_xx, f_xy, f_yy"
         ))
+
+    def test_planar_curve_derivatives_do_not_require_surface_partials(self):
+        chinese = build_problem_spec(
+            "设平面曲线γ(t)=(t,t^2)，求t=0处曲率，需先计算一阶和二阶导数。"
+        )
+        english = build_problem_spec(
+            "For the plane curve gamma(t)=(t,t^2), find the curvature at t=0 "
+            "after computing the first and second derivatives."
+        )
+
+        for spec in (chinese, english):
+            names = {
+                requirement.name
+                for goal in spec.goals
+                for requirement in goal.requirements
+            }
+            self.assertIn("first_second_derivatives", names)
+            self.assertNotIn("surface_second_derivatives", names)
+
+        self.assertTrue(assess_candidate(
+            "γ′(0)=(1,0)，γ′′(0)=(0,2)，κ(0)=2",
+            "complete",
+            chinese,
+            (),
+        ).accepted)
+        self.assertFalse(assess_candidate(
+            "κ(0)=2", "missing_derivatives", chinese, ()
+        ).accepted)
+
+    def test_irreducibility_assertions_are_valid_truth_results(self):
+        chinese = build_problem_spec(
+            "在多项式环F_2[x]中判断x^3+x+1是否不可约，说明只需检查何种次数的因子。"
+        )
+        english = build_problem_spec(
+            "Determine whether x^3+x+1 is irreducible over F_2."
+        )
+
+        for spec, answer in (
+            (chinese, r"x^3+x+1\text{ 在 }F_2[x]\text{ 中不可约，只需检查一次因子}"),
+            (english, "x^3+x+1 is irreducible over F_2."),
+        ):
+            self.assertEqual(spec.profile.answer_shape, "truth")
+            self.assertEqual(spec.answer_frame.style, "math")
+            self.assertTrue(assess_candidate(answer, "complete", spec, ()).accepted)
+
+    def test_conditional_sample_space_is_a_strict_enumerated_result(self):
+        spec = build_problem_spec(
+            "连续掷两次公平骰子，求点数和为7条件下第一次为3的条件概率，列出条件样本空间。"
+        )
+        english = build_problem_spec(
+            "Roll two fair dice. Given that their sum is 7, find the probability that "
+            "the first die is 3 and list the conditional sample space."
+        )
+        requirement = next(
+            requirement
+            for goal in spec.goals
+            for requirement in goal.requirements
+            if requirement.name == "conditional_sample_space"
+        )
+
+        self.assertTrue(requirement.strict)
+        self.assertEqual(requirement.category, "result")
+        self.assertIn(
+            "conditional_sample_space",
+            spec.answer_contract.parts[0].result_requirements,
+        )
+        self.assertFalse(requirement.matches("条件样本空间共有6个结果"))
+        self.assertTrue(requirement.matches(
+            r"\{(1,6),(2,5),(3,4),(4,3),(5,2),(6,1)\}"
+        ))
+        english_requirement = next(
+            requirement
+            for goal in english.goals
+            for requirement in goal.requirements
+            if requirement.name == "conditional_sample_space"
+        )
+        self.assertTrue(english_requirement.matches(
+            "Conditional sample space: {(1,6),(2,5),(3,4),(4,3),(5,2),(6,1)}"
+        ))
+        self.assertFalse(assess_candidate(
+            r"\frac{1}{6}", "probability_only", spec, ()
+        ).accepted)
+        self.assertTrue(assess_candidate(
+            r"条件样本空间为\{(1,6),(2,5),(3,4),(4,3),(5,2),(6,1)\}，"
+            r"条件概率为\frac{1}{6}",
+            "complete",
+            spec,
+            (),
+        ).accepted)
+
+    def test_variance_identification_requires_both_named_quantities(self):
+        chinese = build_problem_spec(
+            "设X服从参数p的伯努利分布，求E[(X-p)^2]并由定义识别其方差。"
+        )
+        english = build_problem_spec(
+            "Let X be Bernoulli(p). Compute E[(X-p)^2] and identify it as the variance."
+        )
+
+        for spec in (chinese, english):
+            requirement = next(
+                requirement
+                for goal in spec.goals
+                for requirement in goal.requirements
+                if requirement.name == "variance_identification"
+            )
+            self.assertTrue(requirement.strict)
+            self.assertEqual(requirement.category, "result")
+            self.assertFalse(assess_candidate(
+                "p(1-p)", "value_only", spec, ()
+            ).accepted)
+            self.assertTrue(assess_candidate(
+                r"E[(X-p)^2]=\operatorname{Var}(X)=p(1-p)",
+                "complete",
+                spec,
+                (),
+            ).accepted)
+
+        requirement = next(
+            requirement
+            for goal in chinese.goals
+            for requirement in goal.requirements
+            if requirement.name == "variance_identification"
+        )
+        self.assertTrue(requirement.matches(
+            "E[(X-p)^2]=p(1-p)，该值即为X的方差"
+        ))
+        self.assertFalse(requirement.matches("Var(X)=p(1-p)"))
+        ordinary = build_problem_spec("若X服从Bernoulli(p)，求Var(X)。")
+        self.assertNotIn(
+            "variance_identification",
+            {
+                requirement.name
+                for goal in ordinary.goals
+                for requirement in goal.requirements
+            },
+        )
 
     def test_target_after_latex_period_does_not_inherit_definition_terms(self):
         spec = build_problem_spec(
@@ -449,7 +715,7 @@ class HighConfidenceRagTest(unittest.TestCase):
 
     def test_english_lz78_problem_gets_an_english_fact_card(self):
         bundle = CardRetriever().retrieve(build_problem_spec(
-            "Describe the phrase decomposition used by Lempel-Ziv and give the encoded string."
+            "Describe the phrase decomposition used by LZ78 and give the encoded string."
         ))
 
         self.assertEqual(bundle.solve_cards[0].id, "fact.lz78.encoding")

@@ -5,11 +5,12 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from classifier.problem_spec import build_problem_spec
 from core.submission_agent import SubmissionAgent
+from reasoning.candidate_selector import assess_candidate
 from tools.sympy_tool import SympyTool
 from user_agent import ReasoningAgent
 
 
-STANDARD_PROBLEM = r"""Consider the message
+AMBIGUOUS_PROBLEM = r"""Consider the message
 
 aabababcabcde.
 
@@ -20,6 +21,8 @@ a\rightarrow000,\quad b\rightarrow001,\quad c\rightarrow010,\quad
 d\rightarrow011,\quad e\rightarrow100.
 \]
 Remember to put your final answer within \boxed{}."""
+
+STANDARD_PROBLEM = AMBIGUOUS_PROBLEM.replace("Lempel-Ziv", "LZ78")
 
 
 class _NoModelClient:
@@ -44,6 +47,56 @@ def test_standard_lz78_phrase_pairs_and_bits_are_computed_from_the_prompt():
         "encoded string: 000000 001001 010000 000001 000010 010010 000011 000100"
         in hints[0]
     )
+
+
+def test_unspecified_lempel_ziv_variant_is_verification_only():
+    hints = SympyTool().hints_for(AMBIGUOUS_PROBLEM)
+    evidence = _evidence(AMBIGUOUS_PROBLEM)
+
+    assert len(hints) == 1
+    assert hints[0].startswith("本地LZ78编码核验: ")
+    assert "variant is unspecified" in hints[0]
+    assert "Phrases: a, ab, aba, b, c, abc, d, e" in hints[0]
+    assert "candidate encoded string: 000000 001001 010000 000001 000010 010010 000011 000100" in hints[0]
+    assert len(evidence) == 1
+    assert evidence[0].operation == "lz78_encoding_check"
+    assert evidence[0].scope == "subexpression"
+    assert evidence[0].verified
+    bundle = SubmissionAgent(_NoModelClient()).retriever.retrieve(
+        build_problem_spec(AMBIGUOUS_PROBLEM)
+    )
+    assert "fact.lz78.encoding" not in bundle.trace_content()["solve_card_ids"]
+
+
+def test_unspecified_variant_rejects_an_internally_invalid_fixed_width_encoding():
+    spec = build_problem_spec(AMBIGUOUS_PROBLEM)
+    evidence = _evidence(AMBIGUOUS_PROBLEM)
+    phrases = "a, ab, aba, b, c, abc, d, e"
+    fixed_three = (
+        phrases + "; 000000001001010000000001000010010010000011000100"
+    )
+    fixed_two = (
+        phrases + "; 0000001001100000000100010100100001100100"
+    )
+    corrupted = (
+        phrases + "; 0000000101000000000100010010000011000100"
+    )
+
+    fixed_three_assessment = assess_candidate(fixed_three, "solve", spec, evidence)
+    fixed_two_assessment = assess_candidate(fixed_two, "verify", spec, evidence)
+    assert fixed_three_assessment.tool_status == "partial_pass"
+    assert fixed_two_assessment.tool_status == "partial_pass"
+    assert fixed_three_assessment.validation_tier == "complete"
+    assert fixed_two_assessment.validation_tier == "complete"
+    invalid = assess_candidate(corrupted, "audit", spec, evidence)
+    assert invalid.tool_status == "conflict"
+    assert invalid.validation_tier == "rejected"
+    assert "tool_conflict" in invalid.rejected_reasons
+
+    different_variant = assess_candidate(
+        "a, aa, b; 000000000001", "other", spec, evidence
+    )
+    assert different_variant.tool_status == "unknown"
 
 
 def test_complete_lz78_contract_is_a_certified_multi_goal_route():
@@ -125,7 +178,7 @@ def test_extra_justification_and_unrelated_contract_parts_cannot_be_bypassed():
 
 
 def test_lz77_and_problem_without_both_requested_outputs_do_not_trigger():
-    lz77 = STANDARD_PROBLEM.replace("Lempel-Ziv", "LZ77")
+    lz77 = STANDARD_PROBLEM.replace("LZ78", "LZ77")
     only_encoding = (
         "Encode the message abc using LZ78 and give the encoded string. "
         "When encoding a letter, use a->00, b->01, c->10."

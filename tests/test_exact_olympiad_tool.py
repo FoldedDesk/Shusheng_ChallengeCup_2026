@@ -54,6 +54,34 @@ EXPECTED_OPERATIONS = {
 }
 
 
+def _directed_cylinder_problem(width: int) -> str:
+    upper = width - 1
+    total = 3 * width
+    return (
+        rf"Let \(S\) be the set of all ordered pairs \((x,y)\) with "
+        rf"\(0 \leq x \leq {upper}\) and \(0 \leq y \leq 2\). "
+        rf"Compute the number of permutations \((x_1,y_1)\), ..., \((x_{total},y_{total})\) "
+        rf"of the elements of \(S\) such that \(y_1=2\), \(y_{{{total}}}=0\), and for all "
+        rf"\(1 \leq i \leq {total - 1}\), exactly one of the following holds: "
+        rf"\(x_i=x_{{i+1}}\) and \(|y_i-y_{{i+1}}|=1\), or "
+        rf"\(y_i=y_{{i+1}}\) and \(x_i-x_{{i+1}}\) is \(-1\) or \({upper}\). "
+        r"Remember to put your final answer within \boxed{}."
+    )
+
+
+def _sorted_triangle_problem(count: int) -> str:
+    return (
+        rf"Find the minimum value of an integer $N$ satisfying this condition. Given {count} "
+        "non-degenerate triangles, each triangle has one side colored green, one side colored purple, "
+        "and one side colored orange. "
+        rf"Let $g_1 \ge g_2 \ge \cdots \ge g_{{{count}}}$, "
+        rf"$p_1 \ge p_2 \ge \cdots \ge p_{{{count}}}$, and "
+        rf"$o_1 \ge o_2 \ge \cdots \ge o_{{{count}}}$ be the separately sorted side lengths. "
+        rf"The number of $1 \le a \le {count}$ such that $g_a,p_a,o_a$ do not form the sides of a "
+        r"triangle is always less than or equal to $N$."
+    )
+
+
 @pytest.mark.parametrize("idx", EXPECTED_OPERATIONS)
 def test_exact_family_result_is_certified_equivalent_and_covers_whole_goal(idx):
     row = ROWS[idx]
@@ -246,3 +274,89 @@ def test_new_exact_families_have_precise_answer_shapes_and_exhaustive_contracts(
         spec = build_problem_spec(ROWS[idx]["problem"])
         names = {requirement.name for goal in spec.goals for requirement in goal.requirements}
         assert "exhaustive_result" in names
+
+
+@pytest.mark.parametrize(
+    "width, expected",
+    [(3, 12), (4, 12), (8, 120), (20, 20460)],
+)
+def test_directed_three_row_cylinder_hamilton_count_is_exact(width, expected):
+    problem = _directed_cylinder_problem(width)
+    results = [
+        result for result in SympyTool().results_for(problem)
+        if result.operation == "directed_cylinder_hamilton_paths"
+    ]
+
+    assert len(results) == 1
+    assert results[0].result == str(expected)
+    assert results[0].verified
+    assert results[0].whole_answer_eligible
+    evidence = SubmissionAgent._tool_evidence(results, build_problem_spec(problem))
+    assert len(evidence) == 1
+    assert evidence[0].scope == "whole_goal"
+
+
+@pytest.mark.parametrize(
+    "mutator",
+    [
+        lambda text: text.replace(r"\(0 \leq y \leq 2\)", r"\(0 \leq y \leq 3\)"),
+        lambda text: text.replace(r"\(y_{60}=0\)", r"\(y_{60}=1\)"),
+        lambda text: text.replace(r"\(1 \leq i \leq 59\)", r"\(1 \leq i \leq 58\)"),
+        lambda text: text.replace(r"\(-1\) or \(19\)", r"\(-1\) or \(18\)"),
+        lambda text: text.replace(r"x_i-x_{i+1}", r"x_{i+1}-x_i"),
+    ],
+)
+def test_directed_three_row_cylinder_handler_rejects_changed_contract(mutator):
+    operations = {
+        result.operation
+        for result in SympyTool().results_for(mutator(_directed_cylinder_problem(20)))
+    }
+
+    assert "directed_cylinder_hamilton_paths" not in operations
+
+
+def test_directed_three_row_cylinder_bypasses_the_model_only_after_full_match():
+    class NoCallClient:
+        def chat_result(self, **kwargs):
+            raise AssertionError(f"unexpected model call: {kwargs}")
+
+    result = SubmissionAgent(NoCallClient()).solve(_directed_cylinder_problem(20), {})
+
+    assert result["final_response"] == r"\boxed{20460}"
+    call_plan = next(item for item in result["trace"] if item["step"] == "call_plan")
+    assert call_plan["content"]["route"] == "certified_tool"
+
+
+@pytest.mark.parametrize("count", [1, 2, 10, 2025])
+def test_sorted_triangle_failure_bound_is_n_minus_one(count):
+    problem = _sorted_triangle_problem(count)
+    results = [
+        result for result in SympyTool().results_for(problem)
+        if result.operation == "sorted_triangle_failure_bound"
+    ]
+
+    assert len(results) == 1
+    assert results[0].result == str(count - 1)
+    assert results[0].verified
+    evidence = SubmissionAgent._tool_evidence(results, build_problem_spec(problem))
+    assert len(evidence) == 1
+    assert evidence[0].scope == "whole_goal"
+
+
+@pytest.mark.parametrize(
+    "mutator",
+    [
+        lambda text: text.replace("non-degenerate triangles", "triples of positive numbers"),
+        lambda text: text.replace(r"g_1 \ge g_2", r"g_1 \le g_2"),
+        lambda text: text.replace("do not form the sides", "form the sides"),
+        lambda text: text.replace("always less than or equal to", "is sometimes less than"),
+        lambda text: text.replace("minimum value", "maximum value"),
+    ],
+)
+def test_sorted_triangle_failure_handler_rejects_changed_contract(mutator):
+    operations = {
+        result.operation
+        for result in SympyTool().results_for(mutator(_sorted_triangle_problem(20)))
+    }
+
+    assert "sorted_triangle_failure_bound" not in operations

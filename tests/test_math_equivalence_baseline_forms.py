@@ -25,6 +25,11 @@ from reasoning.math_equivalence import equivalent_answers
         ),
         ("5/2", "2.5"),
         (
+            r"\text{近似值 }2.5,\ \text{精确值 }\frac{8}{3},\ "
+            r"\text{误差 }\frac{1}{6}",
+            r"近似值5/2，精确值8/3",
+        ),
+        (
             r"[18/16.919,18/3.325]\approx[1.064,5.414]",
             "(1.0639,5.4135)",
         ),
@@ -52,6 +57,10 @@ from reasoning.math_equivalence import equivalent_answers
             r"f(x)=x^2+cx+d\quad(c,d\in\mathbb R)",
             r"f(x)=x^2+ax+b\text{ for some }a,b\in\mathbb R",
         ),
+        (
+            "有限差分法、有限元法（或有限体积法）",
+            r"\(\boxed{\text{有限差分法、有限元法（或有限体积法）}}\)",
+        ),
     ],
 )
 def test_baseline_equivalent_forms_are_recognized(left, right):
@@ -75,6 +84,10 @@ def test_baseline_equivalent_forms_are_recognized(left, right):
         ),
         (r"(11/10,1/2)^{\mathsf T}", r"\begin{pmatrix}1.1&0.5\end{pmatrix}"),
         ("2.5", "2.5001"),
+        (
+            r"\text{近似值 }2.5,\ \text{精确值 }\frac{8}{3}",
+            r"近似值5/2，精确值3",
+        ),
         (
             r"[18/16.919,18/3.325]\approx[1.064,5.414]",
             "(1.062,5.414)",
@@ -133,6 +146,10 @@ def test_baseline_equivalent_forms_are_recognized(left, right):
         (
             r"f(x)=x^2+cx+d\quad(c,d\in\mathbb R)",
             r"f(x)=2x^2+ax+b\quad(a,b\in\mathbb R)",
+        ),
+        (
+            "有限差分法、有限元法（或有限体积法）",
+            r"\boxed{\text{仅有限差分法}}",
         ),
     ],
 )
