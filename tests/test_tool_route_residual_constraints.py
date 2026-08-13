@@ -103,7 +103,7 @@ def test_generic_output_transform_or_added_restriction_downgrades_every_known_wh
             )
             assert SubmissionAgent._whole_tool_answer(changed_evidence) == "", row["idx"]
 
-    assert whole_route_count == 84
+    assert whole_route_count == 99
 
 
 @pytest.mark.parametrize("idx", (4001, 4004, 4010, 4014, 4016, 4021))

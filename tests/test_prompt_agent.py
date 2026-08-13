@@ -63,6 +63,32 @@ class SubmissionContractTest(unittest.TestCase):
         self.assertIn("第一行", deep)
         self.assertIn("隐藏推理", deep)
 
+    def test_solve_request_adds_a_silent_type_specific_reasoning_protocol(self):
+        problem = "求方程 x^2-1=0 的全部实根。"
+        spec = build_problem_spec(problem)
+
+        request = SubmissionAgent._solve_request(
+            problem, spec, CardRetriever().retrieve(spec), ()
+        )
+
+        self.assertIn("内部解题协议", request)
+        self.assertIn("求尽全部分支", request)
+        self.assertIn("否证式检查", request)
+        self.assertIn("不要输出这些标签", request)
+
+    def test_independent_review_protocol_tries_to_falsify_the_candidate(self):
+        problem = "Find all real roots of x^2-1=0."
+        spec = build_problem_spec(problem)
+        self.assertEqual(spec.profile.answer_shape, "roots")
+
+        request = SubmissionAgent._verification_request(
+            problem, spec, CardRetriever().retrieve(spec), (), []
+        )
+
+        self.assertIn("Independent internal protocol", request)
+        self.assertIn("Try to falsify", request)
+        self.assertIn("substitute every root back", request)
+
     def test_truth_verifier_gets_at_most_one_high_confidence_theorem_fact(self):
         problem = "在多项式环F_2[x]中判断x^3+x+1是否不可约，并说明理由。"
         spec = build_problem_spec(problem)

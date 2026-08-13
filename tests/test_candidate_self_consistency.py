@@ -61,6 +61,22 @@ def test_correct_numeric_identities_and_normal_rounding_are_not_rejected():
         )
 
 
+def test_boolean_algebra_idempotence_is_not_treated_as_false_integer_arithmetic():
+    spec = build_problem_spec(
+        "设布尔代数中x+y=1且xy=0，化简表达式(x+z)(y+z)，并使用分配律说明。"
+    )
+    candidate = (
+        r"利用分配律，(x+z)(y+z)=xy+xz+yz+z^2。"
+        r"由xy=0、z^2=z及x+y=1，得z(x+y+1)=z(1+1)=z。"
+        "\n" r"FINAL: \boxed{z}"
+    )
+
+    assessment = assess_candidate(candidate, "solve", spec, ())
+
+    assert "numeric_identity_conflict" not in assessment.rejected_reasons
+    assert assessment.complete_goals, assessment.rejected_reasons
+
+
 def test_variable_assignments_and_ordinary_intermediate_values_are_not_numeric_identities():
     candidates = (
         r"FINAL: \boxed{2}" "\n" r"x_0=1,\quad x_1=2。",
@@ -164,6 +180,36 @@ def test_terminal_self_correction_of_statistical_target_rejects_first_final():
 
 def test_unrelated_check_box_after_final_is_not_a_concluding_correction():
     candidate = r"FINAL: \boxed{42}" "\n" r"Check: \boxed{6}"
+
+    assert "final_conclusion_conflict" not in candidate_consistency_reasons(
+        candidate, SIMPLE_SPEC
+    )
+
+
+def test_concluding_intermediate_check_box_does_not_replace_final():
+    candidate = (
+        r"FINAL: \boxed{5}" "\n"
+        r"CHECK: 因为2+2=4，因此中间校验量为 \boxed{4}"
+    )
+
+    assert "final_conclusion_conflict" not in candidate_consistency_reasons(
+        candidate, SIMPLE_SPEC
+    )
+
+
+def test_unboxed_early_final_conflicting_with_explicit_terminal_correction_is_rejected():
+    candidate = (
+        r"FINAL: 5" "\n"
+        r"Rechecking found an error. Corrected answer: \boxed{4}"
+    )
+
+    assert "final_conclusion_conflict" in candidate_consistency_reasons(
+        candidate, SIMPLE_SPEC
+    )
+
+
+def test_unboxed_early_final_with_unlabelled_check_box_is_not_auto_corrected():
+    candidate = r"FINAL: 5" "\n" r"Check: \boxed{4}"
 
     assert "final_conclusion_conflict" not in candidate_consistency_reasons(
         candidate, SIMPLE_SPEC

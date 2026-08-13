@@ -239,6 +239,9 @@ def _legacy_submission_payload(operation: str, raw_result: str) -> tuple[str, st
     elif operation == "central_difference":
         match = re.search(r"\\approx\s*(-?\d+(?:\.\d+)?)\s*$", value)
         compact = match.group(1) if match else ""
+    elif operation == "two_point_gauss_legendre_monomial":
+        match = re.fullmatch(r"-?\d+(?:/\d+)?", value)
+        compact = match.group(0) if match else ""
 
     if not compact or compact == value:
         return value, ""
@@ -468,6 +471,56 @@ TOOL_CONTRACTS: dict[str, ToolContract] = {
             "no_extra_stochastic_obligation",
         ),
     ),
+    "cauchy_location_fisher_information": _contract(
+        "cauchy_location_fisher_information", "fisher_information",
+        "exact_cauchy_score_integral", True,
+        answer_shapes=("number", "expression"),
+        facts=(
+            "iid_sample", "unit_scale_cauchy_location_density",
+            "density_normalization_checked", "location_score_squared_integrated",
+            "per_observation_information_one_half", "iid_information_scaling",
+            "sample_fisher_information_requested", "no_extra_inference_obligation",
+        ),
+    ),
+    "one_dimensional_wald_statistic": _contract(
+        "one_dimensional_wald_statistic", "scalar",
+        "exact_linear_contrast_quadratic_form", True,
+        answer_shapes=("number", "expression"),
+        facts=(
+            "explicit_two_parameter_estimate", "explicit_symmetric_covariance_matrix",
+            "single_linear_zero_constraint", "contrast_value_recomputed",
+            "contrast_variance_recomputed", "positive_contrast_variance",
+            "exact_wald_statistic_reduced", "no_extra_inference_obligation",
+        ),
+    ),
+    "diagonal_gls_estimate": _contract(
+        "diagonal_gls_estimate", "vector",
+        "exact_weighted_normal_equations", True,
+        answer_shapes=("number", "expression"),
+        facts=(
+            "explicit_design_matrix", "explicit_response_vector",
+            "positive_diagonal_covariance_shape", "covariance_scale_cancels",
+            "weighted_normal_matrix_recomputed", "weighted_rhs_recomputed",
+            "normal_matrix_nonsingular", "exact_gls_solution_verified",
+            "no_extra_regression_obligation",
+        ),
+    ),
+    "normal_variance_confidence_interval": _contract(
+        "normal_variance_confidence_interval", "confidence_interval",
+        "exact_chi_square_interval_inversion", True,
+        answer_shapes=("interval", "expression"),
+        facts=(
+            "normal_population", "unknown_mean_sum_of_squares",
+            "explicit_positive_sample_size", "degrees_of_freedom_recomputed",
+            "two_sided_confidence_level", "matching_chi_square_quantiles",
+            "chi_square_interval_inversion", "closed_interval_endpoints_recomputed",
+            "rounded_endpoints_checked", "no_extra_inference_obligation",
+        ),
+    ),
+    "two_state_markov_entropy_rate": _contract(
+        "two_state_markov_entropy_rate", "scalar", "stationary_binary_entropy_identity", True,
+        answer_shapes=("number", "expression"),
+    ),
     "independent_event_union": _contract(
         "independent_event_union", "probability", "independent_union_identity", True,
         requirements=("independence_use",),
@@ -594,6 +647,18 @@ TOOL_CONTRACTS: dict[str, ToolContract] = {
         "digit_permutation_divisibility", "count", "bounded_exact_enumeration", True,
         answer_shapes=("number",),
     ),
+    "recursive_digit_deletion_maximum": _contract(
+        "recursive_digit_deletion_maximum", "maximum_integer",
+        "complete_recursive_digit_enumeration", True,
+        answer_shapes=("number",),
+        facts=(
+            "positive_integer_decimal_representation", "pairwise_distinct_digits",
+            "single_digit_base_cases", "one_digit_canonical_deletion",
+            "deleted_number_divides_original", "recursive_goodness",
+            "maximum_requested", "complete_finite_state_enumeration",
+            "all_ten_decimal_digits_exhausted", "maximality_by_empty_longer_layers",
+        ),
+    ),
     "adjacent_surjection_count": _contract(
         "adjacent_surjection_count", "count", "inclusion_exclusion_and_path_coloring", True,
         answer_shapes=("number",),
@@ -654,6 +719,29 @@ TOOL_CONTRACTS: dict[str, ToolContract] = {
             "explicit_monomial_integrand", "matching_quadrature_and_integral_bounds",
             "endpoint_and_interior_weight_evaluation", "exact_integral_evaluation",
             "signed_error_comparison",
+        ),
+    ),
+    "two_point_gauss_legendre_monomial": _contract(
+        "two_point_gauss_legendre_monomial", "exact_approximation",
+        "exact_two_node_quadrature", True,
+        answer_shapes=("number", "expression"),
+        facts=(
+            "two_point_gauss_legendre_rule", "finite_closed_interval",
+            "explicit_monomial_integrand", "matching_quadrature_and_integral_bounds",
+            "affine_nodes_and_weights_recomputed", "exact_fraction_simplified",
+        ),
+    ),
+    "exponential_l1_sequence": _contract(
+        "exponential_l1_sequence", "l1_convergence_judgement",
+        "exact_pointwise_and_l1_norm_check", True,
+        requirements=("judgement", "pointwise_limit", "l1_norm_check"),
+        required_requirements=("judgement", "pointwise_limit", "l1_norm_check"),
+        task_kinds=("calculation", "fill_blank"),
+        answer_shapes=("truth", "expression"),
+        facts=(
+            "positive_half_line_domain", "exact_exponential_sequence",
+            "pointwise_limit_recomputed", "l1_norm_substitution_recomputed",
+            "l1_convergence_criterion_applied",
         ),
     ),
     "cycle_distance_two_coloring": _contract(
@@ -862,6 +950,18 @@ TOOL_CONTRACTS: dict[str, ToolContract] = {
         "punctured_domino_tilings", "count", "obstacle_profile_dynamic_programming", True,
         answer_shapes=("number",),
     ),
+    "unique_domino_partition_marking": _contract(
+        "unique_domino_partition_marking", "minimum_integer",
+        "alternating_cycle_bound_and_diagonal_construction", True,
+        answer_shapes=("number",),
+        facts=(
+            "even_square_board", "complete_domino_partition",
+            "horizontal_vertical_unit_dominoes", "marked_pair_forbidden_per_domino",
+            "existence_and_uniqueness_requested", "minimum_positive_mark_count",
+            "alternating_cycle_lower_bound", "diagonal_marking_construction",
+            "small_board_exhaustive_crosscheck",
+        ),
+    ),
     "complete_intersection_maximum": _contract(
         "complete_intersection_maximum", "maximum", "complete_intersection_theorem", True,
         answer_shapes=("number",),
@@ -904,13 +1004,34 @@ TOOL_CONTRACTS: dict[str, ToolContract] = {
         "bipartite_matching_deletion_trees", "count", "matrix_tree_exact_cofactor", True,
         answer_shapes=("number",),
     ),
+    "complete_graph_cycle_deletion_trees": _contract(
+        "complete_graph_cycle_deletion_trees", "count", "matrix_tree_exact_cofactor", True,
+        answer_shapes=("number",),
+    ),
     "cyclic_nonadjacent_selection": _contract(
         "cyclic_nonadjacent_selection", "count", "cycle_gap_bijection", True,
+        answer_shapes=("number",),
+    ),
+    "wythoff_losing_position_count": _contract(
+        "wythoff_losing_position_count", "count", "wythoff_beatty_pair_enumeration", True,
         answer_shapes=("number",),
     ),
     "finite_subtraction_game": _contract(
         "finite_subtraction_game", "count", "bounded_game_dynamic_programming", True,
         answer_shapes=("number",),
+    ),
+    "equal_marble_box_minimum": _contract(
+        "equal_marble_box_minimum", "minimum_integer",
+        "odd_divisor_invariant_and_binary_construction", True,
+        answer_shapes=("number", "expression"),
+        facts=(
+            "positive_number_of_initial_boxes", "exactly_one_marble_per_initial_box",
+            "two_distinct_nonempty_boxes_selected", "equal_positive_removal_from_each_box",
+            "remainders_stay_in_original_boxes", "new_box_contains_combined_removed_marbles",
+            "finite_sequence_minimum_nonempty_boxes", "total_marble_count_invariant",
+            "odd_common_divisor_reverse_invariant", "power_of_two_single_box_criterion",
+            "two_box_construction_for_non_power_of_two",
+        ),
     ),
     "square_subtraction_game": _contract(
         "square_subtraction_game", "count", "bounded_game_dynamic_programming", True,
@@ -974,12 +1095,49 @@ TOOL_CONTRACTS: dict[str, ToolContract] = {
         requirements=("exhaustive_result",),
         answer_shapes=("number", "roots", "expression"),
     ),
+    "cube_root_positive_integer_pairs": _contract(
+        "cube_root_positive_integer_pairs", "parametric_solution_set",
+        "discriminant_square_descent_and_symbolic_identity", True,
+        requirements=("exhaustive_result",),
+        required_requirements=("exhaustive_result",),
+        answer_shapes=("number", "roots", "expression"),
+        facts=(
+            "positive_integer_pair_domain", "exact_cubic_root_equation",
+            "quadratic_in_second_variable", "discriminant_square_condition",
+            "square_factorization_descent", "positive_branch_filter",
+            "symbolic_substitution_identity", "parameter_domain_exhausted",
+        ),
+    ),
     "descartes_inner_circle": _contract(
         "descartes_inner_circle", "scalar", "descartes_curvature_identity", True,
         answer_shapes=("number", "expression"),
     ),
     "rotation_necklace_fixed_weight": _contract(
         "rotation_necklace_fixed_weight", "count", "cyclic_orbit_enumeration", True,
+        answer_shapes=("number",),
+    ),
+    "fixed_weight_binary_bracelets": _contract(
+        "fixed_weight_binary_bracelets", "count", "dihedral_orbit_enumeration", True,
+        answer_shapes=("number",),
+    ),
+    "specified_degree_labeled_trees": _contract(
+        "specified_degree_labeled_trees", "count", "prufer_word_multiplicity", True,
+        answer_shapes=("number",),
+    ),
+    "odd_cycle_permutations": _contract(
+        "odd_cycle_permutations", "count", "restricted_cycle_recurrence", True,
+        answer_shapes=("number",),
+    ),
+    "power_fixed_residue_count": _contract(
+        "power_fixed_residue_count", "count", "complete_modular_enumeration", True,
+        answer_shapes=("number",),
+    ),
+    "reciprocal_pair_sum": _contract(
+        "reciprocal_pair_sum", "scalar", "divisor_pair_bijection", True,
+        answer_shapes=("number",),
+    ),
+    "integer_grid_nondegenerate_triangles": _contract(
+        "integer_grid_nondegenerate_triangles", "count", "complete_determinant_enumeration", True,
         answer_shapes=("number",),
     ),
     "bose_einstein_integral": _contract(
@@ -1034,6 +1192,11 @@ LEGACY_LABEL_TO_OPERATION: dict[str, str] = {
     "本地Bernoulli中心二阶矩": "bernoulli_centered_second_moment",
     "本地公平硬币几何尾概率": "fair_coin_geometric_tail",
     "本地泊松过程独立增量": "poisson_process_increment",
+    "本地Cauchy位置族Fisher信息": "cauchy_location_fisher_information",
+    "本地一维Wald统计量": "one_dimensional_wald_statistic",
+    "本地对角协方差GLS估计": "diagonal_gls_estimate",
+    "本地正态总体方差置信区间": "normal_variance_confidence_interval",
+    "本地二状态Markov熵率": "two_state_markov_entropy_rate",
     "本地独立事件并概率": "independent_event_union",
     "本地独立标准正态和": "independent_standard_normal_sum",
     "本地布朗运动协方差": "brownian_covariance",
@@ -1058,6 +1221,7 @@ LEGACY_LABEL_TO_OPERATION: dict[str, str] = {
     "本地完全多部图生成树": "complete_multipartite_spanning_trees",
     "本地二次同余计数": "quadratic_congruence_count",
     "本地数字排列整除计数": "digit_permutation_divisibility",
+    "本地递归删位整除最大值": "recursive_digit_deletion_maximum",
     "本地相邻约束满射计数": "adjacent_surjection_count",
     "本地重复字母隔位计数": "multiset_no_adjacent_count",
     "本地二进制游程计数": "binary_run_avoidance_count",
@@ -1068,6 +1232,8 @@ LEGACY_LABEL_TO_OPERATION: dict[str, str] = {
     "本地树度数普查": "tree_degree_census",
     "本地对合置换不动点计数": "involution_fixed_point_count",
     "本地复化梯形精确计算": "composite_trapezoid",
+    "本地二点Gauss-Legendre精确计算": "two_point_gauss_legendre_monomial",
+    "本地指数函数列L1判定": "exponential_l1_sequence",
     "本地循环距离二染色计数": "cycle_distance_two_coloring",
     "本地有向圆柱三行Hamilton路径计数": "directed_cylinder_hamilton_paths",
     "本地排序三角形失效指标上界": "sorted_triangle_failure_bound",
@@ -1096,6 +1262,7 @@ LEGACY_LABEL_TO_OPERATION: dict[str, str] = {
     "本地异方差OLS判断答案": "heteroscedastic_ols_variance_truth",
     "本地异方差参数方差后果": "heteroscedastic_parameter_variance_consequence",
     "本地障碍多米诺铺法计数": "punctured_domino_tilings",
+    "本地唯一多米诺分割最少标记": "unique_domino_partition_marking",
     "本地完全交集族最大值": "complete_intersection_maximum",
     "本地受界广义Pell解计数": "bounded_generalized_pell_count",
     "本地整数多项式整除解集": "integer_polynomial_divisibility",
@@ -1106,8 +1273,11 @@ LEGACY_LABEL_TO_OPERATION: dict[str, str] = {
     "本地Smith标准形": "smith_normal_form",
     "本地相交反链最大值": "intersecting_antichain_maximum",
     "本地二部图删匹配生成树": "bipartite_matching_deletion_trees",
+    "本地完全图删Hamilton圈生成树": "complete_graph_cycle_deletion_trees",
     "本地圆周不相邻选择计数": "cyclic_nonadjacent_selection",
+    "本地Wythoff博弈必败态计数": "wythoff_losing_position_count",
     "本地减法博弈必败态计数": "finite_subtraction_game",
+    "本地等量取珠盒子最小值": "equal_marble_box_minimum",
     "本地平方减法博弈计数": "square_subtraction_game",
     "本地轮图正常着色计数": "wheel_coloring",
     "本地网格偏序线性扩张计数": "grid_poset_extensions",
@@ -1123,8 +1293,15 @@ LEGACY_LABEL_TO_OPERATION: dict[str, str] = {
     "本地Pell基本解": "pell_fundamental_solution",
     "本地最小约数数目整数": "least_integer_with_divisor_count",
     "本地可分解二次型整数解": "factorable_binary_quadratic",
+    "本地三次根正整数参数解": "cube_root_positive_integer_pairs",
     "本地Descartes内切圆半径": "descartes_inner_circle",
     "本地定重旋转项链计数": "rotation_necklace_fixed_weight",
+    "本地定重二色手链计数": "fixed_weight_binary_bracelets",
+    "本地指定度数标号树计数": "specified_degree_labeled_trees",
+    "本地奇长度循环置换计数": "odd_cycle_permutations",
+    "本地幂同余不动点计数": "power_fixed_residue_count",
+    "本地单位分数无序解和": "reciprocal_pair_sum",
+    "本地整数格点非退化三角形计数": "integer_grid_nondegenerate_triangles",
     "本地Bose积分": "bose_einstein_integral",
     "本地Bernoulli似然比": "bernoulli_likelihood_ratio",
     "本地Brownian离区间期望": "brownian_exit_expectation",

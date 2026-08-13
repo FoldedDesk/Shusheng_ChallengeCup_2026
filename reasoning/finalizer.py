@@ -33,7 +33,7 @@ class Finalizer:
     _META = re.compile(
         r"(?:<think\b|thinking process|(?im:^\s*(?:analysis|drafting)\s*[:：])|check formatting|check spacing|"
         r"system prompt|prompt instruction|final answer should|最后一行必须|思考过程|分析过程|推理过程|"
-        r"格式检查|检查格式|提示词|\bplan\b|(?im:^\s*(?:structure|count\s+lines?|draft(?:\s+\d+)?)\s*:)|(?:final answer )?content for (?:the )?first line|final answer content|\bi (?:need|will|should)\b|\bthe (?:user|instruction|prompt)\b|"
+        r"格式检查|检查格式|提示词|(?im:^\s*plan\s*[:：])|\bi\s+(?:plan|intend)\s+to\b|(?im:^\s*(?:structure|count\s+lines?|draft(?:\s+\d+)?)\s*:)|(?:final answer )?content for (?:the )?first line|final answer content|\bi (?:need|will|should)\b|\bthe (?:user|instruction|prompt)\b|"
         r"\b(?:check\s+(?:the\s+)?line\s+count|line\s+count)\b|(?im:^\s*line\s+\d+\s*:)|"
         r"\b(?:looks? compliant|looks? solid|is there any risk|so it is fine)\b|"
         r"(?im:^\s*g\d+\s*[:：])|[（(]\s*g\d+\s*[)）]|\bg\d+\s*\[(?:proof|formula|scalar|truth|construction)|"
@@ -340,7 +340,14 @@ class Finalizer:
         )
         if fenced:
             value = fenced.group(1).strip()
-        return normalize_latex(value).strip().strip('"“”')
+        value = normalize_latex(value).strip().strip('"“”')
+        # Models occasionally put a complete display inside ``\boxed{}``,
+        # leaving ``$...$.`` as the extracted payload.  Strip only a balanced
+        # wrapper around the entire answer; internal math delimiters are data.
+        outer_math = re.fullmatch(r"\s*\$(.*?)\$\s*[。.]?\s*", value, re.DOTALL)
+        if outer_math and len(re.findall(r"(?<!\\)\$", value)) == 2:
+            value = outer_math.group(1).strip()
+        return value
 
     @staticmethod
     def _last_boxed(text: str) -> str | None:

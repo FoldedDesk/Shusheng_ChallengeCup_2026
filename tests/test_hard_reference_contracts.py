@@ -4,7 +4,7 @@ from pathlib import Path
 import pytest
 
 from classifier.problem_spec import build_problem_spec
-from reasoning.candidate_selector import assess_candidate
+from reasoning.candidate_selector import assess_candidate, choose_candidate
 
 
 DATASET = Path(__file__).parents[1] / "sample_data" / "judge1_style_112_hard_v1.jsonl"
@@ -71,3 +71,51 @@ def test_boxed_bare_operator_norm_formula_covers_the_requested_result():
     )
 
     assert assessment.accepted, assessment.rejected_reasons
+
+
+@pytest.mark.parametrize(
+    "notation",
+    (
+        r"\|L\|=1", r"\lVert L\rVert=1", "||L||=1", "算子范数为1",
+        r"\lVert L\rVert_1=1", r"||L||_1=1",
+    ),
+)
+def test_operator_norm_requirement_accepts_common_explicit_notations(notation):
+    spec = build_problem_spec(
+        "在C[0,1]配备一致范数，证明评价泛函L(f)=f(1/2)有界并求其算子范数。"
+    )
+    answer = (
+        f"有界且{notation}。对任意f，依一致范数定义有"
+        "|L(f)|=|f(1/2)|<=sup|f(x)|=||f||，故||L||<=1。"
+        "取常函数f(x)=1，则||f||=1且L(f)=1，故||L||>=1，综上取等。"
+    )
+    assessment = assess_candidate(answer, "operator_norm_notation", spec, ())
+
+    assert assessment.complete_goals, assessment.rejected_reasons
+
+
+def test_operator_norm_requirement_rejects_boundedness_without_norm_value():
+    spec = build_problem_spec(
+        "在C[0,1]配备一致范数，证明评价泛函L(f)=f(1/2)有界并求其算子范数。"
+    )
+    assessment = assess_candidate(
+        "对任意f有|L(f)|<=||f||，所以L有界。",
+        "missing_norm_value",
+        spec,
+        (),
+    )
+
+    assert not assessment.complete_goals
+    assert "missing_required_goal" in assessment.rejected_reasons
+
+
+def test_subscripted_operator_norm_does_not_lose_to_a_wrong_complete_value():
+    spec = build_problem_spec("计算算子L的1-范数。")
+    correct = assess_candidate(r"\lVert L\rVert_1=1", "solve", spec, ())
+    corroboration = assess_candidate(r"||L||_1=1", "rescue", spec, ())
+    wrong = assess_candidate("算子范数为7", "verify", spec, ())
+
+    assert correct.complete_goals, correct.rejected_reasons
+    selected = choose_candidate([correct, corroboration, wrong])
+    assert selected in {correct, corroboration}
+    assert selected is not wrong

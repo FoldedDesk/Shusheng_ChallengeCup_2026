@@ -23,6 +23,27 @@ DICE_CONDITIONAL = (
 BERNOULLI_MOMENT = (
     "设X服从Bernoulli(p)分布，计算E[(X-p)^2]并将其识别为方差。"
 )
+CAUCHY_FISHER = (
+    r"设 $X_1,\ldots,X_n$ 独立同分布，密度为 "
+    r"$f(x;\theta)=\{\pi[1+(x-\theta)^2]\}^{-1}$。"
+    r"求样本关于位置参数 $\theta$ 的 Fisher 信息。"
+)
+WALD = (
+    r"估计量 $\widehat\beta=(2,-1)^{\mathsf T}$ 的协方差矩阵为 "
+    r"$\begin{pmatrix}0.25&0.10\\0.10&0.36\end{pmatrix}$。"
+    r"检验线性约束 $H_0:\beta_1+\beta_2=0$，求一维 Wald 卡方统计量。"
+)
+GLS = (
+    r"广义最小二乘模型中 $X=\begin{pmatrix}1&0\\1&1\\1&2\end{pmatrix}$、"
+    r"$y=(1,2,2)^{\mathsf T}$，误差协方差矩阵与 "
+    r"$\Omega=\operatorname{diag}(1,2,1)$ 成比例。求 GLS 估计 $\widehat\beta$。"
+)
+VARIANCE_CI = (
+    r"来自正态总体 $N(\mu,\sigma^2)$ 的样本量为 $10$，且 "
+    r"$\sum_{i=1}^{10}(X_i-\bar X)^2=18$。已知 "
+    r"$\chi^2_{0.95,9}=16.919$、$\chi^2_{0.05,9}=3.325$，"
+    r"求 $\sigma^2$ 的双侧 $90\%$ 置信区间。"
+)
 
 
 def _operation(problem: str, name: str):
@@ -54,6 +75,30 @@ def _operation(problem: str, name: str):
             r"E[(X-p)^2]=\operatorname{Var}(X)=p(1-p)",
             "bernoulli_two_point_exact_expectation",
         ),
+        (
+            CAUCHY_FISHER,
+            "cauchy_location_fisher_information",
+            r"I_n(\theta)=\frac{n}{2}",
+            "exact_cauchy_score_integral",
+        ),
+        (
+            WALD,
+            "one_dimensional_wald_statistic",
+            r"\frac{100}{81}",
+            "exact_linear_contrast_quadratic_form",
+        ),
+        (
+            GLS,
+            "diagonal_gls_estimate",
+            r"\begin{pmatrix}\frac{11}{10}\\\frac{1}{2}\end{pmatrix}",
+            "exact_weighted_normal_equations",
+        ),
+        (
+            VARIANCE_CI,
+            "normal_variance_confidence_interval",
+            r"\left[\frac{18}{16.919},\frac{18}{3.325}\right]\approx[1.064,5.414]",
+            "exact_chi_square_interval_inversion",
+        ),
     ],
 )
 def test_exact_statistics_results_are_certified_whole_answers(problem, operation, expected, method):
@@ -74,6 +119,171 @@ def test_changed_probability_table_is_recomputed_exactly():
     changed = MOMENTS.replace("1,2,3", "0,1,2").replace("1/2,1/3,1/6", "1/4,1/2,1/4")
 
     assert _operation(changed, "finite_discrete_moments")[0].result == "E[X]=1，Var(X)=1/2"
+
+
+def test_wald_and_gls_routes_recompute_changed_inputs_exactly():
+    changed_wald = WALD.replace("(2,-1)", "(3,-1)").replace("0.36", "0.56")
+    changed_gls = GLS.replace("y=(1,2,2)", "y=(1,2,3)")
+
+    assert _operation(changed_wald, "one_dimensional_wald_statistic")[0].result == r"\frac{400}{101}"
+    assert _operation(changed_gls, "diagonal_gls_estimate")[0].result == (
+        r"\begin{pmatrix}1\\1\end{pmatrix}"
+    )
+
+
+@pytest.mark.parametrize(
+    "sample_end, expected",
+    [
+        ("m", r"I_m(\theta)=\frac{m}{2}"),
+        ("5", r"I_5(\theta)=\frac{5}{2}"),
+        ("10", r"I_{10}(\theta)=5"),
+    ],
+)
+def test_cauchy_fisher_route_uses_the_explicit_sample_size(sample_end, expected):
+    changed = CAUCHY_FISHER.replace("X_n", f"X_{sample_end}")
+
+    assert _operation(changed, "cauchy_location_fisher_information")[0].result == expected
+
+
+def test_cauchy_fisher_route_rejects_missing_or_ambiguous_sample_size():
+    missing = CAUCHY_FISHER.replace(r"X_1,\ldots,X_n", "若干个观测")
+    ambiguous = CAUCHY_FISHER.replace(
+        r"密度为 ",
+        r"且另一组 $X_1,\ldots,X_m$ 也独立同分布，密度为 ",
+    )
+
+    assert _operation(missing, "cauchy_location_fisher_information") == []
+    assert _operation(ambiguous, "cauchy_location_fisher_information") == []
+
+
+@pytest.mark.parametrize(
+    "changed",
+    [
+        CAUCHY_FISHER.replace("密度为 ", "另一组 $Y_1,\\ldots,Y_m$ 也独立同分布，密度为 "),
+        CAUCHY_FISHER.replace("密度为 ", "截断 Cauchy 密度为 "),
+        CAUCHY_FISHER.replace("密度为 ", "条件密度为 "),
+    ],
+)
+def test_cauchy_fisher_route_rejects_multiple_or_modified_samples(changed):
+    assert _operation(changed, "cauchy_location_fisher_information") == []
+
+
+def test_cauchy_fisher_route_parses_an_english_symbolic_sample_size():
+    problem = (
+        r"Let $X_1,\ldots,X_m$ be i.i.d. with density "
+        r"$f(x;\theta)=1/\{\pi(1+(x-\theta)^2)\}$. "
+        r"Find the Fisher information in the sample for location parameter $\theta$."
+    )
+
+    result = _operation(problem, "cauchy_location_fisher_information")
+    assert len(result) == 1
+    assert result[0].result == r"I_m(\theta)=\frac{m}{2}"
+
+
+@pytest.mark.parametrize(
+    "changed",
+    [
+        CAUCHY_FISHER.replace("Fisher 信息", "Fisher 信息的倒数"),
+        CAUCHY_FISHER.replace("样本关于", "每个观测关于"),
+        CAUCHY_FISHER.replace("求样本", "只观察每个样本的符号，求样本"),
+    ],
+)
+def test_cauchy_fisher_route_rejects_transformed_targets_and_observation_changes(changed):
+    assert _operation(changed, "cauchy_location_fisher_information") == []
+
+
+@pytest.mark.parametrize(
+    "factor, expected",
+    [
+        ("2", r"\frac{50}{81}"),
+        (r"\frac{1}{2}", r"\frac{200}{81}"),
+    ],
+)
+def test_wald_route_applies_an_explicit_covariance_scalar(factor, expected):
+    changed = WALD.replace("协方差矩阵为 ", f"协方差矩阵为 ${factor}").replace(
+        r"$\begin{pmatrix}",
+        r"\begin{pmatrix}",
+    )
+
+    assert _operation(changed, "one_dimensional_wald_statistic")[0].result == expected
+
+
+@pytest.mark.parametrize("factor", [r"\sigma^2", "-2", "0"])
+def test_wald_route_rejects_unknown_or_nonpositive_covariance_scalars(factor):
+    changed = WALD.replace("协方差矩阵为 ", f"协方差矩阵为 ${factor}").replace(
+        r"$\begin{pmatrix}",
+        r"\begin{pmatrix}",
+    )
+
+    assert _operation(changed, "one_dimensional_wald_statistic") == []
+
+
+@pytest.mark.parametrize(
+    "changed",
+    [
+        WALD.replace("求一维 Wald 卡方统计量", "求带符号的一维 Wald z 统计量"),
+        WALD.replace("的协方差矩阵为", r"满足 $\sqrt{n}(\widehat\beta-\beta)$ 的渐近协方差矩阵为"),
+    ],
+)
+def test_wald_route_rejects_unsquared_or_asymptotically_scaled_targets(changed):
+    assert _operation(changed, "one_dimensional_wald_statistic") == []
+
+
+def test_gls_route_rejects_inverse_covariance_parameterization():
+    changed = GLS.replace(r"$\Omega=", r"$\Omega^{-1}=")
+
+    assert _operation(changed, "diagonal_gls_estimate") == []
+
+
+@pytest.mark.parametrize(
+    "suffix",
+    [
+        r" 并要求参数约束 $\beta_1=0$。",
+        " 仅求斜率分量。",
+        " Find only the intercept estimate.",
+    ],
+)
+def test_gls_route_rejects_parameter_constraints_and_component_only_targets(suffix):
+    assert _operation(GLS + suffix, "diagonal_gls_estimate") == []
+
+
+@pytest.mark.parametrize(
+    "suffix",
+    [
+        " 只给近似值。",
+        " 不需要近似值。",
+        " 用开区间表示。",
+        " Report approximate values only.",
+        " Give the interval without an approximation.",
+    ],
+)
+def test_variance_interval_route_rejects_changed_representation_contracts(suffix):
+    assert _operation(VARIANCE_CI + suffix, "normal_variance_confidence_interval") == []
+
+
+@pytest.mark.parametrize(
+    "problem, operation",
+    [
+        (CAUCHY_FISHER.replace("[1+(x-\\theta)^2]", "[4+(x-\\theta)^2]"), "cauchy_location_fisher_information"),
+        (CAUCHY_FISHER + " 并求渐近方差。", "cauchy_location_fisher_information"),
+        (WALD.replace(r"\beta_1+\beta_2=0", r"\beta_1-\beta_2=0"), "one_dimensional_wald_statistic"),
+        (WALD.replace("0.10\\\\0.10", "0.10\\\\0.20"), "one_dimensional_wald_statistic"),
+        (GLS.replace(r"\operatorname{diag}(1,2,1)", r"\operatorname{diag}(1,-2,1)"), "diagonal_gls_estimate"),
+        (GLS + " 并求残差。", "diagonal_gls_estimate"),
+        (VARIANCE_CI.replace("0.95,9", "0.95,8"), "normal_variance_confidence_interval"),
+        (VARIANCE_CI.replace("双侧", "单侧"), "normal_variance_confidence_interval"),
+        (VARIANCE_CI + " 并检验方差是否为1。", "normal_variance_confidence_interval"),
+        (VARIANCE_CI.replace(r"求 $\sigma^2$", r"求 $\mu$"), "normal_variance_confidence_interval"),
+        (VARIANCE_CI.replace(r"求 $\sigma^2$", r"求 $\sigma$"), "normal_variance_confidence_interval"),
+        (VARIANCE_CI + " 并求区间宽度。", "normal_variance_confidence_interval"),
+        (VARIANCE_CI + " 结果保留两位小数。", "normal_variance_confidence_interval"),
+    ],
+)
+def test_new_inference_routes_reject_changed_models_or_extra_targets(problem, operation):
+    matching = _operation(problem, operation)
+    if matching:
+        evidence = SubmissionAgent._tool_evidence(matching, build_problem_spec(problem))
+        assert SubmissionAgent._whole_tool_answer(evidence) == ""
 
 
 @pytest.mark.parametrize(
@@ -209,6 +419,10 @@ class NoCallClient:
         (POISSON_INCREMENT, ("Poisson", r"\lambda")),
         (DICE_CONDITIONAL, (r"\Omega", r"\frac{1}{6}")),
         (BERNOULLI_MOMENT, ("Var", "p(1-p)")),
+        (CAUCHY_FISHER, ("I_n", r"\frac{n}{2}")),
+        (WALD, (r"\frac{100}{81}",)),
+        (GLS, (r"\frac{11}{10}", r"\frac{1}{2}")),
+        (VARIANCE_CI, (r"\frac{18}{16.919}", r"\frac{18}{3.325}")),
     ],
 )
 def test_certified_probability_routes_bypass_model_with_complete_answers(problem, expected_terms):

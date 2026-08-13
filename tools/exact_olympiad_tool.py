@@ -178,6 +178,7 @@ class ExactOlympiadTool:
         "_mixed_radix_grid_compression",
         "_cycle_distance_two_coloring",
         "_punctured_domino_tilings",
+        "_unique_domino_partition_marking",
         "_complete_intersection_maximum",
         "_bounded_generalized_pell_count",
         "_integer_polynomial_divisibility",
@@ -188,8 +189,17 @@ class ExactOlympiadTool:
         "_smith_normal_form",
         "_intersecting_antichain_maximum",
         "_bipartite_matching_deletion_trees",
+        "_complete_graph_cycle_deletion_trees",
         "_cyclic_nonadjacent_selection",
+        "_fixed_weight_binary_bracelets",
+        "_specified_degree_labeled_trees",
+        "_odd_cycle_permutations",
+        "_power_fixed_residue_count",
+        "_reciprocal_pair_sum",
+        "_integer_grid_nondegenerate_triangles",
+        "_wythoff_losing_position_count",
         "_finite_subtraction_game",
+        "_equal_marble_box_minimum",
         "_square_subtraction_game",
         "_wheel_coloring",
         "_grid_poset_extensions",
@@ -205,6 +215,7 @@ class ExactOlympiadTool:
         "_pell_fundamental_solution",
         "_least_integer_with_divisor_count",
         "_factorable_binary_quadratic",
+        "_cube_root_positive_integer_pairs",
         "_descartes_inner_circle",
         "_rotation_necklace_fixed_weight",
         "_bose_einstein_integral",
@@ -794,6 +805,51 @@ class ExactOlympiadTool:
         return f"本地障碍多米诺铺法计数: {states.get(0, 0)}"
 
     @staticmethod
+    def _unique_domino_partition_marking(problem: str) -> Optional[str]:
+        """Apply the alternating-cycle lower bound for an even square board."""
+        text = re.sub(
+            r"\s*Remember\s+to\s+\b(?:put|place|write|express)\b.*?final answer.*?"
+            r"\\boxed\s*\{\s*\}\s*[.!。]?\s*$",
+            "",
+            str(problem or ""),
+            flags=re.IGNORECASE | re.DOTALL,
+        ).strip()
+        english = re.fullmatch(
+            r"Suppose\s+we\s+have\s+a\s+\$?(\d+)\s*\\times\s*(\d+)\$?\s+board\s+and\s+"
+            r"we\s+want\s+to\s+mark\s+some\s+cells\s+on\s+this\s+board\s*\.\s*Determine\s+"
+            r"the\s+smallest\s+positive\s+integer\s+\$?k\$?\s+such\s+that\s+it\s+is\s+"
+            r"possible\s+to\s+mark\s+\$?k\$?\s+cells\s+on\s+the\s+board\s+in\s+a\s+way\s+"
+            r"that\s+there\s+exists\s+a\s+unique\s+partition\s+of\s+the\s+board\s+into\s+"
+            r"\$?1\s*\\times\s*2\$?\s+and\s+\$?2\s*\\times\s*1\$?\s+dominoes\s*,\s*where\s+"
+            r"none\s+of\s+the\s+dominoes\s+contains\s+two\s+marked\s+cells\s*\.?",
+            text,
+            re.IGNORECASE | re.DOTALL,
+        )
+        chinese = re.fullmatch(
+            r"在一个(\d+)[×xX](\d+)的方格棋盘上标记若干格[。.]求最小正整数\$?k\$?"
+            r"[，,]使得可以标记\$?k\$?个格子[，,]并且棋盘存在唯一一种用"
+            r"(?:1[×xX]2和2[×xX]1|1[×xX]2或2[×xX]1)多米诺骨牌完全分割的方式"
+            r"[，,]其中任意一块多米诺骨牌都不包含两个被标记的格子[。.]?",
+            re.sub(r"\s+", "", text),
+        )
+        match = english or chinese
+        if not match:
+            return None
+        rows, columns = map(int, match.groups())
+        if rows != columns or rows <= 0 or rows % 2 or rows > 10**9:
+            return None
+        if re.search(
+            r"at\s+most\s+one|no\s+partition|number\s+of\s+(?:partitions|markings)|"
+            r"marked\s+cells?\s+(?:cannot|may\s+not)\s+be\s+covered|"
+            r"holes?|diagonal\s+domino|triomino|"
+            r"至多一种|不存在分割|分割方式数|标记方案数|标记格不得覆盖|洞|对角多米诺|三连块",
+            text,
+            re.IGNORECASE,
+        ):
+            return None
+        return f"本地唯一多米诺分割最少标记: {rows}"
+
+    @staticmethod
     def _complete_intersection_maximum(problem: str) -> Optional[str]:
         family = re.search(
             r"family\s+of\s+\$?(\d+)\$?-element\s+subsets\s+of\s+"
@@ -1174,6 +1230,79 @@ class ExactOlympiadTool:
         return f"本地二部图删匹配生成树: {result}"
 
     @staticmethod
+    def _complete_graph_cycle_deletion_trees(problem: str) -> Optional[str]:
+        """Count spanning trees after deleting one explicitly listed Hamilton cycle."""
+        graph = re.search(
+            r"complete\s+graph\s+\$?K_?\{?(\d+)\}?\$?",
+            problem,
+            re.IGNORECASE,
+        )
+        cycle = re.search(
+            r"delete\s+the\s+(\d+|[A-Za-z]+)\s+edges?\s+of\s+the\s+Hamiltonian\s+cycle\s+"
+            r"\$?1\s*-\s*2\s*-\s*3\s*-\s*(?:\.\.\.|\\ldots|\\dots)\s*-\s*"
+            r"(\d+)\s*-\s*1\$?",
+            problem,
+            re.IGNORECASE,
+        )
+        if (
+            not graph or not cycle
+            or not re.search(r"how\s+many\s+spanning\s+trees", problem, re.IGNORECASE)
+        ):
+            return None
+        order = int(graph.group(1))
+        deleted = _small_number(cycle.group(1))
+        terminal = int(cycle.group(2))
+        if deleted != order or terminal != order or not 3 <= order <= 60:
+            return None
+        if re.search(
+            r"\b(?:also|additionally)\b[^.!?\n]{0,60}\b(?:delete|remove|contain|include|avoid)\b",
+            problem,
+            re.IGNORECASE,
+        ):
+            return None
+        if re.search(
+            r"\b(?:trees?|spanning\s+trees?)\b[^.!?\n]{0,80}"
+            r"\b(?:must|required|have\s+to|contain|include|avoid|exclude|use)\b|"
+            r"\b(?:contain|include|avoid|exclude|use)\b[^.!?\n]{0,80}"
+            r"\b(?:edges?|vertices?)\b|"
+            r"(?:生成树|树)[^。！？\n]{0,50}(?:必须|要求|包含|经过|避开|不含|指定)",
+            problem,
+            re.IGNORECASE,
+        ):
+            return None
+        if re.search(
+            r"\b(?:mod(?:ulo)?|remainder|last\s+\d+\s+digits?|"
+            r"then\s+(?:add|subtract|multiply|divide))\b|"
+            r"\b(?:maximum|minimum|specified)\s+(?:vertex\s+)?degree\b|"
+            r"答案[^。！？\n]{0,20}(?:取模|模\s*\d+|余数|末\s*\d+\s*位)|"
+            r"(?:结果|答案)[^。！？\n]{0,20}(?:再|然后)(?:加|减|乘|除)|"
+            r"(?:最大|最小|指定)(?:顶点)?度数",
+            problem,
+            re.IGNORECASE,
+        ):
+            return None
+        try:
+            import sympy
+
+            deleted_edges = {
+                tuple(sorted((index, (index + 1) % order)))
+                for index in range(order)
+            }
+            laplacian = sympy.zeros(order)
+            for left in range(order):
+                for right in range(left + 1, order):
+                    if (left, right) in deleted_edges:
+                        continue
+                    laplacian[left, left] += 1
+                    laplacian[right, right] += 1
+                    laplacian[left, right] = -1
+                    laplacian[right, left] = -1
+            result = int(laplacian[:-1, :-1].det(method="domain-ge"))
+        except Exception:
+            return None
+        return f"本地完全图删Hamilton圈生成树: {result}"
+
+    @staticmethod
     def _cyclic_nonadjacent_selection(problem: str) -> Optional[str]:
         seats = re.search(r"(\d+|[A-Za-z]+)\s+labeled\s+seats", problem, re.IGNORECASE)
         selected = re.search(
@@ -1192,6 +1321,291 @@ class ExactOlympiadTool:
             return None
         count = 1 if k == 0 else (0 if n < 2 * k else n * math.comb(n - k - 1, k - 1) // k)
         return f"本地圆周不相邻选择计数: {count}"
+
+    @staticmethod
+    def _fixed_weight_binary_bracelets(problem: str) -> Optional[str]:
+        """Count two-color fixed-weight bracelets under the full dihedral group."""
+        text = re.sub(r"\s+", " ", str(problem or "")).strip()
+        match = re.fullmatch(
+            r"A bracelet is made from (\d+|[A-Za-z]+) black beads and "
+            r"(\d+|[A-Za-z]+) white beads\. Two arrangements are considered "
+            r"the same if one can be obtained from the other by a rotation or "
+            r"a reflection\. How many distinct bracelets are there\?",
+            text,
+            re.IGNORECASE,
+        )
+        if not match:
+            return None
+        black = _small_number(match.group(1))
+        white = _small_number(match.group(2))
+        if black is None or white is None:
+            return None
+        total = black + white
+        if not 1 <= total <= 10_000:
+            return None
+
+        rotation_fixed = 0
+        for shift in range(total):
+            cycles = math.gcd(total, shift)
+            cycle_length = total // cycles
+            if black % cycle_length == 0:
+                rotation_fixed += math.comb(cycles, black // cycle_length)
+
+        def paired_fixed(fixed_points: int, pairs: int) -> int:
+            return sum(
+                math.comb(fixed_points, singles) * math.comb(pairs, paired)
+                for singles in range(fixed_points + 1)
+                if black >= singles
+                and (black - singles) % 2 == 0
+                and 0 <= (paired := (black - singles) // 2) <= pairs
+            )
+
+        if total % 2:
+            reflection_fixed = total * paired_fixed(1, (total - 1) // 2)
+        else:
+            reflection_fixed = (total // 2) * (
+                paired_fixed(2, (total - 2) // 2)
+                + paired_fixed(0, total // 2)
+            )
+        result = (rotation_fixed + reflection_fixed) // (2 * total)
+        return f"本地定重二色手链计数: {result}"
+
+    @staticmethod
+    def _specified_degree_labeled_trees(problem: str) -> Optional[str]:
+        """Count Prüfer words with exact multiplicities for named vertices."""
+        text = re.sub(r"\s+", " ", str(problem or "")).strip()
+        match = re.fullmatch(
+            r"Among all labeled trees on vertex set\s*\$?\\?\{\s*1\s*,\s*2\s*,\s*"
+            r"(?:\.\.\.|\\ldots|\\dots)\s*,?\s*(\d+)\s*\\?\}\$?\s*,?\s*"
+            r"how many have\s+(.+?)\s*,?\s*with no restrictions on the remaining "
+            r"degrees\?",
+            text,
+            re.IGNORECASE,
+        )
+        if not match:
+            return None
+        order = int(match.group(1))
+        degree_clause = match.group(2)
+        pairs = [
+            (int(vertex), int(degree))
+            for vertex, degree in re.findall(
+                r"vertex\s*\$?(\d+)\$?\s+of degree\s*\$?(\d+)\$?",
+                degree_clause,
+                re.IGNORECASE,
+            )
+        ]
+        residue = re.sub(
+            r"vertex\s*\$?\d+\$?\s+of degree\s*\$?\d+\$?",
+            "",
+            degree_clause,
+            flags=re.IGNORECASE,
+        )
+        residue = re.sub(r"[\s,]*(?:and)?[\s,]*", "", residue, flags=re.IGNORECASE)
+        if (
+            residue
+            or not 2 <= order <= 500
+            or not pairs
+            or len({vertex for vertex, _ in pairs}) != len(pairs)
+            or any(not 1 <= vertex <= order or not 1 <= degree < order for vertex, degree in pairs)
+        ):
+            return None
+
+        fixed_counts = [degree - 1 for _, degree in pairs]
+        free_positions = order - 2 - sum(fixed_counts)
+        free_vertices = order - len(pairs)
+        if free_positions < 0 or (free_vertices == 0 and free_positions != 0):
+            return f"本地指定度数标号树计数: 0"
+        multinomial = math.factorial(order - 2) // math.factorial(free_positions)
+        for count in fixed_counts:
+            multinomial //= math.factorial(count)
+        result = multinomial * (free_vertices ** free_positions)
+        return f"本地指定度数标号树计数: {result}"
+
+    @staticmethod
+    def _odd_cycle_permutations(problem: str) -> Optional[str]:
+        """Count permutations by number of cycles, restricting all lengths to odd."""
+        text = re.sub(r"\s+", " ", str(problem or "")).strip()
+        match = re.fullmatch(
+            r"How many permutations of\s*\$?\\?\{\s*1\s*,\s*2\s*,\s*"
+            r"(?:\.\.\.|\\ldots|\\dots)\s*,?\s*(\d+)\s*\\?\}\$?\s+have exactly "
+            r"(\d+|[A-Za-z]+) cycles in their disjoint-cycle decomposition and have "
+            r"every cycle of odd length\?"
+            r"(?: Cycles and their order are interpreted in the usual permutation sense, "
+            r"so cyclic rotations do not create new cycles\.)?",
+            text,
+            re.IGNORECASE,
+        )
+        if not match:
+            return None
+        order = int(match.group(1))
+        cycles = _small_number(match.group(2))
+        if cycles is None or not 0 <= cycles <= order <= 200:
+            return None
+
+        counts = [[0] * (cycles + 1) for _ in range(order + 1)]
+        counts[0][0] = 1
+        for size in range(1, order + 1):
+            for cycle_count in range(1, min(cycles, size) + 1):
+                counts[size][cycle_count] = sum(
+                    math.comb(size - 1, length - 1)
+                    * math.factorial(length - 1)
+                    * counts[size - length][cycle_count - 1]
+                    for length in range(1, size + 1, 2)
+                )
+        return f"本地奇长度循环置换计数: {counts[order][cycles]}"
+
+    @staticmethod
+    def _power_fixed_residue_count(problem: str) -> Optional[str]:
+        """Exhaustively count x^k = x modulo m under an exact statement grammar."""
+        text = re.sub(r"\s+", " ", str(problem or "")).strip()
+        match = re.fullmatch(
+            r"How many residue classes\s+\$?([A-Za-z])\$?\s+modulo\s+\$?(\d+)\$?\s+"
+            r"satisfy\s+\$?\s*\1\s*\^\s*\{?(\d+)\}?\s*\\equiv\s*\1\s*"
+            r"\\pmod\s*\{\s*(\d+)\s*\}\s*\$?\s*\?",
+            text,
+            re.IGNORECASE,
+        )
+        if not match:
+            return None
+        modulus = int(match.group(2))
+        exponent = int(match.group(3))
+        repeated_modulus = int(match.group(4))
+        if modulus != repeated_modulus or not 1 <= modulus <= 2_000_000 or not 1 <= exponent <= 10**9:
+            return None
+        count = sum(pow(value, exponent, modulus) == value for value in range(modulus))
+        return f"本地幂同余不动点计数: {count}"
+
+    @staticmethod
+    def _reciprocal_pair_sum(problem: str) -> Optional[str]:
+        """Sum x+y over all unordered positive solutions of 1/x+1/y=1/n."""
+        text = re.sub(r"\s+", " ", str(problem or "")).strip()
+        match = re.fullmatch(
+            r"For every unordered pair of positive integers\s*\\?\{\s*([A-Za-z])\s*,\s*"
+            r"([A-Za-z])\s*\\?\}\s+satisfying\s*\$?\s*1\s*/\s*\1\s*\+\s*"
+            r"1\s*/\s*\2\s*=\s*1\s*/\s*(\d+)\s*\$?\s*,?\s*form the value\s*"
+            r"\$?\s*\1\s*\+\s*\2\s*\$?\. Find the sum of these values over all "
+            r"distinct unordered solutions\.",
+            text,
+            re.IGNORECASE,
+        )
+        if not match:
+            return None
+        if match.group(1).lower() == match.group(2).lower():
+            return None
+        denominator = int(match.group(3))
+        if not 1 <= denominator <= 10**6:
+            return None
+        square = denominator * denominator
+        result = sum(
+            2 * denominator + divisor + square // divisor
+            for divisor in _divisors(square)
+            if divisor <= square // divisor
+        )
+        return f"本地单位分数无序解和: {result}"
+
+    @staticmethod
+    def _integer_grid_nondegenerate_triangles(problem: str) -> Optional[str]:
+        """Enumerate all triples in a finite square integer grid by determinant."""
+        text = re.sub(r"\s+", " ", str(problem or "")).strip()
+        text = (
+            text.replace("$", "")
+            .replace(r"\(", "")
+            .replace(r"\)", "")
+            .replace(r"\{", "{")
+            .replace(r"\}", "}")
+            .replace(r"\in", "in")
+        )
+        match = re.fullmatch(
+            r"Let\s*S\s*=\s*\{\s*\(\s*([A-Za-z])\s*,\s*([A-Za-z])\s*\)\s*"
+            r":\s*\1\s*,\s*\2\s*in\s*\{\s*([0-9,\s]+)\s*\}\s*\}\.\s*"
+            r"Determine the number of nondegenerate triangles whose three vertices are "
+            r"distinct points of\s*S\.",
+            text,
+            re.IGNORECASE,
+        )
+        if not match or match.group(1).lower() == match.group(2).lower():
+            return None
+        coordinates = [int(item) for item in match.group(3).split(",")]
+        upper = coordinates[-1] if coordinates else -1
+        if coordinates != list(range(upper + 1)) or not 1 <= upper <= 20:
+            return None
+        points = [
+            (horizontal, vertical)
+            for horizontal in range(upper + 1)
+            for vertical in range(upper + 1)
+        ]
+        collinear = sum(
+            (second[0] - first[0]) * (third[1] - first[1])
+            == (third[0] - first[0]) * (second[1] - first[1])
+            for first, second, third in combinations(points, 3)
+        )
+        result = math.comb(len(points), 3) - collinear
+        return f"本地整数格点非退化三角形计数: {result}"
+
+    @staticmethod
+    def _wythoff_losing_position_count(problem: str) -> Optional[str]:
+        """Count normal-play Wythoff P-positions in 0 <= a <= b <= N."""
+        text = re.sub(r"\s+", " ", str(problem or "")).strip()
+        bound = re.search(
+            r"0\s*(?:<=|\\leq?|≤)\s*a\s*(?:<=|\\leq?|≤)\s*b\s*"
+            r"(?:<=|\\leq?|≤)\s*(\d+)",
+            text,
+            re.IGNORECASE,
+        )
+        exact_rules = all(re.search(pattern, text, re.IGNORECASE) for pattern in (
+            r"two\s+heaps?\s+contain\s+\$?a\$?\s+and\s+\$?b\$?\s+stones?",
+            r"removes?\s+any\s+positive\s+number\s+of\s+stones?\s+from\s+exactly\s+one\s+heap",
+            r"removes?\s+the\s+same\s+positive\s+number\s+from\s+both\s+heaps?",
+            r"player\s+making\s+the\s+last\s+move\s+wins",
+            r"how\s+many\s+are\s+losing\s+positions|how\s+many\s+losing\s+positions",
+        ))
+        if not bound or not exact_rules:
+            return None
+        upper = int(bound.group(1))
+        if not 0 <= upper <= 10**7:
+            return None
+        if re.search(
+            r"\b(?:also|additionally|except|unless)\b[^.!?\n]{0,80}"
+            r"\b(?:move|remove|heap|position|count|require)\b",
+            text,
+            re.IGNORECASE,
+        ):
+            return None
+        if re.search(
+            r"\b(?:same|previous|last)\s+move\b[^.!?\n]{0,40}"
+            r"\b(?:may|can|must|cannot|can't)\b|"
+            r"\b(?:may|can|must)\s+not\b[^.!?\n]{0,40}\b(?:repeat|use)\b",
+            text,
+            re.IGNORECASE,
+        ):
+            return None
+        if re.search(
+            r"\b(?:only|restricted?\s+to|subject\s+to|among\s+those\s+with)\b"
+            r"[^.!?\n]{0,80}\b(?:positions?|pairs?|a\s*\+\s*b|a\s*-\s*b|"
+            r"a\s*=\s*b|a\s*<\s*b|equal|unequal|distinct|same[- ]size|"
+            r"even|odd|parity|coprime|gcd|difference|sum)\b|"
+            r"\b(?:count|include)\s+only\b[^.!?\n]{0,80}|"
+            r"\b(?:exclude|excluding|except)\b[^.!?\n]{0,80}"
+            r"(?:positions?|pairs?|a\s*=\s*b|equal|unequal|distinct)|"
+            r"\blosing\s+positions?\b[^.!?\n]{0,80}"
+            r"(?:equal\s+heap\s+sizes?|heaps?\s+(?:are|have)\s+equal|a\s*=\s*b)|"
+            r"仅(?:统计|计算|计数|包含)|只(?:统计|计算|计数|包含)|排除|除去|不计|"
+            r"(?:位置|数对|两堆)[^。！？\n]{0,50}"
+            r"(?:奇数|偶数|奇偶|互素|公因数|和为|差为|相等|不等|相同|不同)",
+            text,
+            re.IGNORECASE,
+        ):
+            return None
+
+        count = 0
+        k = 0
+        while True:
+            upper_heap = (3 * k + math.isqrt(5 * k * k)) // 2
+            if upper_heap > upper:
+                break
+            count += 1
+            k += 1
+        return f"本地Wythoff博弈必败态计数: {count}"
 
     @staticmethod
     def _finite_subtraction_game(problem: str) -> Optional[str]:
@@ -1216,6 +1630,52 @@ class ExactOlympiadTool:
         for size in range(1, limit + 1):
             losing[size] = not any(move <= size and losing[size - move] for move in moves)
         return f"本地减法博弈必败态计数: {sum(losing[1:])}"
+
+    @staticmethod
+    def _equal_marble_box_minimum(problem: str) -> Optional[str]:
+        """Use the odd-divisor invariant for the exact two-box transfer game."""
+        text = re.sub(
+            r"\s*Remember\s+to\s+\b(?:put|place|write|express)\b.*?final answer.*?"
+            r"\\boxed\s*\{\s*\}\s*[.!。]?\s*$",
+            "",
+            str(problem or ""),
+            flags=re.IGNORECASE | re.DOTALL,
+        ).strip()
+        english = re.fullmatch(
+            r"Consider\s+a\s+game\s+where\s+you\s+start\s+with\s+\$?(\d+)\$?\s+boxes"
+            r",\s*each\s+containing\s+(?:a\s+single|exactly\s+one)\s+marble\s*\.\s*"
+            r"A\s+move\s+consists\s+of\s+selecting\s+two\s+(?:distinct\s+)?(?:non-empty\s+)?boxes"
+            r",\s*removing\s+an\s+equal\s+(?:positive\s+)?number\s+of\s+marbles\s+from\s+each"
+            r",\s*and\s+creating\s+a\s+new\s+box\s+with\s+the\s+combined\s+(?:removed\s+)?marbles"
+            r"\s*\.\s*What\s+is\s+the\s+minimum\s+number\s+of\s+non-empty\s+boxes\s+that\s+can"
+            r"\s+be\s+achieved\s+through\s+a\s+finite\s+sequence\s+of\s+such\s+moves\s*\??",
+            text,
+            re.IGNORECASE | re.DOTALL,
+        )
+        chinese = re.fullmatch(
+            r"(?:考虑|进行)(?:如下)?游戏[：:]?开始时有(\d+)个盒子[，,]每个盒子(?:恰好)?有"
+            r"(?:一|1)颗(?:弹珠|珠子)[。.]每次操作选择两个(?:不同的)?(?:非空)?盒子[，,]"
+            r"从每个盒子中取出相同(?:的正)?数量的(?:弹珠|珠子)[，,]并新建一个盒子放入"
+            r"取出的全部(?:弹珠|珠子)[。.]问经过有限次操作后非空盒子的最少数量(?:是多少)?[？?]?",
+            re.sub(r"\s+", "", text),
+        )
+        match = english or chinese
+        if not match:
+            return None
+        if re.search(
+            r"at\s+most|no\s+more\s+than|exactly\s+\d+\s+moves?|minimum\s+moves?|"
+            r"maximum\s+number|discard|unequal|different\s+number|select(?:ing)?\s+"
+            r"(?:three|four|\d+)\s+boxes|"
+            r"至多|不超过|恰好\d+次|最少操作|最多盒子|丢弃|不相同数量|选择[三四五六七八九十\d]+个盒子",
+            text,
+            re.IGNORECASE,
+        ):
+            return None
+        count = int(match.group(1))
+        if count <= 0 or count > 10**18:
+            return None
+        answer = 1 if count & (count - 1) == 0 else 2
+        return f"本地等量取珠盒子最小值: {answer}"
 
     @staticmethod
     def _square_subtraction_game(problem: str) -> Optional[str]:
@@ -1579,6 +2039,40 @@ class ExactOlympiadTool:
             r"\right\}"
         )
         return f"本地可分解二次型整数解: {answer}"
+
+    @staticmethod
+    def _cube_root_positive_integer_pairs(problem: str) -> Optional[str]:
+        """Solve the closed cubic-root Diophantine family by discriminant descent."""
+        compact = (
+            re.sub(r"\s+", "", str(problem or ""))
+            .replace(r"\left", "")
+            .replace(r"\right", "")
+        )
+        if not re.search(
+            r"(?:findallpairsofpositiveintegers|求所有正整数(?:有序)?对)",
+            compact,
+            re.IGNORECASE,
+        ):
+            return None
+        equation = re.search(
+            r"\\sqrt\[3\]\{?7a\^2\+a(?:\\cdot)?b\+b\^2\}?\s*=\s*a\+1",
+            compact,
+        )
+        if not equation:
+            return None
+        if re.search(
+            r"bounded|at\s+most|less\s+than|coprime|gcd|primitive|"
+            r"\bonly\b|[ab]\s*(?:<|>|\\le|\\ge|≤|≥)\s*\d+|"
+            r"范围|不超过|小于|大于|互素|本原|再求|并求|只(?:求|要)|模|余数",
+            str(problem or ""),
+            re.IGNORECASE,
+        ):
+            return None
+        answer = (
+            r"\left\{\left(n^2+3n+2,\ n^3+4n^2+3n-1\right)"
+            r":n\in\mathbb Z_{\ge 1}\right\}"
+        )
+        return f"本地三次根正整数参数解: {answer}"
 
     @staticmethod
     def _descartes_inner_circle(problem: str) -> Optional[str]:

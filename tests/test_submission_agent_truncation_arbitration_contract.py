@@ -88,9 +88,9 @@ class SubmissionAgentTruncationArbitrationContractTest(unittest.TestCase):
         verify = assess_candidate("43", "verify", self.spec, ())
         corrected = assess_candidate("44", "arbitration", self.spec, ())
         response = (
-            r"FINAL: \boxed{44}" "\n"
+            r"CHECK: 4\cdot 11=44, while 42\ne44 and 43\ne44." "\n"
             r"DECISION: CORRECTED" "\n"
-            r"The decisive recomputation is (4\cdot 11=44), not 42 or 43."
+            r"FINAL: \boxed{44}"
         )
 
         selected, disposition, decision = self.agent._resolve_arbitration(
@@ -116,6 +116,24 @@ class SubmissionAgentTruncationArbitrationContractTest(unittest.TestCase):
         self.assertIn(selected, {solve, verify})
         self.assertEqual(decision, "CORRECTED")
         self.assertNotEqual(disposition, "corrected_answer")
+
+    def test_corrected_arbitration_with_nonreproducible_assertion_is_rejected(self):
+        solve = assess_candidate("42", "solve", self.spec, ())
+        verify = assess_candidate("43", "verify", self.spec, ())
+        unsupported = assess_candidate("44", "arbitration", self.spec, ())
+        response = (
+            "CHECK: because candidate 44 is right.\n"
+            "DECISION: CORRECTED\n"
+            r"FINAL: \boxed{44}"
+        )
+
+        selected, disposition, decision = self.agent._resolve_arbitration(
+            response, [solve, verify, unsupported]
+        )
+
+        self.assertIsNot(selected, unsupported)
+        self.assertEqual(decision, "CORRECTED")
+        self.assertEqual(disposition, "uncertified_correction_fallback")
 
     def test_unresolved_arbitration_keeps_primary_candidate(self):
         solve = assess_candidate("42", "solve", self.spec, ())

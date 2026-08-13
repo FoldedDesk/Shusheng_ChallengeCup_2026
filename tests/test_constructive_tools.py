@@ -12,6 +12,10 @@ from user_agent import ReasoningAgent
 
 SPIKE_PROBLEM = "构造[0,1]上非负可测函数列f_n使其逐点趋于0而积分恒为1，并写出一个具体公式。"
 BERNOULLI_PROBLEM = "构造两个边缘均为Bernoulli(1/2)但不独立的随机变量，并给出P(X=Y)。"
+EXPONENTIAL_L1_PROBLEM = (
+    r"在 $(0,\infty)$ 上令 $f_n(x)=n^2xe^{-nx}$。判断 $f_n$ 是否在 "
+    r"$L^1(0,\infty)$ 中收敛到其逐点极限。"
+)
 
 
 class _NoModelClient:
@@ -56,6 +60,39 @@ def test_perfectly_dependent_fair_bernoulli_pair_is_certified_complete():
     assert "Y=X" in result["final_response"]
     assert "P=1，即 P(X=Y)=1" in result["final_response"]
     assert next(step for step in result["trace"] if step["step"] == "selection")["content"]["source"] == "sympy_verified"
+
+
+def test_exponential_sequence_l1_judgement_is_certified_with_required_evidence():
+    evidence = _evidence(EXPONENTIAL_L1_PROBLEM)
+
+    assert len(evidence) == 1
+    assert evidence[0].operation == "exponential_l1_sequence"
+    assert evidence[0].scope == "whole_goal"
+    assert evidence[0].verified
+
+    result = ReasoningAgent(_NoModelClient()).solve(EXPONENTIAL_L1_PROBLEM, {})
+    answer = result["final_response"]
+    assert "否" in answer
+    assert "逐点极限为0" in answer
+    assert r"\lVert f_n\rVert_1" in answer
+    assert "=1" in answer
+
+
+def test_exponential_sequence_route_rejects_changed_formula_or_extra_obligation():
+    variants = (
+        EXPONENTIAL_L1_PROBLEM.replace("n^2xe^{-nx}", "nxe^{-nx}"),
+        EXPONENTIAL_L1_PROBLEM.replace("n^2xe^{-nx}", r"n^2x\exp(nx)"),
+        EXPONENTIAL_L1_PROBLEM.replace("n^2xe^{-nx}", r"n^2xe^{-nx}+e^{-x}"),
+        EXPONENTIAL_L1_PROBLEM.replace("(0,\\infty)", "(0,1)"),
+        EXPONENTIAL_L1_PROBLEM + "并证明你的结论。",
+    )
+
+    for problem in variants:
+        assert not any(
+            item.operation == "exponential_l1_sequence"
+            and item.scope == "whole_goal"
+            for item in _evidence(problem)
+        )
 
 
 def test_extra_proof_obligations_force_both_constructions_to_local_checks():

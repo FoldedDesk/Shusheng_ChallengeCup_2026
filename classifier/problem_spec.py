@@ -96,7 +96,7 @@ class Requirement:
             # merely because the target extractor also represents it as E.
             return bool(re.search(r"(?<![A-Za-z])e\s*(?:=|\[|\()", raw_answer))
         if self.name == "exhaustive_result":
-            return bool(re.search(
+            explicit_exhaustion = bool(re.search(
                 r"(?:所有|全部|仅|只有|唯一|恰为|且无其他|无其他|不存在其他|任意|"
                 r"\b(?:all|only|exactly|no\s+others?)\b|"
                 r"(?:共|合计|总计)\s*(?:为|是|=|[:：])?\s*(?:\$|\\\(|\\boxed\s*\{)?\s*\d+|"
@@ -108,6 +108,32 @@ class Requirement:
                 raw_answer,
                 re.IGNORECASE,
             ))
+            if explicit_exhaustion:
+                return True
+            # A parameter declaration is exhaustive only when it actually
+            # describes a family on the right-hand side.  Bare claims such as
+            # "x=1 for some real x" certify one witness, not all solutions.
+            family = re.search(
+                r"(?P<formula>[A-Za-z](?:\s*_\s*\{?[A-Za-z0-9]+\}?)?"
+                r"(?:\s*\([^)]*\))?\s*=.+?)\s+"
+                r"(?:for\s+(?:some\s+)?|where\s+)"
+                r"(?:(?:an?\s+)?(?:non[- ]?negative\s+)?integers?\s+|"
+                r"(?:an?\s+)?(?:arbitrary\s+)?real(?:\s+numbers?)?\s+)?"
+                r"(?P<parameters>[a-z](?:\s*[,，]\s*[a-z])*)"
+                r"(?:\s*(?:\\in|in|are|is)\s*(?:\\mathbb\s*\{?[RZN]\}?|"
+                r"REAL|real|integer|non[- ]?negative))?",
+                raw_answer,
+                re.IGNORECASE,
+            )
+            if not family:
+                return False
+            rhs = family.group("formula").split("=", 1)[-1]
+            parameters = re.findall(r"[a-z]", family.group("parameters"), re.IGNORECASE)
+            return bool(parameters) and all(re.search(
+                rf"(?<![A-Za-z]){re.escape(parameter)}(?![A-Za-z])",
+                rhs,
+                re.IGNORECASE,
+            ) for parameter in parameters)
         if self.name == "judgement":
             return bool(re.search(
                 r"(?:是|否|可以|不可以|正确|错误|成立|不成立|属于|不属于|收敛|发散|"
@@ -184,7 +210,10 @@ class Requirement:
             ))
         if self.name == "operator_norm":
             return bool(re.search(
-                r"(?:\\lVert|\\Vert|\|\|).*(?:\\rVert|\\Vert|\|\|)\s*=|"
+                r"(?:\\lVert|\\Vert|\\?\|{1,2}).{1,120}?"
+                r"(?:\\rVert|\\Vert|\\?\|{1,2})"
+                r"(?:\s*_\s*\{?\s*[A-Za-z0-9]+\s*\}?)?\s*=\s*"
+                r"(?:[-+]?\d|\\(?:frac|sqrt)|[A-Za-z])|"
                 r"(?:算子)?范数\s*(?:为|是|=)|\boperator\s+norm\s*(?:is|=)",
                 raw_answer,
                 re.IGNORECASE,
@@ -289,19 +318,41 @@ class Requirement:
                 r"(?:[01]{3,}[\s\\,]*){2,}|(?<![01])[01]{6,}(?![01])",
                 raw_answer,
             ))
-        if self.name == "exhaustive_result":
-            return bool(re.search(
-                r"(?:所有|全部|仅|只有|唯一|恰为|且无其他|任意|"
-                r"\b(?:all|only|exactly|no\s+other|for\s+(?:all|some|each)|where)\b|"
-                r"(?:共|合计|总计)\s*(?:为|是|=|[:：])?\s*(?:\$|\\\(|\\boxed\s*\{)?\s*\d+|"
-                r"\b(?:a\s+)?total(?:\s+(?:number|count))?\s*(?:of|is|=|:)?\s*"
-                r"(?:\$|\\\(|\\boxed\s*\{)?\s*\d+|"
-                r"\b\d+\s+(?:items?|values?|solutions?|tuples?)?\s*in\s+total\b|"
-                r"\\?\{[^{}]*\}|\.\.\.|\\ldots|\\dots|"
-                r"[^,\n]+,[^,\n]+)",
+        if self.name == "pointwise_limit":
+            pointwise_named = bool(re.search(
+                r"逐点(?:极限|收敛)?|pointwise(?:\s+(?:limit|convergence))?",
                 raw_answer,
                 re.IGNORECASE,
             ))
+            explicit_value = bool(re.search(
+                r"(?:逐点(?:极限|收敛)?|pointwise(?:\s+(?:limit|convergence))?)"
+                r"[^;；。.!?\n]{0,80}(?:为|是|于|到|=|\bis\b|\bto\b|"
+                r"\btowards?\b|\\to|→)\s*"
+                r"(?:[-+]?\d|[A-Za-z]|\\[A-Za-z]+)",
+                raw_answer,
+                re.IGNORECASE,
+            )) or bool(re.search(
+                r"[A-Za-z]\s*_?\s*\{?n\}?\s*(?:\([^)]*\))?\s*(?:\\to|→)\s*"
+                r"(?:[-+]?\d|[A-Za-z]|\\[A-Za-z]+)",
+                raw_answer,
+                re.IGNORECASE,
+            ))
+            return pointwise_named and explicit_value
+        if self.name == "l1_norm_check":
+            norm_object = (
+                r"(?:l\s*\^?\s*\{?1\}?\s*(?:范数|norm)|范数|"
+                r"\\lVert[^\n]{0,80}?\\rVert(?:\s*_?\s*\{?1\}?)?|"
+                r"\|[^\n]{1,80}\|(?:\s*_?\s*\{?1\}?)?|"
+                r"\\int[^\n]{1,120}|积分)"
+            )
+            explicit_norm_value = bool(re.search(
+                norm_object
+                + r"[^;；。.!?\n]{0,100}(?:=|为|是|\\to|→|\\not\s*\\to|不趋于)\s*"
+                r"(?:[-+]?\d|\\(?:frac|infty|infinity)|∞|[A-Za-z]\s*\()",
+                raw_answer,
+                re.IGNORECASE,
+            ))
+            return explicit_norm_value
         if self.name == "euler_formula_check":
             # A verification must expose a checkable equality, rather than
             # merely naming Euler's formula or returning the requested count.
@@ -1309,7 +1360,33 @@ def _requirements(text: str, answer_shape: str) -> tuple[Requirement, ...]:
         if re.search(r"x_0|初值", text):
             requirements.append(Requirement("first_iteration", (("x1",), ("第一次迭代",))))
     if re.search(r"逐点.*(?:极限|收敛)|pointwise", text, re.IGNORECASE):
-        requirements.append(Requirement("pointwise_limit", (("逐点",), ("pointwise",)), strict=True))
+        requirements.append(Requirement(
+            "pointwise_limit",
+            (
+                ("逐点极限",),
+                ("pointwise limit",),
+                ("逐点", "\\to"),
+                ("pointwise", "\\to"),
+            ),
+            strict=True,
+        ))
+    if re.search(
+        r"(?:是否|判断|能否)[^。.!?\n]{0,160}(?:l\s*\^?\s*1|l\s*_?\s*\{?1\}?)[^。.!?\n]{0,80}(?:收敛|极限)|"
+        r"\b(?:whether|determine)\b[^.!?\n]{0,160}\bL\s*\^?\s*1\b[^.!?\n]{0,80}\bconverge",
+        text,
+        re.IGNORECASE,
+    ):
+        requirements.append(Requirement(
+            "l1_norm_check",
+            (
+                ("范数",),
+                (r"\lvert", "积分"),
+                (r"\lVert",),
+                ("l1", "norm"),
+                ("积分", "1"),
+            ),
+            strict=True,
+        ))
     if re.search(r"积分.*(?:极限|恒|比较)|integral.*limit", text, re.IGNORECASE):
         requirements.append(Requirement(
             "integral_result",

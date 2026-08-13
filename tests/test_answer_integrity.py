@@ -114,6 +114,12 @@ class AnswerIntegrityTest(unittest.TestCase):
         ):
             self.assertFalse(Finalizer.extract_result(raw).valid, raw)
 
+    def test_mathematical_use_of_plan_is_not_meta_text(self):
+        answer = "The optimal transport plan is induced by the monotone rearrangement."
+
+        self.assertFalse(Finalizer.contains_meta(answer))
+        self.assertTrue(Finalizer.extract_result(answer).valid)
+
     def test_mathematical_inequalities_are_not_treated_as_markup(self):
         answer = r"因 m(E_1)=1<\infty，且 x>0，故交集测度为0。"
 
@@ -461,6 +467,112 @@ class AnswerIntegrityTest(unittest.TestCase):
             '结论成立。\ng1 [proof]: 关键依据为紧致性。',
         ):
             self.assertTrue(Finalizer.validate_structure(text), text)
+
+    def test_boxed_answer_strips_only_a_balanced_outer_math_wrapper(self):
+        extracted = Finalizer.extract_result(
+            r"\boxed{$\begin{pmatrix}11/10\\1/2\end{pmatrix}$.}"
+        )
+
+        self.assertTrue(extracted.valid)
+        self.assertEqual(
+            extracted.answer,
+            r"\begin{pmatrix}11/10\\1/2\end{pmatrix}",
+        )
+
+    def test_boxed_answer_does_not_strip_multiple_inline_math_segments(self):
+        extracted = Finalizer.extract_result(r"\boxed{$x$ + $y$}")
+
+        self.assertTrue(extracted.valid)
+        self.assertEqual(extracted.answer, r"$x$ + $y$")
+
+    def test_pointwise_requirement_accepts_nonzero_explicit_limits(self):
+        spec = build_problem_spec(
+            r"设 f_n(x)=1+x/n，写出它在[0,1]上的逐点极限。"
+        )
+        requirement = next(
+            item
+            for goal in spec.goals
+            for item in goal.requirements
+            if item.name == "pointwise_limit"
+        )
+
+        self.assertTrue(requirement.matches(r"逐点极限为 f(x)=1。"))
+        self.assertTrue(requirement.matches(r"f_n converges pointwise to 0."))
+        self.assertTrue(requirement.matches(r"f_n逐点收敛于0。"))
+        self.assertFalse(requirement.matches(r"它逐点收敛。"))
+
+    def test_common_pointwise_wording_does_not_lose_to_a_wrong_complete_candidate(self):
+        spec = build_problem_spec(
+            r"Let f_n(x)=x/n. Determine its pointwise limit."
+        )
+        correct = assess_candidate(
+            "f_n converges pointwise to 0.", "solve", spec, ()
+        )
+        corroboration = assess_candidate(
+            "f_n converges pointwise to 0.", "rescue", spec, ()
+        )
+        wrong = assess_candidate(
+            "The pointwise limit is 7.", "verify", spec, ()
+        )
+
+        self.assertTrue(correct.complete_goals, correct.rejected_reasons)
+        self.assertIs(choose_candidate([correct, corroboration, wrong]), correct)
+
+    def test_parameterized_exhaustive_family_is_complete_without_all_keyword(self):
+        spec = build_problem_spec(
+            r"Determine all polynomials P satisfying P(x^2)=P(x)^2."
+        )
+        requirement = next(
+            item
+            for goal in spec.goals
+            for item in goal.requirements
+            if item.name == "exhaustive_result"
+        )
+
+        self.assertTrue(requirement.matches(
+            r"P(x)=0 or P(x)=x^n for some non-negative integer n"
+        ))
+        self.assertTrue(requirement.matches(r"x=k\pi where k is an integer"))
+        self.assertFalse(requirement.matches(r"x=1 for some real x"))
+
+    def test_where_parameter_family_does_not_lose_to_a_wrong_singleton(self):
+        spec = build_problem_spec(r"Find all real solutions of sin x=0.")
+        correct = assess_candidate(
+            r"x=k\pi where k is an integer", "solve", spec, ()
+        )
+        corroboration = assess_candidate(
+            r"x=k\pi where k is an integer", "rescue", spec, ()
+        )
+        wrong = assess_candidate("All solutions are x=0", "verify", spec, ())
+
+        self.assertTrue(correct.complete_goals, correct.rejected_reasons)
+        self.assertIs(choose_candidate([correct, corroboration, wrong]), correct)
+
+    def test_proof_rewriter_preserves_a_later_boxed_check_value(self):
+        raw = (
+            r"FINAL: \boxed{5}" "\n"
+            r"因为2+2=\boxed{4}，所以该辅助校验成立。"
+        )
+
+        answer = SubmissionAgent._proof_submission(raw, "5")
+
+        self.assertIn(r"2+2=\boxed{4}", answer)
+        self.assertNotIn("2+2=5", answer)
+        self.assertIn("结论：5", answer)
+
+    def test_l1_check_requires_an_explicit_norm_or_integral_value(self):
+        spec = build_problem_spec(
+            r"判断 f_n 是否在 L^1 中收敛到逐点极限，并计算范数。"
+        )
+        requirement = next(
+            item
+            for goal in spec.goals
+            for item in goal.requirements
+            if item.name == "l1_norm_check"
+        )
+
+        self.assertTrue(requirement.matches(r"\lVert f_n\rVert_1=1，故不收敛。"))
+        self.assertFalse(requirement.matches("其范数不满足要求，故不收敛。"))
 
     def test_hard_problem_reserves_repair_budget(self):
         spec = build_problem_spec("证明紧致空间的闭子集紧致。")
@@ -881,6 +993,24 @@ class AnswerIntegrityTest(unittest.TestCase):
         self.assertLess(len(result.answer), 240)
         self.assertIn("inclusion-exclusion", result.answer.lower())
         self.assertNotRegex(result.answer.lower(), r"\*\*|solution steps|(?:^|\n)steps\s*:")
+
+    def test_required_support_before_terminal_final_is_preserved(self):
+        problem = "设布尔代数中x+y=1且xy=0，化简表达式(x+z)(y+z)，并使用分配律说明。"
+        raw = (
+            r"利用分配律，(x+z)(y+z)=xy+xz+yz+z^2。"
+            r"由xy=0、z^2=z及x+y=1，化简得z。"
+            "\n"
+            r"FINAL: \boxed{z}"
+        )
+
+        spec = build_problem_spec(problem)
+        result = ReasoningAgent(RecordingClient([])).agent._finalize(raw, spec)
+        assessment = assess_candidate(result.answer, "support_before_final", spec, ())
+
+        self.assertTrue(result.valid)
+        self.assertTrue(assessment.complete_goals, assessment.rejected_reasons)
+        self.assertIn("分配律", result.answer)
+        self.assertIn("z", result.answer)
 
     def test_explicit_calculation_methods_do_not_override_result_correctness(self):
         cases = (

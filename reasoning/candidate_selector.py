@@ -558,7 +558,15 @@ def _tool_status(answer: str, evidence: tuple[ToolEvidence, ...]) -> str:
     normalized = _compact(answer)
     for item in whole:
         expected = _compact(item.result)
-        if expected and (expected == normalized or equivalent_answers(answer, item.result)):
+        same_tool_payload = (
+            normalized.replace("∞", "infty")
+            == expected.replace("∞", "infty")
+        )
+        if expected and (
+            expected == normalized
+            or same_tool_payload
+            or equivalent_answers(answer, item.result)
+        ):
             return "pass"
     if whole:
         return "conflict"
@@ -722,7 +730,18 @@ def candidate_consistency_reasons(answer: str, spec=None) -> tuple[str, ...]:
     """
     value = str(answer or "")
     reasons: list[str] = []
-    if _has_false_numeric_identity(value) or _has_false_binomial_identity(value):
+    problem_context = " ".join((
+        str(getattr(spec, "problem_text", "") or ""),
+        *(str(getattr(goal, "instruction", "") or "") for goal in getattr(spec, "goals", ())),
+    ))
+    boolean_algebra = bool(re.search(
+        r"布尔代数|Boolean\s+algebra",
+        problem_context,
+        re.IGNORECASE,
+    ))
+    if not boolean_algebra and (
+        _has_false_numeric_identity(value) or _has_false_binomial_identity(value)
+    ):
         reasons.append("numeric_identity_conflict")
 
     labelled = [
@@ -1065,6 +1084,13 @@ def _last_terminal_conclusion(answer: str) -> str:
     )
     if stated_value:
         value = next(group for group in stated_value.groups() if group is not None).strip()
+    if re.search(
+        r"(?:中间(?:量|结果|步骤)?|校验量|检验量|辅助量|上界|下界|"
+        r"\b(?:intermediate|check\s+value|auxiliary\s+value|upper\s+bound|lower\s+bound)\b)",
+        value,
+        re.IGNORECASE,
+    ):
+        return ""
     if not re.search(r"[A-Za-z0-9\u4e00-\u9fff]", value):
         # A connective followed by a display opener ("所以：\n\\[")
         # introduces the next calculation; it is not a terminal conclusion.
@@ -1076,7 +1102,11 @@ def _last_concluding_box(answer: str) -> str:
     """Return a terminal correction box, excluding ordinary check boxes."""
     text = str(answer or "")
     boxes = [item for item in Finalizer._boxed_values(text) if item[2]]
-    if len(boxes) < 2:
+    labelled_before_box = bool(re.search(
+        r"(?im)^\s*(?:FINAL(?:\s+ANSWER)?|(?:最终\s*)?答案|结论)\s*[:：=]",
+        text[: boxes[-1][0]] if boxes else "",
+    ))
+    if not boxes or (len(boxes) < 2 and not labelled_before_box):
         return ""
     position, result, _ = boxes[-1]
     marker = re.search(r"\\boxed\s*\{", text[position:])
@@ -1099,12 +1129,18 @@ def _last_concluding_box(answer: str) -> str:
     ):
         return ""
     context = text[max(0, position - 320):position]
-    if not re.search(
-        r"(?:因此|所以|故|综上|最终|答案|结论|"
-        r"\b(?:therefore|hence|thus|finally|final\s+answer|conclusion)\b)",
+    correction_marker = re.search(
+        r"(?:修正(?:后|答案|结论)?|更正(?:后|答案|结论)?|正确(?:答案|结论)|"
+        r"重算(?:后|得)|复算(?:后|得)|重新(?:计算|核验)后|核验发现[^。\n]{0,40}错误|"
+        r"\b(?:corrected\s+answer|correction|rechecking\s+(?:shows|gives|finds)|"
+        r"after\s+recomput(?:ing|ation))\b)",
         context,
         re.IGNORECASE,
-    ):
+    )
+    # A later boxed value may be a check, bound, or intermediate result.  It
+    # supersedes an explicit FINAL only when the prose explicitly says this is
+    # a correction; generic connectives such as "therefore" are insufficient.
+    if not correction_marker:
         return ""
     return result
 

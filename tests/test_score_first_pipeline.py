@@ -1,3 +1,4 @@
+from dataclasses import replace
 from pathlib import Path
 import sys
 import unittest
@@ -403,6 +404,167 @@ class ScoreFirstPipelineTest(unittest.TestCase):
 
         self.assertEqual(answer, "42")
         self.assertEqual(reason, "degraded_finalized_candidate")
+
+    def test_deadline_recovery_keeps_one_complete_truncated_explicit_result(self):
+        spec = build_problem_spec(
+            r"Apply a quadrature rule and give the exact fraction within \boxed{}."
+        )
+        candidate = assess_candidate(
+            "7/36",
+            "solve",
+            spec,
+            (),
+            "boxed",
+            ("provider_truncated_ambiguous_box",),
+            True,
+            True,
+        )
+
+        recovered = SubmissionAgent._select_deadline_recovery([candidate])
+
+        self.assertIsNotNone(recovered)
+        self.assertEqual(recovered.answer, "7/36")
+
+    def test_two_truncated_stages_can_recover_their_shared_explicit_value(self):
+        spec = build_problem_spec("How many losing positions are there?")
+        candidates = [
+            assess_candidate(
+                "39", source, spec, (), "boxed",
+                ("provider_truncated_ambiguous_box",), True, True,
+            )
+            for source in ("solve", "verify")
+        ]
+
+        recovered = SubmissionAgent._select_rejected_consensus(candidates, None)
+
+        self.assertIsNotNone(recovered)
+        self.assertEqual(recovered.answer, "39")
+
+    def test_numeric_sentence_inside_selected_body_beats_generic_answer_label(self):
+        spec = build_problem_spec("How many losing positions are there?")
+        body = assess_candidate(
+            "The answer is an integer.\nThe integer is 39.",
+            "solve",
+            spec,
+            (),
+            "tagged_answer_body",
+            (),
+            False,
+            True,
+        )
+        numeric = assess_candidate(
+            "39", "solve#2", spec, (), "boxed", (), False, True
+        )
+
+        recovered = SubmissionAgent._select_rejected_consensus(
+            [body, numeric], body
+        )
+
+        self.assertIsNotNone(recovered)
+        self.assertEqual(recovered.answer, "39")
+
+    def test_uncorroborated_corrected_audit_cannot_override_continuation(self):
+        client = StructuredRecordingClient([
+            ModelCallResult("Deep analysis: unfinished", finish_reason="length"),
+            ModelCallResult(r"FINAL: \boxed{4}"),
+            ModelCallResult(
+                "FINAL: \\boxed{8}\nVERDICT: CORRECTED\n"
+                "CHECK: a superficially plausible but uncorroborated calculation gives 8."
+            ),
+            ModelCallResult(
+                "FINAL: \\boxed{4}\nVERDICT: CONFIRMED\n"
+                "CHECK: direct substitution gives 2+2=4."
+            ),
+        ])
+
+        result = ReasoningAgent(client).solve(
+            r"Find the value. Remember to put your final answer within \boxed{}.",
+            {},
+        )
+
+        self.assertEqual(result["final_response"], r"\boxed{4}")
+        self.assertEqual(len(client.calls), 4)
+        self.assertEqual(
+            self._step(result, "selection")["content"]["source"], "audit_retry"
+        )
+
+    def test_value_changing_correction_requires_and_accepts_fresh_confirmation(self):
+        client = StructuredRecordingClient([
+            ModelCallResult("Deep analysis: unfinished", finish_reason="length"),
+            ModelCallResult(r"FINAL: \boxed{25}"),
+            ModelCallResult(
+                "FINAL: \\boxed{40}\nVERDICT: CORRECTED\n"
+                "CHECK: a direct residue count gives 8\\cdot5=40."
+            ),
+            ModelCallResult(
+                "FINAL: \\boxed{40}\nVERDICT: CONFIRMED\n"
+                "CHECK: an independent CRT enumeration again gives 8\\cdot5=40."
+            ),
+        ])
+
+        result = ReasoningAgent(client).solve(
+            r"Find the number of residue classes satisfying a modular condition. "
+            r"Remember to put your final answer within \boxed{}.",
+            {},
+        )
+
+        self.assertEqual(result["final_response"], r"\boxed{40}")
+        self.assertEqual(len(client.calls), 4)
+        selection = self._step(result, "selection")["content"]
+        self.assertIn(selection["source"], {"verify_recovered", "audit_retry"})
+        self.assertTrue(selection["changed_correction_corroborated"])
+
+    def test_rejected_second_audit_does_not_corroborate_changed_answer(self):
+        spec = build_problem_spec("Find the value.")
+        baseline = assess_candidate("25", "continue", spec, ())
+        correction = assess_candidate(
+            "40",
+            "verify_recovered",
+            spec,
+            (),
+            explicit_answer=True,
+            verification_verdict="corrected",
+        )
+        invalid_confirmation = replace(
+            correction,
+            source="audit_retry",
+            validation_tier="rejected",
+            rejected_reasons=("missing_required_goal",),
+        )
+
+        self.assertFalse(
+            SubmissionAgent._correction_is_corroborated(
+                correction,
+                [baseline, correction, invalid_confirmation],
+                baseline,
+            )
+        )
+
+    def test_arithmetic_conflict_cannot_corroborate_changed_answer(self):
+        spec = build_problem_spec("Find the value.")
+        baseline = assess_candidate("4", "continue", spec, ())
+        correction = assess_candidate(
+            "8",
+            "verify_recovered",
+            spec,
+            (),
+            explicit_answer=True,
+            verification_verdict="corrected",
+        )
+        invalid_confirmation = replace(
+            correction,
+            source="audit_retry",
+            validation_tier="rejected",
+            rejected_reasons=("numeric_identity_conflict",),
+        )
+
+        self.assertFalse(
+            SubmissionAgent._correction_is_corroborated(
+                correction,
+                [baseline, correction, invalid_confirmation],
+                baseline,
+            )
+        )
 
     def test_remember_to_box_contract_is_preserved(self):
         client = StructuredRecordingClient([

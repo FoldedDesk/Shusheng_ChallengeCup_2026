@@ -378,7 +378,10 @@ def _answer_shape(problem: str, problem_type: str, target: str = "") -> str:
         return "expression"
     if re.search(
         r"(?:求解|解)\s*(?:代数)?方程|方程.*(?:所有)?(?:根|解)|"
-        r"\b(?:solve\s+(?:the\s+)?equation|find\s+(?:all\s+)?(?:roots?|zeros?|solutions?))\b",
+        r"\b(?:solve\s+(?:the\s+)?equation|"
+        r"(?:find|determine|list)\s+(?:all\s+|the\s+)?"
+        r"(?:(?:real|complex|integer|integral|rational|positive|nonnegative)\s+)?"
+        r"(?:roots?|zeros?|solutions?))\b",
         lowered,
     ):
         return "roots"

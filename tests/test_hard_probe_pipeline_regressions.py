@@ -121,7 +121,7 @@ class HardProbePipelineRegressionTest(unittest.TestCase):
         self.assertIn("Candidate recovered from a truncated deep draft", client.calls[2]["messages"][1]["content"])
         self.assertIn("-4", client.calls[2]["messages"][1]["content"])
 
-    def test_uncertified_audit_retries_in_a_fresh_context(self):
+    def test_uncertified_audit_gets_one_final_certified_retry(self):
         client = RecordingClient([
             ModelCallResult("A long unfinished derivation", finish_reason="length"),
             ModelCallResult(r"FINAL: \boxed{-4}"),
@@ -140,8 +140,7 @@ class HardProbePipelineRegressionTest(unittest.TestCase):
 
         self.assertEqual(result["final_response"], r"\boxed{2-2m}")
         self.assertEqual(len(client.calls), 4)
-        self.assertEqual(len(client.calls[3]["messages"]), 2)
-        self.assertFalse(client.calls[3]["thinking_mode"])
+        self.assertEqual(client.calls[3]["max_tokens"], 2048)
 
 
 if __name__ == "__main__":

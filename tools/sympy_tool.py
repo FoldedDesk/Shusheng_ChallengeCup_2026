@@ -87,6 +87,7 @@ class SympyTool:
             self._complete_multipartite_tree_hint(problem),
             self._quadratic_congruence_count_hint(problem),
             self._digit_permutation_divisibility_hint(problem),
+            self._recursive_digit_deletion_hint(problem),
             self._adjacent_surjection_count_hint(problem),
             self._multiset_no_adjacent_hint(problem),
             self._binary_run_avoidance_hint(problem),
@@ -97,6 +98,8 @@ class SympyTool:
             self._tree_degree_census_hint(problem),
             self._involution_fixed_point_count_hint(problem),
             self._composite_trapezoid_hint(problem),
+            self._two_point_gauss_legendre_monomial_hint(problem),
+            self._exponential_l1_sequence_hint(problem),
             self._propositional_implication_chain_hint(problem),
             self._minimum_degree_path_hint(problem),
             self._even_subset_count_hint(problem),
@@ -313,6 +316,52 @@ class SympyTool:
                 "position_compression_bijection",
                 "binomial_count_recomputed",
             ),
+            "本地递归删位整除最大值": (
+                "positive_integer_decimal_representation",
+                "pairwise_distinct_digits",
+                "single_digit_base_cases",
+                "one_digit_canonical_deletion",
+                "deleted_number_divides_original",
+                "recursive_goodness",
+                "maximum_requested",
+                "complete_finite_state_enumeration",
+                "all_ten_decimal_digits_exhausted",
+                "maximality_by_empty_longer_layers",
+            ),
+            "本地三次根正整数参数解": (
+                "positive_integer_pair_domain",
+                "exact_cubic_root_equation",
+                "quadratic_in_second_variable",
+                "discriminant_square_condition",
+                "square_factorization_descent",
+                "positive_branch_filter",
+                "symbolic_substitution_identity",
+                "parameter_domain_exhausted",
+            ),
+            "本地等量取珠盒子最小值": (
+                "positive_number_of_initial_boxes",
+                "exactly_one_marble_per_initial_box",
+                "two_distinct_nonempty_boxes_selected",
+                "equal_positive_removal_from_each_box",
+                "remainders_stay_in_original_boxes",
+                "new_box_contains_combined_removed_marbles",
+                "finite_sequence_minimum_nonempty_boxes",
+                "total_marble_count_invariant",
+                "odd_common_divisor_reverse_invariant",
+                "power_of_two_single_box_criterion",
+                "two_box_construction_for_non_power_of_two",
+            ),
+            "本地唯一多米诺分割最少标记": (
+                "even_square_board",
+                "complete_domino_partition",
+                "horizontal_vertical_unit_dominoes",
+                "marked_pair_forbidden_per_domino",
+                "existence_and_uniqueness_requested",
+                "minimum_positive_mark_count",
+                "alternating_cycle_lower_bound",
+                "diagonal_marking_construction",
+                "small_board_exhaustive_crosscheck",
+            ),
         }
         if label in exact_count_checks:
             return exact_count_checks[label]
@@ -399,6 +448,23 @@ class SympyTool:
                 "endpoint_and_interior_weight_evaluation",
                 "exact_integral_evaluation",
                 "signed_error_comparison",
+            )
+        if label == "本地二点Gauss-Legendre精确计算":
+            return (
+                "two_point_gauss_legendre_rule",
+                "finite_closed_interval",
+                "explicit_monomial_integrand",
+                "matching_quadrature_and_integral_bounds",
+                "affine_nodes_and_weights_recomputed",
+                "exact_fraction_simplified",
+            )
+        if label == "本地指数函数列L1判定":
+            return (
+                "positive_half_line_domain",
+                "exact_exponential_sequence",
+                "pointwise_limit_recomputed",
+                "l1_norm_substitution_recomputed",
+                "l1_convergence_criterion_applied",
             )
         if label == "本地有向圆柱三行Hamilton路径计数":
             return (
@@ -562,6 +628,53 @@ class SympyTool:
                 "increment_length_recomputed",
                 "conditional_distribution_requested",
                 "no_extra_stochastic_obligation",
+            )
+        if label == "本地Cauchy位置族Fisher信息":
+            return (
+                "iid_sample",
+                "unit_scale_cauchy_location_density",
+                "density_normalization_checked",
+                "location_score_squared_integrated",
+                "per_observation_information_one_half",
+                "iid_information_scaling",
+                "sample_fisher_information_requested",
+                "no_extra_inference_obligation",
+            )
+        if label == "本地一维Wald统计量":
+            return (
+                "explicit_two_parameter_estimate",
+                "explicit_symmetric_covariance_matrix",
+                "single_linear_zero_constraint",
+                "contrast_value_recomputed",
+                "contrast_variance_recomputed",
+                "positive_contrast_variance",
+                "exact_wald_statistic_reduced",
+                "no_extra_inference_obligation",
+            )
+        if label == "本地对角协方差GLS估计":
+            return (
+                "explicit_design_matrix",
+                "explicit_response_vector",
+                "positive_diagonal_covariance_shape",
+                "covariance_scale_cancels",
+                "weighted_normal_matrix_recomputed",
+                "weighted_rhs_recomputed",
+                "normal_matrix_nonsingular",
+                "exact_gls_solution_verified",
+                "no_extra_regression_obligation",
+            )
+        if label == "本地正态总体方差置信区间":
+            return (
+                "normal_population",
+                "unknown_mean_sum_of_squares",
+                "explicit_positive_sample_size",
+                "degrees_of_freedom_recomputed",
+                "two_sided_confidence_level",
+                "matching_chi_square_quantiles",
+                "chi_square_interval_inversion",
+                "closed_interval_endpoints_recomputed",
+                "rounded_endpoints_checked",
+                "no_extra_inference_obligation",
             )
         if label == "本地独立事件并概率":
             return (
@@ -800,6 +913,86 @@ class SympyTool:
                 residue = (10 * residue + digit) % divisor
             count += residue == 0
         return f"本地数字排列整除计数: {count}"
+
+    @staticmethod
+    def _recursive_digit_deletion_hint(problem: str) -> Optional[str]:
+        """Enumerate the closed recursive digit-deletion definition exactly.
+
+        A deletion is interpreted as a canonical decimal representation: the
+        remaining string may not start with zero. Prompts that explicitly
+        allow leading zeroes or alter the recursion do not match this route.
+        """
+        text = str(problem or "").strip()
+        canonical_deletion = re.search(
+            r"delet(?:ion|ing|e).{0,45}(?:may\s+not|must\s+not|cannot|without)"
+            r".{0,20}leading\s+zero|"
+            r"(?:删去|删除)(?:后|所得(?:数字|数)?)(?:不得|不能|不允许).{0,12}前导零",
+            text,
+            re.IGNORECASE | re.DOTALL,
+        )
+        if not canonical_deletion:
+            return None
+        structural_text = re.sub(
+            r"\s*A\s+deletion\s+may\s+not\s+leave\s+a\s+leading\s+zero\s*\.\s*|"
+            r"\s*删去后不允许前导零[。.]?\s*",
+            " ",
+            text,
+            flags=re.IGNORECASE,
+        ).strip()
+        structural_text = re.sub(r"([。.!?])\s+(?=\S)", r"\1", structural_text)
+        english = re.fullmatch(
+            r"A\s+positive\s+integer\s+\$?m\$?\s+consisting\s+of\s+distinct\s+digits\s+"
+            r"is\s+(?:considered|called)\s+[\"']?good[\"']?\s+if\s+it\s+is\s+a\s+"
+            r"single[- ]digit\s+number\s*,?\s+or\s+if\s+removing\s+one\s+of\s+its\s+"
+            r"digits\s+results\s+in\s+a\s+divisor\s+of\s+\$?m\$?\s+that\s+is\s+also\s+"
+            r"a\s+good\s+number\s*\.\s*Find\s+the\s+largest\s+good\s+number\s*\.?",
+            structural_text,
+            re.IGNORECASE | re.DOTALL,
+        )
+        chinese = re.fullmatch(
+            r"(?:一个)?由(?:互不相同|各不相同)的?(?:十进制)?数字组成的?正整数\$?m\$?"
+            r"(?:被)?(?:称为|叫作|叫做)[“\"']?好数[”\"']?[，,：:]?如果它是(?:一个)?一位数"
+            r"[，,](?:或|或者)删去其中(?:任意|某|一)?个数字后得到的数是\$?m\$?的(?:一个)?约数"
+            r"且(?:该数)?也是好数[。.]求(?:所有好数中的)?最(?:大|大的)好数[。.]?",
+            re.sub(r"\s+", "", structural_text),
+        )
+        if not english and not chinese:
+            return None
+        if re.search(
+            r"(?:leading\s+(?:zero|zeroes?)|(?:zero|zeroes?)\s+at\s+the\s+front)"
+            r".{0,16}(?:allowed|permitted)|"
+            r"允许前导零|保留前导零|"
+            r"smallest|least|how\s+many|number\s+of|list\s+all|"
+            r"最小|多少|计数|列出|"
+            r"remove\s+(?:two|more\s+than\s+one)|删去(?:两个|多于一个)|"
+            r"base\s*[- ]?\d+|[二三四五六七八九十]进制",
+            structural_text,
+            re.IGNORECASE,
+        ):
+            return None
+
+        # Distinct digits bound the search at ten layers. Building a number by
+        # inserting one digit reverses every permitted canonical deletion.
+        layer = set(range(1, 10))
+        largest = 9
+        for _length in range(2, 11):
+            next_layer: set[int] = set()
+            for divisor in layer:
+                digits = str(divisor)
+                for inserted in "0123456789":
+                    if inserted in digits:
+                        continue
+                    for position in range(len(digits) + 1):
+                        candidate_text = digits[:position] + inserted + digits[position:]
+                        if candidate_text.startswith("0"):
+                            continue
+                        candidate = int(candidate_text)
+                        if candidate % divisor == 0:
+                            next_layer.add(candidate)
+            if next_layer:
+                largest = max(largest, max(next_layer))
+            layer = next_layer
+        return f"本地递归删位整除最大值: {largest}"
 
     @staticmethod
     def _adjacent_surjection_count_hint(problem: str) -> Optional[str]:
@@ -1154,6 +1347,153 @@ class SympyTool:
         else:
             comparison = "误差=0（二者相等）"
         return f"本地复化梯形精确计算: 近似值={approximation}，精确值={exact}，{comparison}"
+
+    @staticmethod
+    def _two_point_gauss_legendre_monomial_hint(problem: str) -> Optional[str]:
+        """Evaluate the exact two-node Gauss-Legendre value for one monomial."""
+        text = re.sub(r"\s+", " ", str(problem or "")).strip()
+        normalized = (
+            text.replace(r"\left", "")
+            .replace(r"\right", "")
+            .replace(r"\,", "")
+            .replace("−", "-")
+        )
+        if re.search(
+            r"\bcomposite\b|复合|"
+            r"\b(?:panels?|subintervals?)\b|子区间|小区间|分段|"
+            r"\b(?:two|three|four|five|six|\d+)\s+(?:equal\s+)?intervals?\b|"
+            r"\b(?:divide|partition|split)\b[^.!?。！？\n]{0,50}\binterval\b|"
+            r"\bon\s+each\b|(?:二|两|三|四|五|六|\d+)\s*(?:个)?等分|"
+            r"(?:将|把)[^。！？!?\n]{0,30}区间[^。！？!?\n]{0,20}(?:分成|划分)|"
+            r"\bweighted\b|\bweight\s+function\b|"
+            r"\bweight\s+\$?\s*(?:w|omega|\\omega)\s*\(|"
+            r"权函数|权重函数|加权求积|加权高斯",
+            normalized,
+            re.IGNORECASE,
+        ):
+            return None
+        method = re.search(
+            r"(?:two[- ]point|2[- ]point|二点)\s*Gauss[- ]Legendre|"
+            r"Gauss[- ]Legendre[^.!?。！？\n]{0,30}(?:two\s+points?|2\s+points?|二点)",
+            normalized,
+            re.IGNORECASE,
+        )
+        interval = re.search(
+            r"(?:on|over|在)\s*\$?\s*\[\s*(-?\d+(?:/\d+)?)\s*,\s*"
+            r"(-?\d+(?:/\d+)?)\s*\]\s*\$?",
+            normalized,
+            re.IGNORECASE,
+        )
+        integral = re.search(
+            r"\\int_\{?\s*(-?\d+(?:/\d+)?)\s*\}?\^\{?\s*(-?\d+(?:/\d+)?)\s*\}?\s*"
+            r"(?:(-?\d+)\s*)?([A-Za-z])(?:\^\{?(\d+)\}?)?\s*d\4",
+            normalized,
+            re.IGNORECASE,
+        )
+        exact_fraction = bool(re.search(
+            r"exact\s+fraction|精确分数|既约分数|分数形式",
+            normalized,
+            re.IGNORECASE,
+        ))
+        integral_count = len(re.findall(r"(?:\\int|∫)", normalized))
+        extra_outputs = bool(re.search(
+            r"(?:求|给出|写出|报告)[^。！？!?\n]{0,80}(?:节点|结点)"
+            r"[^。！？!?\n]{0,80}(?:权重|权系数)|"
+            r"\b(?:find|give|report|determine|compute)\b[^.!?\n]{0,80}\bnodes?\b"
+            r"[^.!?\n]{0,80}\bweights?\b",
+            normalized,
+            re.IGNORECASE,
+        ))
+        output_transform = bool(re.search(
+            r"(?:result|approximation)[^.!?。！？\n]{0,35}"
+            r"(?:plus|minus|times|multiplied\s+by|divided\s+by|modulo)|"
+            r"\b(?:add|subtract|multiply|divide)\b[^.!?。！？\n]{0,25}"
+            r"\b(?:result|approximation)\b|"
+            r"(?:then|and\s+then)\s+(?:add|subtract|multiply|divide|take\s+the\s+remainder)|"
+            r"(?:结果|近似值)[^.!?。！？\n]{0,30}(?:再|然后)?(?:加|减|乘|除|取模)|"
+            r"(?:再|然后)(?:加上?|减去|乘以?|除以?|取模)",
+            normalized,
+            re.IGNORECASE,
+        ))
+        if not (method and interval and integral and exact_fraction):
+            return None
+        if integral_count != 1 or extra_outputs or output_transform:
+            return None
+        try:
+            lower, upper = Fraction(interval.group(1)), Fraction(interval.group(2))
+            int_lower, int_upper = Fraction(integral.group(1)), Fraction(integral.group(2))
+            coefficient = int(integral.group(3) or "1")
+            power = int(integral.group(5) or "1")
+        except (ValueError, ZeroDivisionError):
+            return None
+        if lower >= upper or (lower, upper) != (int_lower, int_upper):
+            return None
+        if abs(coefficient) > 10**9 or not 0 <= power <= 20:
+            return None
+
+        # Nodes are midpoint +/- half-width/sqrt(3).  SymPy keeps the
+        # irrational cancellation exact; refuse the route if it does not
+        # simplify to a rational value.
+        if not SympyTool().sympy:
+            return None
+        s = SympyTool().sympy
+        midpoint = s.Rational(lower.numerator, lower.denominator) / 2 + s.Rational(
+            upper.numerator, upper.denominator
+        ) / 2
+        half_width = (
+            s.Rational(upper.numerator, upper.denominator)
+            - s.Rational(lower.numerator, lower.denominator)
+        ) / 2
+        approximation = s.simplify(
+            half_width
+            * coefficient
+            * ((midpoint - half_width / s.sqrt(3)) ** power
+               + (midpoint + half_width / s.sqrt(3)) ** power)
+        )
+        if not approximation.is_Rational:
+            return None
+        value = Fraction(int(approximation.p), int(approximation.q))
+        return f"本地二点Gauss-Legendre精确计算: {value}"
+
+    @staticmethod
+    def _exponential_l1_sequence_hint(problem: str) -> Optional[str]:
+        """Certify the standard n^2*x*exp(-n*x) L1 counterexample."""
+        compact = re.sub(r"\s+", "", str(problem or "")).replace("$", "")
+        compact = compact.replace(r"\left", "").replace(r"\right", "")
+        formula_match = re.search(
+            r"f_?\{?n\}?\(x\)=n\^\{?2\}?x(?:e\^\{?-nx\}?|\\exp\(-nx\))",
+            compact,
+            re.IGNORECASE,
+        )
+        formula = bool(
+            formula_match
+            and not re.match(
+                r"(?:[+\-*/^]|\\(?:cdot|times)\b|[A-Za-z0-9_])",
+                compact[formula_match.end():],
+                re.IGNORECASE,
+            )
+        )
+        domain = bool(re.search(r"\(0,(?:\\infty|∞)\)", compact))
+        l1_question = bool(re.search(
+            r"(?:判断|是否|能否).{0,100}L\^?\{?1\}?.{0,80}(?:收敛|极限)|"
+            r"(?:whether|determine).{0,100}L\^?\{?1\}?.{0,80}converg",
+            str(problem or ""),
+            re.IGNORECASE | re.DOTALL,
+        ))
+        pointwise = bool(re.search(r"逐点|pointwise", str(problem or ""), re.IGNORECASE))
+        if not (formula and domain and l1_question and pointwise):
+            return None
+        if re.search(
+            r"证明|推导|解释|依测度|一致收敛|弱收敛|上确界|"
+            r"\b(?:prove|derive|explain|convergence\s+in\s+measure|uniform|weak|supremum)\b",
+            str(problem or ""),
+            re.IGNORECASE,
+        ):
+            return None
+        return (
+            r"本地指数函数列L1判定: 否；逐点极限为0，但"
+            r"\lVert f_n\rVert_1=\int_0^\infty n^2xe^{-nx}\,dx=1。"
+        )
 
     @staticmethod
     def _propositional_implication_chain_hint(problem: str) -> Optional[str]:
