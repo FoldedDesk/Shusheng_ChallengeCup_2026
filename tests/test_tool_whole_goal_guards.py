@@ -43,8 +43,12 @@ def test_result_transformations_and_unparsed_filters_cannot_be_whole_answers():
 def test_conflicting_whole_goal_tools_are_downgraded_together():
     spec = build_problem_spec("Calculate 1+1.")
     results = [
-        result_from_legacy_hint("SymPy 计算: 45", trusted_source=True),
-        result_from_legacy_hint("SymPy 计算: 32", trusted_source=True),
+        result_from_legacy_hint(
+            "SymPy 计算: 45", trusted_source=True, source_problem=spec.problem_text
+        ),
+        result_from_legacy_hint(
+            "SymPy 计算: 32", trusted_source=True, source_problem=spec.problem_text
+        ),
     ]
     evidence = SubmissionAgent._tool_evidence(
         [result for result in results if result is not None], spec

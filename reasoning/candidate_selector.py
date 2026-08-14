@@ -215,10 +215,11 @@ def assess_candidate(
         "provider_truncated_without_explicit_answer", "provider_truncated_ambiguous_box",
         "unclosed_code_fence", "unclosed_inline_math", "unclosed_inline_latex",
         "unclosed_display_latex", "unclosed_latex_environment", "unclosed_latex_brace",
-        "unclosed_group_delimiter",
+        "unclosed_group_delimiter", "unclosed_quote",
         "trailing_fragment", "truncated_sentence",
         "numeric_identity_conflict",
         "final_conclusion_conflict",
+        "unresolved_self_retraction",
         "verification_unresolved", "missing_verification_certificate",
         "unlabelled_process_body", "unlabelled_intermediate_result",
         "unlabelled_future_action", "unlabelled_unfinished_body",
@@ -562,9 +563,18 @@ def _tool_status(answer: str, evidence: tuple[ToolEvidence, ...]) -> str:
             normalized.replace("∞", "infty")
             == expected.replace("∞", "infty")
         )
+        wrapped_probability = bool(
+            expected
+            and re.fullmatch(
+                rf"(?:therequestedprobabilityis|theprobabilityis|所求概率为){re.escape(expected)}",
+                normalized,
+                re.IGNORECASE,
+            )
+        )
         if expected and (
             expected == normalized
             or same_tool_payload
+            or wrapped_probability
             or equivalent_answers(answer, item.result)
         ):
             return "pass"
@@ -698,7 +708,7 @@ def _frame_valid(answer: str, spec: "ProblemSpec") -> bool:
     if frame.question_kind == "count":
         return frame.unit in answer
     if frame.question_kind == "probability":
-        return "概率" in answer
+        return bool(re.search(r"概率|\bprobability\b|P\s*\(", answer, re.IGNORECASE))
     if frame.question_kind == "truth":
         verdict_pattern = (
             r"(?:是|否|可以|不可以|正确|错误|成立|不成立|"
@@ -743,6 +753,8 @@ def candidate_consistency_reasons(answer: str, spec=None) -> tuple[str, ...]:
         _has_false_numeric_identity(value) or _has_false_binomial_identity(value)
     ):
         reasons.append("numeric_identity_conflict")
+    if Finalizer.has_unresolved_self_retraction(value):
+        reasons.append("unresolved_self_retraction")
 
     labelled = [
         result.answer

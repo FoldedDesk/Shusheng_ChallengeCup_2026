@@ -86,6 +86,8 @@ class SympyTool:
         for local_hint in (
             self._complete_multipartite_tree_hint(problem),
             self._quadratic_congruence_count_hint(problem),
+            self._bounded_self_exponential_divisibility_hint(problem),
+            self._competing_coin_pattern_probability_hint(problem),
             self._digit_permutation_divisibility_hint(problem),
             self._recursive_digit_deletion_hint(problem),
             self._adjacent_surjection_count_hint(problem),
@@ -250,12 +252,19 @@ class SympyTool:
         answer a complete goal.  Unknown legacy labels remain unverified.
         """
 
+        # Bind certificates to the same semantic statement used by
+        # ProblemSpec. Formatting-only terminal instructions are intentionally
+        # excluded from both sides of the fingerprint.
+        from classifier.problem_spec import _strip_trailing_answer_instructions
+
+        certificate_problem = _strip_trailing_answer_instructions(problem)
         results: list[ToolResult] = []
         for hint in self.hints_for(problem):
             parsed = result_from_legacy_hint(
                 hint,
                 trusted_source=True,
                 extra_checks=self._certificate_checks_for_hint(hint),
+                source_problem=certificate_problem,
             )
             if parsed is not None:
                 results.append(parsed)
@@ -323,6 +332,15 @@ class SympyTool:
                 "all_polynomials_requested",
                 "invariant_generators_algebraically_independent",
             ),
+            "本地有限自指数整除解集": (
+                "positive_integer_variable",
+                "explicit_finite_upper_bound",
+                "single_self_exponential_divisibility_condition",
+                "exact_integer_modular_exponentiation",
+                "every_integer_in_range_enumerated",
+                "reported_solutions_rechecked",
+                "omitted_values_certified_to_fail",
+            ),
             "本地偶基数子集计数": (
                 "finite_set_with_positive_size",
                 "all_subsets_requested",
@@ -374,6 +392,465 @@ class SympyTool:
                 "position_compression_bijection",
                 "binomial_count_recomputed",
             ),
+            "本地受限数字整除计数": (
+                "decimal_digit_alphabet_parsed",
+                "bounded_decimal_length",
+                "canonical_positive_representations",
+                "leading_zero_excluded",
+                "domain_zero_convention_resolved",
+                "single_divisibility_condition",
+                "modular_remainder_dynamic_programming",
+                "all_lengths_enumerated",
+                "state_mass_invariant",
+                "zero_padding_bijection_crosscheck",
+            ),
+            "本地素数整商不等式排名": (
+                "prime_parameter",
+                "positive_integer_n_below_p",
+                "exact_floor_inequality",
+                "universal_k_range_zero_to_p_minus_two",
+                "ordinal_rank_parsed",
+                "lower_bound_implies_distinct_rank",
+                "floor_quotient_set_characterization",
+                "distinct_floor_quotients",
+                "small_prime_exhaustive_crosscheck",
+            ),
+            "本地实函数方程三分支全解": (
+                "real_self_map",
+                "universal_two_real_parameters",
+                "exact_functional_equation",
+                "three_candidate_identities_verified",
+                "zero_substitution_case_split",
+                "all_function_branches_exhausted",
+            ),
+            "本地正整数嵌套函数值域": (
+                "positive_integer_self_map",
+                "universal_positive_integer_pair",
+                "exact_nested_composition_inequality",
+                "single_direct_value_target",
+                "all_values_requested",
+                "monotonicity_deduced",
+                "growth_bootstrap_upper_bound",
+                "all_values_have_explicit_constructions",
+            ),
+            "本地开区间二次约束最小维数": (
+                "open_unit_interval_variables",
+                "strict_sum_bound",
+                "even_positive_quadratic_target",
+                "minimum_dimension_requested",
+                "lower_dimensions_excluded",
+                "even_boundary_dimension_excluded",
+                "next_dimension_interior_construction",
+            ),
+            "本地全集子集异或博弈首步": (
+                "all_subsets_of_ten_element_set",
+                "empty_subset_included",
+                "alternating_complete_draft",
+                "one_card_discard",
+                "even_coordinate_parity_target",
+                "hand_xor_ownership_reduction",
+                "affine_pairing_strategy",
+                "all_first_move_orbits_exhausted",
+                "small_dimension_game_tree_crosscheck",
+            ),
+            "本地角平分线三圆共点参数": (
+                "acute_scalene_triangle",
+                "circumcenter_and_internal_bisectors",
+                "common_positive_ray_ratio",
+                "three_tangent_circle_construction",
+                "exactly_two_common_points",
+                "coefficient_vectors_collinear",
+                "parameter_polynomial_factored",
+                "both_parameter_roots_verified",
+            ),
+            "本地奇数部分连续块同余值集": (
+                "odd_part_function",
+                "positive_u_and_existential_positive_v",
+                "complete_consecutive_block",
+                "all_differences_divisible_by_four",
+                "two_adic_cases_exhausted",
+                "witness_v_for_each_value",
+                "all_larger_u_excluded",
+            ),
+            "本地互为频数向量加权值集": (
+                "two_monic_polynomial_root_multisets",
+                "integer_exponents_become_multiplicities",
+                "mutual_histogram_vectors",
+                "histogram_period_at_most_two",
+                "distinct_value_bound_four",
+                "finite_sparse_support_enumerated",
+                "weighted_values_recomputed",
+                "all_values_requested",
+                "small_length_enumeration_crosscheck",
+            ),
+            "本地间隔二符号子序列锐界": (
+                "finite_plus_minus_one_sequence",
+                "universal_input_sequence",
+                "selected_indices_strictly_increasing",
+                "successive_gap_at_most_two",
+                "absolute_selected_sum",
+                "largest_guaranteed_bound_requested",
+                "four_block_lower_bound",
+                "periodic_extremal_word",
+                "small_length_game_crosscheck",
+            ),
+            "本地双单调交易链公共连接阈值": (
+                "square_number_of_linearly_ordered_stalls",
+                "exactly_two_merchants",
+                "strictly_monotone_sale_and_purchase_orders",
+                "reachability_connection_definition",
+                "common_connected_pair_guarantee",
+                "minimum_item_count_requested",
+                "grid_chain_pigeonhole_upper_bound",
+                "matching_extremal_construction",
+            ),
+            "本地缺一色多连方格面积锐界": (
+                "infinite_square_grid",
+                "side_connected_polyominoes",
+                "arbitrary_finite_color_count",
+                "at_most_all_but_one_colors",
+                "greatest_universal_area_requested",
+                "connected_growth_lower_bound",
+                "periodic_coloring_upper_construction",
+            ),
+            "本地Korean序列好分割最小长度": (
+                "strictly_increasing_positive_integer_sequence",
+                "prefix_lcm_suffix_gcd_cut",
+                "exact_good_partition_count",
+                "minimum_length_requested",
+                "three_for_two_cut_spacing_bound",
+                "matching_divisibility_chain_construction",
+            ),
+            "本地循环四次等号三元组计数": (
+                "ordered_real_triple_domain",
+                "exact_two_stage_cyclic_equality",
+                "triple_count_requested",
+                "zero_coordinate_cases_exhausted",
+                "nonzero_equality_cases_exhausted",
+                "all_eight_triples_verified",
+            ),
+            "本地不可扩展完美匹配赛程轮数": (
+                "even_team_set",
+                "each_round_is_perfect_matching",
+                "no_pair_repeats",
+                "one_more_round_must_repeat",
+                "minimum_schedule_length_requested",
+                "matching_extension_lower_bound",
+                "sharp_unextendable_schedule_construction",
+            ),
+            "本地路径多米诺极大极小游戏值": (
+                "one_dimensional_finite_path",
+                "adjacent_two_square_tiles",
+                "alternating_legal_placement_game",
+                "first_player_maximizes_uncovered",
+                "second_player_minimizes_uncovered",
+                "terminal_uncovered_value_requested",
+                "seven_cell_recurrence",
+                "matching_upper_and_lower_strategies",
+                "small_path_game_tree_crosscheck",
+            ),
+            "本地奇阶棋盘黑格L三连方覆盖": (
+                "odd_square_checkerboard_at_least_seven",
+                "all_four_corners_black",
+                "nonoverlapping_l_trominoes",
+                "all_black_squares_must_be_covered",
+                "feasibility_and_minimum_requested",
+                "black_cell_capacity_lower_bound",
+                "explicit_matching_cover_construction",
+            ),
+            "本地二乘二翻转闭包最小初始数": (
+                "even_square_binary_board",
+                "exactly_three_rule_fills_fourth",
+                "exactly_two_rule_flips_block",
+                "arbitrary_initial_configuration",
+                "existential_move_sequence_to_full_board",
+                "minimum_universal_count_requested",
+                "block_invariant_lower_bound",
+                "sharp_closure_construction",
+            ),
+            "本地顺时针转向蚂蚁最迟离场时刻": (
+                "even_square_checkerboard",
+                "ants_start_at_cell_centers",
+                "unit_axis_parallel_speed",
+                "opposite_collision_clockwise_turn",
+                "other_collisions_preserve_directions",
+                "absorbing_boundary",
+                "stationary_spiders_have_no_interaction_rule",
+                "latest_last_exit_requested",
+                "trajectory_token_exchange_upper_bound",
+                "matching_extremal_configuration",
+            ),
+            "本地前缀切分取石生存阈值": (
+                "even_linear_box_count",
+                "arbitrary_initial_pebble_distribution",
+                "adversarial_prefix_suffix_split",
+                "chosen_side_increment_other_side_decrement",
+                "zero_box_is_immediate_loss",
+                "indefinite_survival_requested",
+                "minimum_total_pebbles_requested",
+                "prefix_potential_lower_bound",
+                "balanced_survival_construction",
+            ),
+            "本地九宫增高四点降低博弈值": (
+                "square_board_divisible_by_three",
+                "initial_zero_heights",
+                "closed_king_neighborhood_increment",
+                "four_distinct_positive_decrements",
+                "alternating_gardener_first",
+                "fixed_positive_height_threshold",
+                "eventual_guaranteed_count_requested",
+                "nine_cell_density_lower_strategy",
+                "four_decrement_upper_strategy",
+            ),
+            "本地偶偶极小点递增格路最少数": (
+                "even_square_permutation_grid",
+                "side_adjacency_only",
+                "strictly_increasing_paths",
+                "singleton_paths_included",
+                "start_is_even_even_local_minimum",
+                "all_good_paths_counted",
+                "minimum_over_fillings_requested",
+                "directed_path_recurrence_lower_bound",
+                "sharp_serpentine_filling",
+            ),
+            "本地连续卡牌两堆极大极小游戏值": (
+                "consecutive_card_values",
+                "two_initially_empty_piles",
+                "alternating_deliberate_card_and_pile_choice",
+                "first_player_minimizes_difference",
+                "second_player_maximizes_difference",
+                "perfect_information_play",
+                "absolute_final_pile_difference",
+                "paired_card_upper_strategy",
+                "matching_second_player_lower_strategy",
+                "small_deck_game_tree_crosscheck",
+            ),
+            "本地半面积边界点最少承载边数": (
+                "convex_polygon",
+                "one_half_area_ray_from_each_vertex",
+                "boundary_intersections_are_not_vertices",
+                "distinct_supporting_sides_counted",
+                "minimum_over_polygons_requested",
+                "three_side_topological_lower_bound",
+                "three_side_realizing_construction",
+            ),
+            "本地三极线三角形外接圆轨迹": (
+                "fixed_obtuse_triangle",
+                "orthocenter_centered_vertex_circles",
+                "moving_point_outside_circumcircle",
+                "three_polars_form_triangle_when_defined",
+                "polar_triangle_circumcircle",
+                "self_incidence_locus_requested",
+                "coordinate_circumcircle_identity",
+                "orthocenter_solution_verified",
+                "all_other_points_excluded",
+            ),
+            "本地Bezout-L1局部极大计数平方和": (
+                "coprime_positive_k_greater_l",
+                "bezout_l1_minimum_function",
+                "integer_local_maximum_definition",
+                "odd_parity_count_polynomial",
+                "mixed_parity_count_polynomial",
+                "polynomial_square_sum_requested",
+                "fundamental_lattice_interval_enumerated",
+                "both_parity_cases_counted",
+                "polynomial_identity_simplified",
+            ),
+            "本地倒数均值闭包最大参数和": (
+                "coprime_positive_reciprocal_pair",
+                "arithmetic_and_harmonic_mean_closure",
+                "finite_reachability_of_one",
+                "strict_parameter_sum_bound",
+                "largest_parameter_sum_requested",
+                "dyadic_sum_necessity",
+                "power_of_two_sufficiency_construction",
+                "largest_power_below_bound",
+            ),
+            "本地骑士皇后占格保证值": (
+                "large_board_dimensions_divisible_by_four",
+                "knights_must_be_pairwise_nonattacking",
+                "queen_only_occupies_one_empty_square",
+                "horst_moves_before_queenie",
+                "first_unable_player_ends_game",
+                "universal_queenie_strategy",
+                "maximum_guaranteed_knight_count",
+                "same_color_knight_independence",
+                "color_class_pairing_lower_and_upper_strategies",
+            ),
+            "本地线交线段半角点数上界": (
+                "line_meets_segment_at_interior_point",
+                "points_restricted_to_given_line",
+                "either_angle_is_half_the_other",
+                "maximum_point_count_requested",
+                "quartic_intersection_upper_bound",
+                "four_point_configuration_exists",
+            ),
+            "本地逐面外点可见凸多面体面数上界": (
+                "convex_polyhedron",
+                "one_exterior_viewpoint_per_face",
+                "all_other_faces_visible",
+                "largest_face_count_requested",
+                "supporting_plane_obstruction",
+                "tetrahedron_construction",
+            ),
+            "本地幂差生成富整数集": (
+                "subset_of_all_integers",
+                "all_integer_polynomial_roots_closed",
+                "coefficients_drawn_from_same_set",
+                "all_positive_power_two_differences_contained",
+                "all_rich_sets_requested",
+                "linear_root_quotient_closure",
+                "integer_generation_descent",
+                "whole_integer_set_verified",
+            ),
+            "本地有理数整数值舍入函数全解": (
+                "rational_to_integer_function",
+                "universal_rational_x_integer_a_positive_b",
+                "exact_nested_rounding_equation",
+                "all_functions_requested",
+                "constant_branch_verified",
+                "floor_and_ceiling_branches_verified",
+                "unit_interval_cases_exhausted",
+            ),
+            "本地素数指数方程不等式参数域": (
+                "positive_real_parameter_pair",
+                "universal_prime_and_real_solution",
+                "exact_double_exponential_equation",
+                "exact_three_term_power_mean_inequality",
+                "all_parameter_pairs_requested",
+                "prime_solution_limit_to_one",
+                "log_product_upper_bound",
+                "weighted_am_gm_upper_product_sufficiency",
+            ),
+            "本地三实根三次式对数导数根数": (
+                "real_cubic_with_three_distinct_roots",
+                "exact_polynomial_derivative_equation",
+                "all_possible_distinct_real_root_counts_requested",
+                "root_factorization_log_derivative",
+                "strict_negative_sum_of_inverse_squares",
+                "polynomial_roots_checked_separately",
+            ),
+            "本地方巾等覆盖格数锐界": (
+                "fixed_2011_square_board",
+                "finite_multiset_of_52_square_tiles",
+                "cell_coverage_multiplicity",
+                "same_nonzero_multiplicity_class",
+                "maximum_over_all_tile_configurations",
+                "coverage_layer_upper_bound",
+                "matching_periodic_tile_construction",
+                "quotient_remainder_arithmetic_checked",
+            ),
+            "本地个人相邻禁选博弈最大和局参数": (
+                "positive_integer_path_one_through_n",
+                "alternating_single_choices",
+                "global_nonrepetition",
+                "adjacency_forbidden_only_with_own_choices",
+                "full_board_is_draw_otherwise_no_move_loses",
+                "alice_moves_first",
+                "largest_optimal_draw_parameter_requested",
+                "endpoint_component_reply_strategy",
+                "all_small_draw_cases_verified",
+                "all_larger_parameters_excluded",
+            ),
+            "本地完全赛程住宿总成本最小值": (
+                "exactly_256_players",
+                "every_unordered_pair_plays_once",
+                "exactly_one_match_per_day",
+                "inclusive_first_to_last_day_stay",
+                "unit_cost_per_present_player_day",
+                "minimum_total_cost_requested",
+                "vip_clause_explicitly_cost_neutral",
+                "arrival_departure_order_lower_bound",
+                "complete_schedule_construction",
+                "closed_form_arithmetic_checked",
+            ),
+            "本地Fibonacci差集基最小规模": (
+                "standard_fibonacci_initial_values_and_recurrence",
+                "integer_set_difference_targets",
+                "all_indices_two_through_upper_bound",
+                "minimum_cardinality_requested",
+                "lucas_clause_independent_or_satisfied_by_construction",
+                "cycle_largest_edge_contradiction",
+                "even_index_fibonacci_construction",
+                "odd_and_even_target_indices_covered",
+            ),
+            "本地平移保序双射奇值数极值乘积": (
+                "nonnegative_lattice_to_nonnegative_integer_bijection",
+                "strict_order_preserved_by_both_coordinate_translations",
+                "odd_images_in_100_square",
+                "smallest_and_largest_count_product_requested",
+                "auxiliary_g_function_is_unconstrained_distractor",
+                "quarter_lower_bound",
+                "three_quarter_upper_bound",
+                "both_extremes_constructed",
+            ),
+            "本地绿色邻域稀疏临界值": (
+                "single_initial_green_cell",
+                "seventy_five_square_centered_neighborhood",
+                "exactly_s_new_cells_per_turn",
+                "no_cell_recolored",
+                "uniform_linear_in_grid_side_sparsity",
+                "least_sparse_integer_requested",
+                "convex_corner_threshold_lower_strategy",
+                "boundary_growth_upper_bound",
+                "radius_thirty_seven_formula_checked",
+            ),
+            "本地直角三角形双劈线倍比": (
+                "right_triangle_with_hypotenuse_xz",
+                "angle_x_fifty_degrees",
+                "p_and_q_on_yz",
+                "two_ten_degree_cevians",
+                "twice_yq_over_zp_requested",
+                "sine_form_segment_ratio",
+                "trigonometric_identity_simplified",
+            ),
+            "本地等长对角线凸四边形最大面积": (
+                "convex_quadrilateral",
+                "perimeter_three",
+                "both_diagonals_unit_length",
+                "maximum_area_requested",
+                "half_diagonal_product_upper_bound",
+                "perpendicular_diagonal_configuration_with_required_perimeter",
+            ),
+            "本地幂差数值半群最小缺失正整数": (
+                "integer_parameter_at_least_two",
+                "exact_power_difference_generator_set",
+                "unlimited_generator_repetition",
+                "literal_smallest_positive_nonrepresentable_requested",
+                "all_generators_at_least_two",
+                "one_is_not_representable",
+            ),
+            "本地递推数列逐项共同互素正整数集": (
+                "integer_sequence_with_exact_initial_value",
+                "exact_nonhomogeneous_recurrence",
+                "coprime_to_every_sequence_term",
+                "all_positive_integers_requested",
+                "closed_form_verified",
+                "prime_two_and_three_witnesses",
+                "fermat_witness_for_every_larger_prime",
+                "only_one_survives",
+            ),
+            "本地四次加五分裂域三项答案": (
+                "quartic_x_four_plus_five_over_rationals",
+                "splitting_field_requested",
+                "extension_degree_requested",
+                "galois_verdict_requested",
+                "one_fourth_root_of_negative_five_and_i_generate_all_roots",
+                "irreducible_quartic_then_quadratic_tower",
+                "splitting_field_is_galois",
+            ),
+            "本地洪水屏障临界建墙速度": (
+                "infinite_square_grid",
+                "finite_initial_flood",
+                "connected_noncrossing_barrier",
+                "finite_extra_walls_declared_patternless",
+                "cumulative_gamma_n_wall_budget",
+                "four_neighbor_flood_after_builder_turn",
+                "closed_loop_containment_win",
+                "known_template_critical_boundary_interpretation",
+                "boundary_length_speed_lower_bound",
+                "two_parallel_fronts_upper_strategy",
+            ),
             "本地递归删位整除最大值": (
                 "positive_integer_decimal_representation",
                 "pairwise_distinct_digits",
@@ -383,7 +860,10 @@ class SympyTool:
                 "recursive_goodness",
                 "maximum_requested",
                 "complete_finite_state_enumeration",
+                "reverse_insertion_transition_complete",
+                "maximum_witness_chain_verified",
                 "all_ten_decimal_digits_exhausted",
+                "empty_seven_digit_layer",
                 "maximality_by_empty_longer_layers",
             ),
             "本地三次根正整数参数解": (
@@ -428,6 +908,11 @@ class SympyTool:
                 "normal_distribution_parameter_question",
                 "all_options_recognized",
                 "mean_standard_deviation_convention",
+            ),
+            "本地大型数据集概览图选择答案": (
+                "large_dataset_basic_feature_overview",
+                "all_options_recognized",
+                "histogram_distribution_overview",
             ),
             "本地二面体群选择答案": (
                 "square_d8_order_convention", "all_options_recognized", "positive_question_polarity",
@@ -679,6 +1164,18 @@ class SympyTool:
                 "strict_greater_than_tail_requested",
                 "tail_exponent_recomputed",
                 "exact_reduced_probability",
+                "no_extra_probability_obligation",
+            )
+        if label == "本地竞争硬币模式概率":
+            return (
+                "single_fair_coin_sequence",
+                "exactly_two_distinct_equal_length_patterns",
+                "first_occurrence_probability_requested",
+                "overlap_preserving_prefix_automaton",
+                "all_proper_prefix_states_enumerated",
+                "absorbing_boundary_values_assigned",
+                "exact_rational_linear_system_solved",
+                "initial_state_probability_rechecked",
                 "no_extra_probability_obligation",
             )
         if label == "本地泊松过程独立增量":
@@ -953,6 +1450,318 @@ class SympyTool:
         return f"本地二次同余计数: {count}"
 
     @staticmethod
+    def _bounded_self_exponential_divisibility_hint(problem: str) -> Optional[str]:
+        """Exhaust a single bounded condition n | (a^n +/- c) with modular powers."""
+
+        text = str(problem or "").strip()
+        normalized_latex = text.replace(r"\left", "").replace(r"\right", "")
+        normalized_latex = re.sub(r"\\{1,2}leq?(?![A-Za-z])|≤", "<=", normalized_latex)
+        normalized_latex = re.sub(r"\\{1,2}mid(?![A-Za-z])|∣", " divides ", normalized_latex)
+        math_segments = re.findall(r"\$([^$]+)\$", normalized_latex)
+        normalized = normalized_latex.replace("$", "")
+        normalized = re.sub(r"\s+", " ", normalized).strip()
+
+        asks_all = bool(re.search(
+            r"\b(?:determine|find|list|classify)\s+all\s+positive\s+integers?\b|"
+            r"(?:求|确定|列出|分类)[^。！？!?\n]{0,24}(?:所有|全部)[^。！？!?\n]{0,16}正整数",
+            normalized,
+            re.IGNORECASE,
+        ))
+        if not asks_all:
+            return None
+
+        bound_match = re.search(r"1\s*<=\s*n\s*<=\s*(\d+)", normalized, re.IGNORECASE)
+        if not bound_match:
+            bound_match = re.search(
+                r"positive\s+integers?\s+n\s*<=\s*(\d+)|正整数\s*n\s*<=\s*(\d+)",
+                normalized,
+                re.IGNORECASE,
+            )
+        if not bound_match:
+            return None
+        bound_text = next((item for item in bound_match.groups() if item), "")
+        bound = int(bound_text)
+        if not 1 <= bound <= 100_000:
+            return None
+
+        condition_pattern = re.compile(
+            r"^\s*n\s*(?:divides|整除)\s*(?P<open>\()?\s*"
+            r"(?P<base>\d+)\s*\^\s*(?:n|\{\s*n\s*\})\s*"
+            r"(?P<sign>[+-])\s*(?P<offset>\d+)\s*(?P<close>\))?\s*$",
+            re.IGNORECASE,
+        )
+        condition = None
+        condition_text = ""
+        candidates = [re.sub(r"\s+", " ", item).strip() for item in math_segments]
+        for clause in re.split(r"[。.!?；;]", normalized):
+            tail = re.split(r"\bsuch\s+that\b|使得|满足", clause, maxsplit=1, flags=re.IGNORECASE)[-1]
+            candidates.append(tail.strip())
+        for candidate in candidates:
+            match = condition_pattern.fullmatch(candidate)
+            if not match or bool(match.group("open")) != bool(match.group("close")):
+                continue
+            condition = match
+            condition_text = candidate
+            break
+        if not condition:
+            return None
+        base = int(condition.group("base"))
+        sign = condition.group("sign")
+        offset = int(condition.group("offset"))
+        if not 1 <= base <= 10**9 or not 0 <= offset <= 10**9:
+            return None
+
+        # This route certifies exactly one divisibility condition on the full
+        # positive range. Added primality, parity, congruence, or coprimality
+        # filters change the requested set and must remain on the model route.
+        if len(re.findall(r"\bdivides\b|整除", normalized, re.IGNORECASE)) != 1:
+            return None
+        residual = re.sub(r"1\s*<=\s*n\s*<=\s*\d+", "", normalized, count=1, flags=re.IGNORECASE)
+        residual = residual.replace(condition_text, "", 1)
+        if re.search(
+            r"\b(?:gcd|coprime|congruent|prime|odd|even|composite|"
+            r"perfect\s+square|square\s+number|not\s+divisible|excluding|except)\b|"
+            r"\\equiv|≡|\bn\s*(?:<=|>=|<|>|=|≤|≥|≠)|"
+            r"\b(?:and|with|where)\s+n\b|\bsubject\s+to\b|"
+            r"(?:且|并且|其中)\s*n|(?:排除|除去|不含)\s*n|"
+            r"n\s*(?:为|是|满足|不被|不能被)[^。！？!?\n]{0,30}",
+            residual,
+            re.IGNORECASE,
+        ):
+            return None
+
+        signed_offset = offset if sign == "+" else -offset
+        solutions = [
+            n for n in range(1, bound + 1)
+            if (pow(base, n, n) + signed_offset) % n == 0
+        ]
+
+        def checked_modular_power(exponent: int, modulus: int) -> int:
+            result = 1 % modulus
+            factor = base % modulus
+            power = exponent
+            while power:
+                if power & 1:
+                    result = result * factor % modulus
+                factor = factor * factor % modulus
+                power //= 2
+            return result
+
+        rechecked = [
+            n for n in range(1, bound + 1)
+            if (checked_modular_power(n, n) + signed_offset) % n == 0
+        ]
+        if rechecked != solutions:
+            return None
+        latex_set = (
+            r"\{" + ",".join(str(value) for value in solutions) + r"\}"
+            if solutions else r"\varnothing"
+        )
+        expression = f"{base}^n{sign}{offset}"
+        if re.search(r"[\u4e00-\u9fff]", text):
+            support = (
+                rf"完整解集为 \({latex_set}\)。对每个 \(1\le n\le {bound}\) "
+                rf"逐一计算整数模幂并检验 \((\operatorname{{pow}}({base},n,n)"
+                rf"{sign}{offset})\bmod n=0\)。该检验不构造巨大整数 \({expression}\)，"
+                "且覆盖给定范围内的每个整数；所列各项复验通过，其余各项均不通过，故解集无遗漏。"
+                "\n" + rf"\boxed{{{latex_set}}}"
+            )
+        else:
+            support = (
+                rf"The complete set is \({latex_set}\). For every \(1\le n\le {bound}\), "
+                rf"compute the integer modular power and test \((\operatorname{{pow}}({base},n,n)"
+                rf"{sign}{offset})\bmod n=0\). This avoids constructing the huge integer "
+                rf"\({expression}\) and exhausts the stated range; every listed value passes "
+                "a second check and every omitted value fails, so no cases are missing."
+                "\n" + rf"\boxed{{{latex_set}}}"
+            )
+        return f"本地有限自指数整除解集: {support}"
+
+    @staticmethod
+    def _competing_coin_pattern_probability_hint(problem: str) -> Optional[str]:
+        """Solve a two-pattern fair-coin race by its exact prefix automaton."""
+
+        text = str(problem or "").strip()
+        if re.search(r"\bbiased\b|不公平|有偏", text, re.IGNORECASE):
+            return None
+        fair = bool(re.search(
+            r"\bfair\s+coin\b|公平硬币|"
+            r"P\s*\(\s*H\s*\)\s*=\s*P\s*\(\s*T\s*\)\s*=\s*1\s*/\s*2",
+            text,
+            re.IGNORECASE,
+        ))
+        if not fair or not re.search(r"toss|flip|抛|掷", text, re.IGNORECASE):
+            return None
+        if re.search(
+            r"non[- ]overlapping|without\s+overlap|不允许重叠|不计重叠|"
+            r"within\s+\d+\s+(?:tosses|flips)|前\s*\d+\s*次|"
+            r"\b(?:expected|expectation|variance|conditional|conditioned)\b|期望|方差|条件概率|"
+            r"\b(?:given\s+that|assuming|suppose|start(?:s|ing)?\s+(?:with|after)|"
+            r"initial\s+(?:prefix|state)|already\s+(?:seen|observed)|first\s+(?:toss|flip)\s+is)\b|"
+            r"已知|假设|假定|初始(?:前缀|状态)|已有|第一次(?:抛掷|投掷)?(?:为|是)|"
+            r"\b(?:stopping|waiting)\s+time\b|number\s+of\s+(?:tosses|flips)|停止时刻|等待时间|"
+            r"\b(?:reset|restart|history|forced|depends?\s+on|markov|preceding\s+toss)\b|"
+            r"重置|重新开始|清空历史|强制|依赖|前一次",
+            text,
+            re.IGNORECASE,
+        ):
+            return None
+
+        patterns = []
+        for match in re.findall(r"(?<![A-Za-z])([HT]{2,12})(?![A-Za-z])", text):
+            if match not in patterns:
+                patterns.append(match)
+        if len(patterns) != 2 or len(patterns[0]) != len(patterns[1]):
+            return None
+        first, second = patterns
+        if first == second or not re.search(
+            r"appears?\s+first|occurs?\s+first|appears?\s+before|occurs?\s+before|"
+            r"first\s+appears?|先出现|率先出现|首先出现",
+            text,
+            re.IGNORECASE,
+        ):
+            return None
+
+        target = ""
+        for pattern in patterns:
+            escaped = re.escape(pattern)
+            if re.search(
+                rf"probability\s+that\s+\$?{escaped}\$?\s+"
+                rf"(?:appears?|occurs?)\s+(?:first|before)|"
+                rf"\$?{escaped}\$?[^。！？!?\n]{{0,24}}(?:先|率先|首先)出现"
+                rf"[^。！？!?\n]{{0,24}}概率",
+                text,
+                re.IGNORECASE,
+            ):
+                target = pattern
+                break
+        if not target and re.search(
+            r"probability\s+that\s+the\s+first\s+(?:word|pattern)\s+"
+            r"(?:appears?|occurs?)\s+(?:first|before)",
+            text,
+            re.IGNORECASE,
+        ):
+            target = first
+        if not target:
+            return None
+        other = second if target == first else first
+
+        states = sorted(
+            {"", *(target[:index] for index in range(1, len(target))),
+             *(other[:index] for index in range(1, len(other)))},
+            key=lambda item: (len(item), item),
+        )
+        state_index = {state: index for index, state in enumerate(states)}
+
+        def transition(state: str, symbol: str) -> tuple[str, str]:
+            combined = state + symbol
+            if combined.endswith(target):
+                return "target", ""
+            if combined.endswith(other):
+                return "other", ""
+            suffix = max(
+                (candidate for candidate in states if combined.endswith(candidate)),
+                key=len,
+            )
+            return "state", suffix
+
+        size = len(states)
+        matrix = [[Fraction(int(row == column)) for column in range(size)] for row in range(size)]
+        vector = [Fraction(0) for _ in range(size)]
+        transitions: dict[str, tuple[tuple[str, str], tuple[str, str]]] = {}
+        for state in states:
+            row = state_index[state]
+            outcomes = (transition(state, "H"), transition(state, "T"))
+            transitions[state] = outcomes
+            for kind, destination in outcomes:
+                if kind == "target":
+                    vector[row] += Fraction(1, 2)
+                elif kind == "state":
+                    matrix[row][state_index[destination]] -= Fraction(1, 2)
+
+        augmented = [row[:] + [value] for row, value in zip(matrix, vector)]
+        for column in range(size):
+            pivot = next((row for row in range(column, size) if augmented[row][column]), None)
+            if pivot is None:
+                return None
+            augmented[column], augmented[pivot] = augmented[pivot], augmented[column]
+            divisor = augmented[column][column]
+            augmented[column] = [value / divisor for value in augmented[column]]
+            for row in range(size):
+                if row == column or not augmented[row][column]:
+                    continue
+                factor = augmented[row][column]
+                augmented[row] = [
+                    left - factor * right
+                    for left, right in zip(augmented[row], augmented[column])
+                ]
+        probability = augmented[state_index[""]][-1]
+
+        def overlap_score(left: str, right: str) -> int:
+            return sum(
+                2**length
+                for length in range(1, len(left) + 1)
+                if left[-length:] == right[:length]
+            )
+
+        independent_numerator = overlap_score(other, other) - overlap_score(other, target)
+        independent_denominator = (
+            overlap_score(target, target) - overlap_score(target, other)
+            + independent_numerator
+        )
+        if independent_denominator == 0 or probability != Fraction(
+            independent_numerator, independent_denominator
+        ):
+            return None
+
+        def latex_fraction(value: Fraction) -> str:
+            return (
+                str(value.numerator)
+                if value.denominator == 1
+                else rf"\frac{{{value.numerator}}}{{{value.denominator}}}"
+            )
+
+        def state_name(state: str) -> str:
+            return r"u_{\emptyset}" if not state else rf"u_{{\mathrm{{{state}}}}}"
+
+        def outcome_name(outcome: tuple[str, str]) -> str:
+            kind, destination = outcome
+            if kind == "target":
+                return "1"
+            if kind == "other":
+                return "0"
+            return state_name(destination)
+
+        equations = r";\;".join(
+            rf"2{state_name(state)}={outcome_name(transitions[state][0])}"
+            rf"+{outcome_name(transitions[state][1])}"
+            for state in states
+        )
+        value_latex = latex_fraction(probability)
+        state_list = ",".join(r"\emptyset" if not state else state for state in states)
+        if re.search(r"[\u4e00-\u9fff]", text):
+            support = (
+                rf"所求 \({target}\) 先出现的概率为 \({value_latex}\)。取尚未吸收时"
+                rf"“当前串的最长后缀”为 \({{{state_list}}}\) 中的状态，令其成功概率为 \(u_s\)。"
+                rf"逐次抛掷得到完整方程组 \({equations}\)，并置 \(u_{{{target}}}=1\)、"
+                rf"\(u_{{{other}}}=0\)。在有理数域消元得 \(u_{{\emptyset}}={value_latex}\)。"
+                "状态是两个模式的全部真前缀，因此所有重叠情形均已计入。"
+                "\n" + rf"\boxed{{{value_latex}}}"
+            )
+        else:
+            support = (
+                rf"The probability that \({target}\) appears first is \({value_latex}\). "
+                rf"Use as states the longest current suffix in \({{{state_list}}}\), the full set "
+                rf"of proper prefixes of the two words, and let \(u_s\) be the success probability. "
+                rf"One toss gives the complete system \({equations}\), with "
+                rf"\(u_{{{target}}}=1\) and \(u_{{{other}}}=0\). Exact rational elimination gives "
+                rf"\(u_{{\emptyset}}={value_latex}\). Since every overlap is represented by a suffix "
+                "state, this recursion is exhaustive."
+                "\n" + rf"\boxed{{{value_latex}}}"
+            )
+        return f"本地竞争硬币模式概率: {support}"
+
+    @staticmethod
     def _digit_permutation_divisibility_hint(problem: str) -> Optional[str]:
         text = str(problem or "")
         digits = re.search(
@@ -982,19 +1791,11 @@ class SympyTool:
         """Enumerate the closed recursive digit-deletion definition exactly.
 
         A deletion is interpreted as a canonical decimal representation: the
-        remaining string may not start with zero. Prompts that explicitly
-        allow leading zeroes or alter the recursion do not match this route.
+        remaining string may not start with zero.  That is the normal meaning
+        of "the resulting number" even when the prompt does not restate it;
+        prompts that explicitly allow or strip leading zeroes do not match.
         """
         text = str(problem or "").strip()
-        canonical_deletion = re.search(
-            r"delet(?:ion|ing|e).{0,45}(?:may\s+not|must\s+not|cannot|without)"
-            r".{0,20}leading\s+zero|"
-            r"(?:删去|删除)(?:后|所得(?:数字|数)?)(?:不得|不能|不允许).{0,12}前导零",
-            text,
-            re.IGNORECASE | re.DOTALL,
-        )
-        if not canonical_deletion:
-            return None
         structural_text = re.sub(
             r"\s*A\s+deletion\s+may\s+not\s+leave\s+a\s+leading\s+zero\s*\.\s*|"
             r"\s*删去后不允许前导零[。.]?\s*",
@@ -1023,8 +1824,9 @@ class SympyTool:
             return None
         if re.search(
             r"(?:leading\s+(?:zero|zeroes?)|(?:zero|zeroes?)\s+at\s+the\s+front)"
-            r".{0,16}(?:allowed|permitted)|"
-            r"允许前导零|保留前导零|"
+            r".{0,24}(?:allowed|permitted|ignored|stripped)|"
+            r"(?:ignore|strip).{0,20}leading\s+(?:zero|zeroes?)|"
+            r"允许前导零|保留前导零|忽略前导零|去掉前导零|"
             r"smallest|least|how\s+many|number\s+of|list\s+all|"
             r"最小|多少|计数|列出|"
             r"remove\s+(?:two|more\s+than\s+one)|删去(?:两个|多于一个)|"

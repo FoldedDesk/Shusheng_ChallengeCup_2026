@@ -1,0 +1,5 @@
+{"idx":4024,"problem":"对f(x)=x^3-x-1在区间[1,2]作一次二分法迭代，求新区间并说明端点函数值异号。","answer":"[1,1.5]","subject":"数值分析","source":"official_distribution_112_hard"}
+{"idx":4040,"problem":"若f≥0可测且∫f dμ=0，证明对任意ε>0集合{f≥ε}为零测集，并写出结论。","answer":"f=0 几乎处处","subject":"测度积分","source":"official_distribution_112_hard"}
+{"idx":4068,"problem":"在多项式环F_2[x]中判断x^3+x+1是否不可约，说明只需检查何种次数的因子。","answer":"不可约","subject":"抽象代数","source":"official_distribution_112_hard"}
+{"idx":4086,"problem":"求∮_{|z|=1} z^2/(z-1/2) dz，使用柯西积分公式而非直接参数化。","answer":"πi/2","subject":"复分析","source":"official_distribution_112_hard"}
+{"idx":4107,"problem":"利用基本群的同伦不变性，说明圆S^1与单点空间不可能同胚，并比较其基本群。","answer":"π_1(S^1)=Z而单点基本群平凡","subject":"非基础及进阶课程","source":"official_distribution_112_hard"}

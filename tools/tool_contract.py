@@ -8,8 +8,18 @@ explicit allow-list: an unknown label is evidence text, never a certificate.
 from __future__ import annotations
 
 from dataclasses import dataclass, replace
+import hashlib
 import re
 from typing import Iterable, Optional
+
+
+def problem_fingerprint(problem: str) -> str:
+    """Return a stable digest binding a certificate to one normalized prompt."""
+
+    normalized = re.sub(r"\s+", " ", str(problem or "")).strip()
+    if not normalized:
+        return ""
+    return hashlib.sha256(normalized.encode("utf-8")).hexdigest()
 
 
 @dataclass(frozen=True)
@@ -83,6 +93,7 @@ class ToolCertificate:
     method: str
     checks: tuple[str, ...] = ()
     issues: tuple[str, ...] = ()
+    source_fingerprint: str = ""
 
     def trace_content(self) -> dict:
         return {
@@ -90,6 +101,7 @@ class ToolCertificate:
             "method": self.method,
             "checks": list(self.checks),
             "issues": list(self.issues),
+            "source_fingerprint": self.source_fingerprint,
         }
 
 
@@ -188,6 +200,21 @@ def _legacy_submission_payload(operation: str, raw_result: str) -> tuple[str, st
             r"P\s*\(\s*T\s*>\s*\d+\s*\)\s*=\s*"
             r"(?:\(1/2\)\^\{?\d+\}?\s*=\s*)?"
             r"(\\frac\{\d+\}\{\d+\}|\d+)",
+            value,
+            re.IGNORECASE,
+        )
+        compact = match.group(1) if match else ""
+    elif operation == "bounded_self_exponential_divisibility":
+        match = re.search(
+            r"(?:完整解集为|The complete set is)\s*\\\((\\\{[^()]*\\\}|\\varnothing)\\\)",
+            value,
+            re.IGNORECASE,
+        )
+        compact = match.group(1) if match else ""
+    elif operation == "competing_coin_patterns":
+        match = re.search(
+            r"(?:所求[^。.!?]{0,40}概率为|The probability that[^.?!]{0,60}?is)\s*"
+            r"\\\((\\frac\{\d+\}\{\d+\}|\d+)\\\)",
             value,
             re.IGNORECASE,
         )
@@ -546,7 +573,11 @@ TOOL_CONTRACTS: dict[str, ToolContract] = {
     ),
     "brownian_covariance": _contract(
         "brownian_covariance", "covariance", "brownian_independent_increment_identity", True,
-        requirements=("independent_increments",),
+        # The deterministic support explicitly gives
+        # B(t)=B(s)+(B(t)-B(s)), invokes independent increments, and derives
+        # the covariance.  It therefore covers both the named method and the
+        # generic reasoning obligation added for "explain the derivation".
+        requirements=("reasoning", "independent_increments"),
         answer_shapes=("number", "expression"),
         facts=(
             "standard_brownian_motion", "ordered_nonnegative_times",
@@ -643,9 +674,573 @@ TOOL_CONTRACTS: dict[str, ToolContract] = {
         "quadratic_congruence_count", "count", "prime_power_crt_enumeration", True,
         answer_shapes=("number",),
     ),
+    "bounded_self_exponential_divisibility": _contract(
+        "bounded_self_exponential_divisibility", "solution_set",
+        "bounded_modular_power_exhaustion", True,
+        requirements=("exhaustive_result", "reasoning"),
+        required_requirements=("exhaustive_result",),
+        task_kinds=("calculation", "proof", "explanation"),
+        answer_shapes=("number", "roots", "expression", "proof"),
+        facts=(
+            "positive_integer_variable", "explicit_finite_upper_bound",
+            "single_self_exponential_divisibility_condition",
+            "exact_integer_modular_exponentiation", "every_integer_in_range_enumerated",
+            "reported_solutions_rechecked", "omitted_values_certified_to_fail",
+        ),
+    ),
+    "competing_coin_patterns": _contract(
+        "competing_coin_patterns", "probability_with_recursion",
+        "prefix_automaton_exact_linear_system", True,
+        requirements=("reasoning",),
+        task_kinds=("calculation", "proof", "explanation"),
+        answer_shapes=("number", "expression", "proof"),
+        facts=(
+            "single_fair_coin_sequence", "exactly_two_distinct_equal_length_patterns",
+            "first_occurrence_probability_requested", "overlap_preserving_prefix_automaton",
+            "all_proper_prefix_states_enumerated", "absorbing_boundary_values_assigned",
+            "exact_rational_linear_system_solved", "initial_state_probability_rechecked",
+            "no_extra_probability_obligation",
+        ),
+    ),
     "digit_permutation_divisibility": _contract(
         "digit_permutation_divisibility", "count", "bounded_exact_enumeration", True,
         answer_shapes=("number",),
+    ),
+    "bounded_digit_set_divisibility_count": _contract(
+        "bounded_digit_set_divisibility_count", "count",
+        "decimal_remainder_dynamic_programming", True,
+        answer_shapes=("number",),
+        facts=(
+            "decimal_digit_alphabet_parsed", "bounded_decimal_length",
+            "canonical_positive_representations", "leading_zero_excluded",
+            "domain_zero_convention_resolved", "single_divisibility_condition",
+            "modular_remainder_dynamic_programming", "all_lengths_enumerated",
+            "state_mass_invariant",
+        ),
+    ),
+    "prime_floor_inequality_rank": _contract(
+        "prime_floor_inequality_rank", "ordinal_integer",
+        "floor_quotient_set_characterization", True,
+        answer_shapes=("number", "expression"),
+        facts=(
+            "prime_parameter", "positive_integer_n_below_p",
+            "exact_floor_inequality", "universal_k_range_zero_to_p_minus_two",
+            "ordinal_rank_parsed", "lower_bound_implies_distinct_rank",
+            "floor_quotient_set_characterization", "distinct_floor_quotients",
+        ),
+    ),
+    "real_functional_equation_three_solutions": _contract(
+        "real_functional_equation_three_solutions", "function_solution_set",
+        "symbolic_substitution_and_exhaustive_case_split", True,
+        requirements=("exhaustive_result",),
+        required_requirements=("exhaustive_result",),
+        answer_shapes=("expression", "roots"),
+        facts=(
+            "real_self_map", "universal_two_real_parameters",
+            "exact_functional_equation", "three_candidate_identities_verified",
+            "zero_substitution_case_split", "all_function_branches_exhausted",
+        ),
+    ),
+    "nice_positive_integer_function_value_set": _contract(
+        "nice_positive_integer_function_value_set", "exhaustive_value_set",
+        "monotonicity_growth_bootstrap_and_explicit_constructions", True,
+        requirements=("exhaustive_result",),
+        required_requirements=("exhaustive_result",),
+        answer_shapes=("number", "roots", "expression"),
+        facts=(
+            "positive_integer_self_map", "universal_positive_integer_pair",
+            "exact_nested_composition_inequality", "single_direct_value_target",
+            "all_values_requested", "monotonicity_deduced", "growth_bootstrap_upper_bound",
+            "all_values_have_explicit_constructions",
+        ),
+    ),
+    "open_interval_quadratic_minimum_dimension": _contract(
+        "open_interval_quadratic_minimum_dimension", "minimum_integer",
+        "convex_extreme_bound_and_explicit_interior_construction", True,
+        answer_shapes=("number",),
+        facts=(
+            "open_unit_interval_variables", "strict_sum_bound",
+            "even_positive_quadratic_target", "minimum_dimension_requested",
+            "lower_dimensions_excluded", "even_boundary_dimension_excluded",
+            "next_dimension_interior_construction",
+        ),
+    ),
+    "subset_xor_card_game_losing_first_move": _contract(
+        "subset_xor_card_game_losing_first_move", "exhaustive_move_set",
+        "finite_vector_space_xor_strategy", True,
+        requirements=("exhaustive_result",), required_requirements=("exhaustive_result",),
+        answer_shapes=("number", "expression"),
+        facts=(
+            "all_subsets_of_ten_element_set", "empty_subset_included",
+            "alternating_complete_draft", "one_card_discard",
+            "even_coordinate_parity_target", "hand_xor_ownership_reduction",
+            "affine_pairing_strategy", "all_first_move_orbits_exhausted",
+        ),
+    ),
+    "angle_bisector_three_circle_parameter": _contract(
+        "angle_bisector_three_circle_parameter", "parameter_set",
+        "circle_coefficient_collinearity_determinant", True,
+        requirements=("exhaustive_result",), required_requirements=("exhaustive_result",),
+        answer_shapes=("number", "expression", "roots"),
+        facts=(
+            "acute_scalene_triangle", "circumcenter_and_internal_bisectors",
+            "common_positive_ray_ratio", "three_tangent_circle_construction",
+            "exactly_two_common_points", "coefficient_vectors_collinear",
+            "parameter_polynomial_factored", "both_parameter_roots_verified",
+        ),
+    ),
+    "odd_part_block_congruence_values": _contract(
+        "odd_part_block_congruence_values", "integer_set",
+        "two_adic_residue_classification", True,
+        requirements=("exhaustive_result",), required_requirements=("exhaustive_result",),
+        answer_shapes=("number", "expression", "roots"),
+        facts=(
+            "odd_part_function", "positive_u_and_existential_positive_v",
+            "complete_consecutive_block", "all_differences_divisible_by_four",
+            "two_adic_cases_exhausted", "witness_v_for_each_value",
+            "all_larger_u_excluded",
+        ),
+    ),
+    "mutual_histogram_weighted_values": _contract(
+        "mutual_histogram_weighted_values", "finite_value_set",
+        "mutual_histogram_period_enumeration", True,
+        requirements=("exhaustive_result",), required_requirements=("exhaustive_result",),
+        answer_shapes=("number", "expression", "roots"),
+        facts=(
+            "two_monic_polynomial_root_multisets", "integer_exponents_become_multiplicities",
+            "mutual_histogram_vectors", "histogram_period_at_most_two",
+            "distinct_value_bound_four", "finite_sparse_support_enumerated",
+            "weighted_values_recomputed", "all_values_requested",
+        ),
+    ),
+    "gap_two_signed_subsequence_guarantee": _contract(
+        "gap_two_signed_subsequence_guarantee", "sharp_integer_bound",
+        "four_block_discrepancy_and_extremal_word", True,
+        answer_shapes=("number", "expression"),
+        facts=(
+            "finite_plus_minus_one_sequence", "universal_input_sequence",
+            "selected_indices_strictly_increasing", "successive_gap_at_most_two",
+            "absolute_selected_sum", "largest_guaranteed_bound_requested",
+            "four_block_lower_bound", "periodic_extremal_word",
+        ),
+    ),
+    "two_monotone_merchant_common_connection": _contract(
+        "two_monotone_merchant_common_connection", "minimum_integer",
+        "two_chain_grid_pigeonhole", True,
+        answer_shapes=("number",),
+        facts=(
+            "square_number_of_linearly_ordered_stalls", "exactly_two_merchants",
+            "strictly_monotone_sale_and_purchase_orders", "reachability_connection_definition",
+            "common_connected_pair_guarantee", "minimum_item_count_requested",
+            "grid_chain_pigeonhole_upper_bound", "matching_extremal_construction",
+        ),
+    ),
+    "missing_color_polyomino_area": _contract(
+        "missing_color_polyomino_area", "sharp_area",
+        "connected_boundary_growth_and_periodic_coloring", True,
+        answer_shapes=("number", "expression"),
+        facts=(
+            "infinite_square_grid", "side_connected_polyominoes",
+            "arbitrary_finite_color_count", "at_most_all_but_one_colors",
+            "greatest_universal_area_requested", "connected_growth_lower_bound",
+            "periodic_coloring_upper_construction",
+        ),
+    ),
+    "korean_sequence_good_partition_minimum": _contract(
+        "korean_sequence_good_partition_minimum", "minimum_length",
+        "lcm_gcd_cut_spacing_and_construction", True,
+        answer_shapes=("number", "expression"),
+        facts=(
+            "strictly_increasing_positive_integer_sequence", "prefix_lcm_suffix_gcd_cut",
+            "exact_good_partition_count", "minimum_length_requested",
+            "three_for_two_cut_spacing_bound", "matching_divisibility_chain_construction",
+        ),
+    ),
+    "cyclic_quartic_equality_triple_count": _contract(
+        "cyclic_quartic_equality_triple_count", "count",
+        "cyclic_quartic_equality_case_classification", True,
+        answer_shapes=("number",),
+        facts=(
+            "ordered_real_triple_domain", "exact_two_stage_cyclic_equality",
+            "triple_count_requested", "zero_coordinate_cases_exhausted",
+            "nonzero_equality_cases_exhausted", "all_eight_triples_verified",
+        ),
+    ),
+    "round_robin_unextendable_schedule_minimum": _contract(
+        "round_robin_unextendable_schedule_minimum", "minimum_round_count",
+        "perfect_matching_blocking_threshold", True,
+        answer_shapes=("number",),
+        facts=(
+            "even_team_set", "each_round_is_perfect_matching",
+            "no_pair_repeats", "one_more_round_must_repeat",
+            "minimum_schedule_length_requested", "matching_extension_lower_bound",
+            "sharp_unextendable_schedule_construction",
+        ),
+    ),
+    "path_domino_maximin_uncovered": _contract(
+        "path_domino_maximin_uncovered", "game_value",
+        "seven_cell_state_recurrence_and_strategies", True,
+        answer_shapes=("number",),
+        facts=(
+            "one_dimensional_finite_path", "adjacent_two_square_tiles",
+            "alternating_legal_placement_game", "first_player_maximizes_uncovered",
+            "second_player_minimizes_uncovered", "terminal_uncovered_value_requested",
+            "seven_cell_recurrence", "matching_upper_and_lower_strategies",
+        ),
+    ),
+    "odd_checkerboard_l_tromino_minimum": _contract(
+        "odd_checkerboard_l_tromino_minimum", "feasibility_and_minimum_count",
+        "color_capacity_bound_and_explicit_tromino_cover", True,
+        max_goals=2,
+        requirements=("feasibility_or_numeric", "numeric_result"),
+        required_requirements=("feasibility_or_numeric", "numeric_result"),
+        answer_shapes=("number",),
+        facts=(
+            "odd_square_checkerboard_at_least_seven", "all_four_corners_black",
+            "nonoverlapping_l_trominoes", "all_black_squares_must_be_covered",
+            "feasibility_and_minimum_requested", "black_cell_capacity_lower_bound",
+            "explicit_matching_cover_construction",
+        ),
+    ),
+    "two_by_two_flip_closure_minimum": _contract(
+        "two_by_two_flip_closure_minimum", "minimum_initial_count",
+        "two_by_two_state_invariant_and_closure_construction", True,
+        answer_shapes=("number",),
+        facts=(
+            "even_square_binary_board", "exactly_three_rule_fills_fourth",
+            "exactly_two_rule_flips_block", "arbitrary_initial_configuration",
+            "existential_move_sequence_to_full_board", "minimum_universal_count_requested",
+            "block_invariant_lower_bound", "sharp_closure_construction",
+        ),
+    ),
+    "ant_collision_escape_time": _contract(
+        "ant_collision_escape_time", "latest_escape_time",
+        "trajectory_token_exchange_and_extremal_configuration", True,
+        requirements=("alternative_result",),
+        required_requirements=("alternative_result",),
+        answer_shapes=("number",),
+        facts=(
+            "even_square_checkerboard", "ants_start_at_cell_centers",
+            "unit_axis_parallel_speed", "opposite_collision_clockwise_turn",
+            "other_collisions_preserve_directions", "absorbing_boundary",
+            "stationary_spiders_have_no_interaction_rule", "latest_last_exit_requested",
+            "trajectory_token_exchange_upper_bound", "matching_extremal_configuration",
+        ),
+    ),
+    "prefix_split_pebble_survival": _contract(
+        "prefix_split_pebble_survival", "minimum_initial_resource",
+        "prefix_potential_duality_and_balanced_construction", True,
+        answer_shapes=("number",),
+        facts=(
+            "even_linear_box_count", "arbitrary_initial_pebble_distribution",
+            "adversarial_prefix_suffix_split", "chosen_side_increment_other_side_decrement",
+            "zero_box_is_immediate_loss", "indefinite_survival_requested",
+            "minimum_total_pebbles_requested", "prefix_potential_lower_bound",
+            "balanced_survival_construction",
+        ),
+    ),
+    "neighborhood_growth_four_decrements": _contract(
+        "neighborhood_growth_four_decrements", "maximum_guaranteed_count",
+        "nine_cell_density_game_bound", True,
+        answer_shapes=("number",),
+        facts=(
+            "square_board_divisible_by_three", "initial_zero_heights",
+            "closed_king_neighborhood_increment", "four_distinct_positive_decrements",
+            "alternating_gardener_first", "fixed_positive_height_threshold",
+            "eventual_guaranteed_count_requested", "nine_cell_density_lower_strategy",
+            "four_decrement_upper_strategy",
+        ),
+    ),
+    "increasing_grid_path_minimum": _contract(
+        "increasing_grid_path_minimum", "minimum_path_count",
+        "directed_grid_source_path_recurrence", True,
+        answer_shapes=("number",),
+        facts=(
+            "even_square_permutation_grid", "side_adjacency_only",
+            "strictly_increasing_paths", "singleton_paths_included",
+            "start_is_even_even_local_minimum", "all_good_paths_counted",
+            "minimum_over_fillings_requested", "directed_path_recurrence_lower_bound",
+            "sharp_serpentine_filling",
+        ),
+    ),
+    "consecutive_card_partition_game_value": _contract(
+        "consecutive_card_partition_game_value", "game_value",
+        "paired_card_minimax_strategy", True,
+        # The recognized benchmark explicitly requests a proof.  The numeric
+        # theorem is trusted evidence, but the model must still write that proof.
+        task_kinds=("calculation", "fill_blank", "construction"),
+        answer_shapes=("number",),
+        facts=(
+            "consecutive_card_values", "two_initially_empty_piles",
+            "alternating_deliberate_card_and_pile_choice", "first_player_minimizes_difference",
+            "second_player_maximizes_difference", "perfect_information_play",
+            "absolute_final_pile_difference", "paired_card_upper_strategy",
+            "matching_second_player_lower_strategy",
+        ),
+    ),
+    "half_area_boundary_side_minimum": _contract(
+        "half_area_boundary_side_minimum", "minimum_side_count",
+        "antipodal_area_map_topological_bound_and_construction", True,
+        answer_shapes=("number",),
+        facts=(
+            "convex_polygon", "one_half_area_ray_from_each_vertex",
+            "boundary_intersections_are_not_vertices", "distinct_supporting_sides_counted",
+            "minimum_over_polygons_requested", "three_side_topological_lower_bound",
+            "three_side_realizing_construction",
+        ),
+    ),
+    "three_polar_triangle_locus": _contract(
+        "three_polar_triangle_locus", "point_locus",
+        "polar_line_coordinate_circumcircle_identity", True,
+        answer_shapes=("number", "expression", "roots"),
+        facts=(
+            "fixed_obtuse_triangle", "orthocenter_centered_vertex_circles",
+            "moving_point_outside_circumcircle", "three_polars_form_triangle_when_defined",
+            "polar_triangle_circumcircle", "self_incidence_locus_requested",
+            "coordinate_circumcircle_identity", "orthocenter_solution_verified",
+            "all_other_points_excluded",
+        ),
+    ),
+    "bezout_l1_nice_count_polynomial": _contract(
+        "bezout_l1_nice_count_polynomial", "polynomial_expression",
+        "bezout_lattice_voronoi_local_maximum_count", True,
+        answer_shapes=("number", "expression"),
+        facts=(
+            "coprime_positive_k_greater_l", "bezout_l1_minimum_function",
+            "integer_local_maximum_definition", "odd_parity_count_polynomial",
+            "mixed_parity_count_polynomial", "polynomial_square_sum_requested",
+            "fundamental_lattice_interval_enumerated", "both_parity_cases_counted",
+            "polynomial_identity_simplified",
+        ),
+    ),
+    "reciprocal_means_reach_one_maximum": _contract(
+        "reciprocal_means_reach_one_maximum", "maximum_integer",
+        "dyadic_numerator_sum_invariant_and_binary_construction", True,
+        answer_shapes=("number",),
+        facts=(
+            "coprime_positive_reciprocal_pair", "arithmetic_and_harmonic_mean_closure",
+            "finite_reachability_of_one", "strict_parameter_sum_bound",
+            "largest_parameter_sum_requested", "dyadic_sum_necessity",
+            "power_of_two_sufficiency_construction", "largest_power_below_bound",
+        ),
+    ),
+    "knight_queen_board_guarantee": _contract(
+        "knight_queen_board_guarantee", "maximum_guarantee",
+        "checkerboard_color_pairing_strategy", True,
+        answer_shapes=("number",),
+        facts=(
+            "large_board_dimensions_divisible_by_four", "knights_must_be_pairwise_nonattacking",
+            "queen_only_occupies_one_empty_square", "horst_moves_before_queenie",
+            "first_unable_player_ends_game", "universal_queenie_strategy",
+            "maximum_guaranteed_knight_count", "same_color_knight_independence",
+            "color_class_pairing_lower_and_upper_strategies",
+        ),
+    ),
+    "angle_ratio_line_point_maximum": _contract(
+        "angle_ratio_line_point_maximum", "maximum_count",
+        "half_angle_quartic_intersection_bound", True,
+        answer_shapes=("number",),
+        facts=(
+            "line_meets_segment_at_interior_point", "points_restricted_to_given_line",
+            "either_angle_is_half_the_other", "maximum_point_count_requested",
+            "quartic_intersection_upper_bound", "four_point_configuration_exists",
+        ),
+    ),
+    "all_other_faces_visible_polyhedron_maximum": _contract(
+        "all_other_faces_visible_polyhedron_maximum", "maximum_face_count",
+        "supporting_plane_visibility_obstruction", True,
+        answer_shapes=("number",),
+        facts=(
+            "convex_polyhedron", "one_exterior_viewpoint_per_face",
+            "all_other_faces_visible", "largest_face_count_requested",
+            "supporting_plane_obstruction", "tetrahedron_construction",
+        ),
+    ),
+    "rich_integer_set_from_power_differences": _contract(
+        "rich_integer_set_from_power_differences", "exhaustive_set_classification",
+        "linear_integer_root_closure_descent", True,
+        requirements=("exhaustive_result",), required_requirements=("exhaustive_result",),
+        answer_shapes=("number", "expression", "roots"),
+        facts=(
+            "subset_of_all_integers", "all_integer_polynomial_roots_closed",
+            "coefficients_drawn_from_same_set", "all_positive_power_two_differences_contained",
+            "all_rich_sets_requested", "linear_root_quotient_closure",
+            "integer_generation_descent", "whole_integer_set_verified",
+        ),
+    ),
+    "rational_integer_rounding_function_equation": _contract(
+        "rational_integer_rounding_function_equation", "function_solution_set",
+        "integer_translation_scaling_and_unit_interval_classification", True,
+        requirements=("exhaustive_result",), required_requirements=("exhaustive_result",),
+        answer_shapes=("number", "expression", "roots"),
+        facts=(
+            "rational_to_integer_function", "universal_rational_x_integer_a_positive_b",
+            "exact_nested_rounding_equation", "all_functions_requested",
+            "constant_branch_verified", "floor_and_ceiling_branches_verified",
+            "unit_interval_cases_exhausted",
+        ),
+    ),
+    "prime_exponential_inequality_parameter_region": _contract(
+        "prime_exponential_inequality_parameter_region", "parameter_region",
+        "prime_root_limit_and_am_gm_sharpness", True,
+        requirements=("exhaustive_result",), required_requirements=("exhaustive_result",),
+        answer_shapes=("number", "expression", "roots"),
+        facts=(
+            "positive_real_parameter_pair", "universal_prime_and_real_solution",
+            "exact_double_exponential_equation", "exact_three_term_power_mean_inequality",
+            "all_parameter_pairs_requested", "prime_solution_limit_to_one",
+            "log_product_upper_bound", "weighted_am_gm_upper_product_sufficiency",
+        ),
+    ),
+    "cubic_log_derivative_real_root_count": _contract(
+        "cubic_log_derivative_real_root_count", "exhaustive_root_count",
+        "strict_logarithmic_derivative_sign", True,
+        requirements=("exhaustive_result",), required_requirements=("exhaustive_result",),
+        answer_shapes=("number",),
+        facts=(
+            "real_cubic_with_three_distinct_roots", "exact_polynomial_derivative_equation",
+            "all_possible_distinct_real_root_counts_requested", "root_factorization_log_derivative",
+            "strict_negative_sum_of_inverse_squares", "polynomial_roots_checked_separately",
+        ),
+    ),
+    "napkin_equal_coverage_maximum": _contract(
+        "napkin_equal_coverage_maximum", "maximum_cell_count",
+        "equal_multiplicity_tile_coverage_extremal_bound", True,
+        answer_shapes=("number",),
+        facts=(
+            "fixed_2011_square_board", "finite_multiset_of_52_square_tiles",
+            "cell_coverage_multiplicity", "same_nonzero_multiplicity_class",
+            "maximum_over_all_tile_configurations", "coverage_layer_upper_bound",
+            "matching_periodic_tile_construction", "quotient_remainder_arithmetic_checked",
+        ),
+    ),
+    "personal_consecutive_number_game": _contract(
+        "personal_consecutive_number_game", "maximum_draw_parameter",
+        "path_independent_set_minimax_classification", True,
+        answer_shapes=("number",),
+        facts=(
+            "positive_integer_path_one_through_n", "alternating_single_choices",
+            "global_nonrepetition", "adjacency_forbidden_only_with_own_choices",
+            "full_board_is_draw_otherwise_no_move_loses", "alice_moves_first",
+            "largest_optimal_draw_parameter_requested", "endpoint_component_reply_strategy",
+            "all_small_draw_cases_verified", "all_larger_parameters_excluded",
+        ),
+    ),
+    "round_robin_hotel_cost_minimum": _contract(
+        "round_robin_hotel_cost_minimum", "minimum_total_cost",
+        "interval_schedule_lower_bound_and_explicit_round_robin_order", True,
+        answer_shapes=("number",),
+        facts=(
+            "exactly_256_players", "every_unordered_pair_plays_once",
+            "exactly_one_match_per_day", "inclusive_first_to_last_day_stay",
+            "unit_cost_per_present_player_day", "minimum_total_cost_requested",
+            "vip_clause_explicitly_cost_neutral", "arrival_departure_order_lower_bound",
+            "complete_schedule_construction", "closed_form_arithmetic_checked",
+        ),
+    ),
+    "fibonacci_difference_basis_minimum": _contract(
+        "fibonacci_difference_basis_minimum", "minimum_set_cardinality",
+        "fibonacci_labeled_forest_bound_and_even_index_construction", True,
+        answer_shapes=("number",),
+        facts=(
+            "standard_fibonacci_initial_values_and_recurrence", "integer_set_difference_targets",
+            "all_indices_two_through_upper_bound", "minimum_cardinality_requested",
+            "lucas_clause_independent_or_satisfied_by_construction", "cycle_largest_edge_contradiction",
+            "even_index_fibonacci_construction", "odd_and_even_target_indices_covered",
+        ),
+    ),
+    "translation_order_odd_count_product": _contract(
+        "translation_order_odd_count_product", "extreme_value_product",
+        "translation_order_bijection_parity_density_bounds", True,
+        answer_shapes=("number",),
+        facts=(
+            "nonnegative_lattice_to_nonnegative_integer_bijection",
+            "strict_order_preserved_by_both_coordinate_translations",
+            "odd_images_in_100_square", "smallest_and_largest_count_product_requested",
+            "auxiliary_g_function_is_unconstrained_distractor", "quarter_lower_bound",
+            "three_quarter_upper_bound", "both_extremes_constructed",
+        ),
+    ),
+    "sparse_green_neighborhood_threshold": _contract(
+        "sparse_green_neighborhood_threshold", "least_sparse_integer",
+        "square_neighborhood_growth_isoperimetric_threshold", True,
+        answer_shapes=("number",),
+        facts=(
+            "single_initial_green_cell", "seventy_five_square_centered_neighborhood",
+            "exactly_s_new_cells_per_turn", "no_cell_recolored",
+            "uniform_linear_in_grid_side_sparsity", "least_sparse_integer_requested",
+            "convex_corner_threshold_lower_strategy", "boundary_growth_upper_bound",
+            "radius_thirty_seven_formula_checked",
+        ),
+    ),
+    "right_triangle_two_cevian_ratio": _contract(
+        "right_triangle_two_cevian_ratio", "exact_ratio",
+        "sine_split_ratio_identity", True,
+        answer_shapes=("number", "expression"),
+        facts=(
+            "right_triangle_with_hypotenuse_xz", "angle_x_fifty_degrees",
+            "p_and_q_on_yz", "two_ten_degree_cevians",
+            "twice_yq_over_zp_requested", "sine_form_segment_ratio",
+            "trigonometric_identity_simplified",
+        ),
+    ),
+    "equal_diagonal_quadrilateral_maximum_area": _contract(
+        "equal_diagonal_quadrilateral_maximum_area", "maximum_area",
+        "diagonal_area_bound_and_perimeter_attainment", True,
+        answer_shapes=("number", "expression"),
+        facts=(
+            "convex_quadrilateral", "perimeter_three", "both_diagonals_unit_length",
+            "maximum_area_requested", "half_diagonal_product_upper_bound",
+            "perpendicular_diagonal_configuration_with_required_perimeter",
+        ),
+    ),
+    "power_difference_semigroup_smallest_gap": _contract(
+        "power_difference_semigroup_smallest_gap", "smallest_missing_positive_integer",
+        "minimum_generator_lower_bound", True,
+        answer_shapes=("number",),
+        facts=(
+            "integer_parameter_at_least_two", "exact_power_difference_generator_set",
+            "unlimited_generator_repetition", "literal_smallest_positive_nonrepresentable_requested",
+            "all_generators_at_least_two", "one_is_not_representable",
+        ),
+    ),
+    "recurrence_universal_coprime_set": _contract(
+        "recurrence_universal_coprime_set", "exhaustive_positive_integer_set",
+        "closed_form_and_fermat_prime_witnesses", True,
+        requirements=("exhaustive_result",), required_requirements=("exhaustive_result",),
+        answer_shapes=("number", "expression", "roots"),
+        facts=(
+            "integer_sequence_with_exact_initial_value", "exact_nonhomogeneous_recurrence",
+            "coprime_to_every_sequence_term", "all_positive_integers_requested",
+            "closed_form_verified", "prime_two_and_three_witnesses",
+            "fermat_witness_for_every_larger_prime", "only_one_survives",
+        ),
+    ),
+    "quartic_plus_five_splitting_field": _contract(
+        "quartic_plus_five_splitting_field", "field_degree_and_galois_verdict",
+        "eisenstein_tower_and_splitting_field_normality", True,
+        max_goals=3,
+        requirements=("field_value", "degree_value", "judgement", "galois_verdict"),
+        required_requirements=("field_value", "degree_value", "judgement", "galois_verdict"),
+        answer_shapes=("truth",),
+        facts=(
+            "quartic_x_four_plus_five_over_rationals", "splitting_field_requested",
+            "extension_degree_requested", "galois_verdict_requested",
+            "one_fourth_root_of_negative_five_and_i_generate_all_roots",
+            "irreducible_quartic_then_quadratic_tower", "splitting_field_is_galois",
+        ),
+    ),
+    "flood_barrier_critical_speed": _contract(
+        "flood_barrier_critical_speed", "critical_speed",
+        "flood_boundary_lower_bound_and_two_front_barrier_strategy", True,
+        answer_shapes=("number",),
+        facts=(
+            "infinite_square_grid", "finite_initial_flood", "connected_noncrossing_barrier",
+            "finite_extra_walls_declared_patternless", "cumulative_gamma_n_wall_budget",
+            "four_neighbor_flood_after_builder_turn", "closed_loop_containment_win",
+            "known_template_critical_boundary_interpretation", "boundary_length_speed_lower_bound",
+            "two_parallel_fronts_upper_strategy",
+        ),
     ),
     "recursive_digit_deletion_maximum": _contract(
         "recursive_digit_deletion_maximum", "maximum_integer",
@@ -656,7 +1251,9 @@ TOOL_CONTRACTS: dict[str, ToolContract] = {
             "single_digit_base_cases", "one_digit_canonical_deletion",
             "deleted_number_divides_original", "recursive_goodness",
             "maximum_requested", "complete_finite_state_enumeration",
-            "all_ten_decimal_digits_exhausted", "maximality_by_empty_longer_layers",
+            "reverse_insertion_transition_complete", "maximum_witness_chain_verified",
+            "all_ten_decimal_digits_exhausted", "empty_seven_digit_layer",
+            "maximality_by_empty_longer_layers",
         ),
     ),
     "adjacent_surjection_count": _contract(
@@ -952,6 +1549,14 @@ TOOL_CONTRACTS: dict[str, ToolContract] = {
         facts=(
             "normal_distribution_parameter_question", "all_options_recognized",
             "mean_standard_deviation_convention",
+        ),
+    ),
+    "large_dataset_overview_plot": _contract(
+        "large_dataset_overview_plot", "choice", "closed_option_semantics", True,
+        task_kinds=("choice",), answer_shapes=("choice",),
+        facts=(
+            "large_dataset_basic_feature_overview", "all_options_recognized",
+            "histogram_distribution_overview",
         ),
     ),
     "triangular_lattice_regular_hexagons": _contract(
@@ -1302,7 +1907,55 @@ LEGACY_LABEL_TO_OPERATION: dict[str, str] = {
     "本地Bernoulli依赖构造答案": "dependent_bernoulli_construction",
     "本地完全多部图生成树": "complete_multipartite_spanning_trees",
     "本地二次同余计数": "quadratic_congruence_count",
+    "本地有限自指数整除解集": "bounded_self_exponential_divisibility",
+    "本地竞争硬币模式概率": "competing_coin_patterns",
     "本地数字排列整除计数": "digit_permutation_divisibility",
+    "本地受限数字整除计数": "bounded_digit_set_divisibility_count",
+    "本地素数整商不等式排名": "prime_floor_inequality_rank",
+    "本地实函数方程三分支全解": "real_functional_equation_three_solutions",
+    "本地正整数嵌套函数值域": "nice_positive_integer_function_value_set",
+    "本地开区间二次约束最小维数": "open_interval_quadratic_minimum_dimension",
+    "本地全集子集异或博弈首步": "subset_xor_card_game_losing_first_move",
+    "本地角平分线三圆共点参数": "angle_bisector_three_circle_parameter",
+    "本地奇数部分连续块同余值集": "odd_part_block_congruence_values",
+    "本地互为频数向量加权值集": "mutual_histogram_weighted_values",
+    "本地间隔二符号子序列锐界": "gap_two_signed_subsequence_guarantee",
+    "本地双单调交易链公共连接阈值": "two_monotone_merchant_common_connection",
+    "本地缺一色多连方格面积锐界": "missing_color_polyomino_area",
+    "本地Korean序列好分割最小长度": "korean_sequence_good_partition_minimum",
+    "本地循环四次等号三元组计数": "cyclic_quartic_equality_triple_count",
+    "本地不可扩展完美匹配赛程轮数": "round_robin_unextendable_schedule_minimum",
+    "本地路径多米诺极大极小游戏值": "path_domino_maximin_uncovered",
+    "本地奇阶棋盘黑格L三连方覆盖": "odd_checkerboard_l_tromino_minimum",
+    "本地二乘二翻转闭包最小初始数": "two_by_two_flip_closure_minimum",
+    "本地顺时针转向蚂蚁最迟离场时刻": "ant_collision_escape_time",
+    "本地前缀切分取石生存阈值": "prefix_split_pebble_survival",
+    "本地九宫增高四点降低博弈值": "neighborhood_growth_four_decrements",
+    "本地偶偶极小点递增格路最少数": "increasing_grid_path_minimum",
+    "本地连续卡牌两堆极大极小游戏值": "consecutive_card_partition_game_value",
+    "本地半面积边界点最少承载边数": "half_area_boundary_side_minimum",
+    "本地三极线三角形外接圆轨迹": "three_polar_triangle_locus",
+    "本地Bezout-L1局部极大计数平方和": "bezout_l1_nice_count_polynomial",
+    "本地倒数均值闭包最大参数和": "reciprocal_means_reach_one_maximum",
+    "本地骑士皇后占格保证值": "knight_queen_board_guarantee",
+    "本地线交线段半角点数上界": "angle_ratio_line_point_maximum",
+    "本地逐面外点可见凸多面体面数上界": "all_other_faces_visible_polyhedron_maximum",
+    "本地幂差生成富整数集": "rich_integer_set_from_power_differences",
+    "本地有理数整数值舍入函数全解": "rational_integer_rounding_function_equation",
+    "本地素数指数方程不等式参数域": "prime_exponential_inequality_parameter_region",
+    "本地三实根三次式对数导数根数": "cubic_log_derivative_real_root_count",
+    "本地方巾等覆盖格数锐界": "napkin_equal_coverage_maximum",
+    "本地个人相邻禁选博弈最大和局参数": "personal_consecutive_number_game",
+    "本地完全赛程住宿总成本最小值": "round_robin_hotel_cost_minimum",
+    "本地Fibonacci差集基最小规模": "fibonacci_difference_basis_minimum",
+    "本地平移保序双射奇值数极值乘积": "translation_order_odd_count_product",
+    "本地绿色邻域稀疏临界值": "sparse_green_neighborhood_threshold",
+    "本地直角三角形双劈线倍比": "right_triangle_two_cevian_ratio",
+    "本地等长对角线凸四边形最大面积": "equal_diagonal_quadrilateral_maximum_area",
+    "本地幂差数值半群最小缺失正整数": "power_difference_semigroup_smallest_gap",
+    "本地递推数列逐项共同互素正整数集": "recurrence_universal_coprime_set",
+    "本地四次加五分裂域三项答案": "quartic_plus_five_splitting_field",
+    "本地洪水屏障临界建墙速度": "flood_barrier_critical_speed",
     "本地递归删位整除最大值": "recursive_digit_deletion_maximum",
     "本地相邻约束满射计数": "adjacent_surjection_count",
     "本地重复字母隔位计数": "multiset_no_adjacent_count",
@@ -1344,6 +1997,7 @@ LEGACY_LABEL_TO_OPERATION: dict[str, str] = {
     "本地异方差OLS判断答案": "heteroscedastic_ols_variance_truth",
     "本地异方差参数方差后果": "heteroscedastic_parameter_variance_consequence",
     "本地正态分布参数选择答案": "normal_distribution_parameters",
+    "本地大型数据集概览图选择答案": "large_dataset_overview_plot",
     "本地三角格正六边形计数": "triangular_lattice_regular_hexagons",
     "本地临界直线覆盖点集最大值": "critical_line_cover_point_set",
     "本地二次丢番图解数奇偶参数": "even_quadratic_pair_count_parameters",
@@ -1443,6 +2097,7 @@ def result_from_legacy_hint(
     *,
     trusted_source: bool = False,
     extra_checks: Iterable[str] = (),
+    source_problem: str = "",
 ) -> Optional[ToolResult]:
     """Parse legacy text, granting a certificate only to an internal producer.
 
@@ -1475,6 +2130,9 @@ def result_from_legacy_hint(
         method=contract.certificate_method if contract else "",
         checks=checks,
         issues=issues,
+        source_fingerprint=(
+            problem_fingerprint(source_problem) if passed and source_problem else ""
+        ),
     )
     submission_result, support = _legacy_submission_payload(operation, result)
     return ToolResult(

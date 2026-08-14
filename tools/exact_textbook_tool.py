@@ -240,12 +240,20 @@ _NORMAL_PARAMETER_MEANINGS = {
     ),
 }
 
+_DATA_OVERVIEW_PLOT_MEANINGS = {
+    "histogram": _canonical_set("直方图", "histogram"),
+    "scatter_plot": _canonical_set("散点图", "scatter plot"),
+    "box_plot": _canonical_set("箱线图", "box plot", "boxplot"),
+    "line_chart": _canonical_set("折线图", "line chart", "line plot"),
+}
+
 
 class ExactTextbookTool:
     """Generate deterministic hints only for fully recognized textbook prompts."""
 
     _HANDLERS: tuple[str, ...] = (
         "_normal_distribution_parameters",
+        "_large_dataset_overview_plot",
         "_square_dihedral_facts",
         "_lebesgue_integrability_facts",
         "_compact_real_facts",
@@ -288,6 +296,20 @@ class ExactTextbookTool:
             meanings=_NORMAL_PARAMETER_MEANINGS,
             selected_meanings=frozenset({"mean_standard_deviation"}),
             label="本地正态分布参数选择答案",
+        )
+
+    @staticmethod
+    def _large_dataset_overview_plot(problem: str) -> Optional[str]:
+        return _closed_choice_hint(
+            problem,
+            prefixes=_canonical_set(
+                "对于一个大型数据集，为了快速了解数据的基本特征，以下哪种统计图形最为合适？（）",
+                "对于一个大型数据集，为了快速了解数据的基本特征，以下哪种统计图形最为合适",
+                "Which statistical plot is most suitable for quickly understanding the basic features of a large data set?",
+            ),
+            meanings=_DATA_OVERVIEW_PLOT_MEANINGS,
+            selected_meanings=frozenset({"histogram"}),
+            label="本地大型数据集概览图选择答案",
         )
 
     @staticmethod

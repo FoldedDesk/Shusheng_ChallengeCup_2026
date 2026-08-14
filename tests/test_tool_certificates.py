@@ -7,6 +7,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from tools.sympy_tool import SympyTool
 from tools.tool_contract import result_from_legacy_hint
+from classifier.problem_spec import build_problem_spec
+from core.submission_agent import SubmissionAgent
 
 
 AMBIENT = r"计算函数 f(x,y)=x^2+y^2 在圆周 x^2+y^2=1 上的欧氏环境拉普拉斯算子。"
@@ -112,3 +114,14 @@ def test_legacy_text_cannot_self_assert_a_certificate():
 
 def test_legacy_hint_api_remains_available():
     assert SympyTool().hints_for(AMBIENT) == ["本地圆周拉普拉斯: 4"]
+
+
+def test_certificate_is_bound_to_the_problem_that_produced_it():
+    result = _only(AMBIENT)
+    unrelated = build_problem_spec("Calculate 1+1.")
+
+    evidence = SubmissionAgent._tool_evidence([result], unrelated)
+
+    assert len(evidence) == 1
+    assert evidence[0].scope == "subexpression"
+    assert SubmissionAgent._whole_tool_answer(evidence) == ""

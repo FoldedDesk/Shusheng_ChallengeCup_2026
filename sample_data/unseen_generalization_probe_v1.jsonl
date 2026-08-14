@@ -1,0 +1,6 @@
+{"idx":9000,"problem":"Two players alternate rolling a fair six-sided die, with Alice going first. The first player to roll a 6 wins. Find the probability that Alice wins. Remember to put your final answer within \\boxed{}.","answer":"6/11","subject":"概率论","source":"unseen_generalization_probe_v1"}
+{"idx":9001,"problem":"How many binary strings of length 12 contain exactly four 1s and have no two consecutive 1s? Remember to put your final answer within \\boxed{}.","answer":"126","subject":"离散数学","source":"unseen_generalization_probe_v1"}
+{"idx":9002,"problem":"求最小正整数 n，使得 2^8\\cdot 3^5 整除 n^3。请将最终答案写在 \\boxed{} 中。","answer":"72","subject":"数论","source":"unseen_generalization_probe_v1"}
+{"idx":9003,"problem":"A triangle has side lengths 13, 14, and 15. Find its inradius. Remember to put your final answer within \\boxed{}.","answer":"4","subject":"初等几何","source":"unseen_generalization_probe_v1"}
+{"idx":9004,"problem":"求所有连续函数 f:\\mathbb{R}\\to\\mathbb{R}，满足对任意实数 x,y 都有 f(x+y)=f(x)+f(y)，且 f(1)=3。请给出简洁证明，并将结论写在 \\boxed{} 中。","answer":"f(x)=3x","subject":"数学分析","source":"unseen_generalization_probe_v1"}
+{"idx":9005,"problem":"Evaluate \\[\\int_0^{\\infty} \\frac{x^3}{e^x-1}\\,dx.\\] Remember to put your final answer within \\boxed{}.","answer":"\\frac{\\pi^4}{15}","subject":"数学分析","source":"unseen_generalization_probe_v1"}

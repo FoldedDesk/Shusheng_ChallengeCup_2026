@@ -3,6 +3,7 @@ from reasoning.candidate_selector import (
     assess_candidate,
     candidate_consistency_reasons,
 )
+from reasoning.finalizer import Finalizer
 from user_agent import ReasoningAgent
 
 
@@ -175,6 +176,56 @@ def test_terminal_self_correction_of_statistical_target_rejects_first_final():
 
     assert "final_conclusion_conflict" in candidate_consistency_reasons(
         candidate, SIMPLE_SPEC
+    )
+
+
+def test_explicit_answer_followed_by_unresolved_self_retraction_is_rejected():
+    candidate = (
+        r"FINAL: \boxed{384}" "\n"
+        "If a separate count gives 256, my calculation is wrong or the interpretation is off. "
+        r"\boxed{384}"
+    )
+
+    assessment = assess_candidate(candidate, "solve", SIMPLE_SPEC, ())
+
+    assert assessment.validation_tier == "rejected"
+    assert "unresolved_self_retraction" in assessment.rejected_reasons
+
+
+def test_later_explicit_corrected_answer_resolves_retraction_marker():
+    candidate = (
+        r"FINAL: \boxed{5}" "\n"
+        "My calculation was wrong.\n"
+        r"Corrected answer: \boxed{4}"
+    )
+
+    assert not Finalizer.has_unresolved_self_retraction(candidate)
+
+
+def test_empty_correction_label_does_not_resolve_retraction_marker():
+    candidate = (
+        r"FINAL: \boxed{5}" "\n"
+        "My calculation was wrong.\n"
+        "Corrected answer:"
+    )
+
+    assert Finalizer.has_unresolved_self_retraction(candidate)
+
+
+def test_rejecting_a_discarded_branch_is_not_a_self_retraction():
+    english = (
+        r"FINAL: \boxed{x=2}. "
+        "If x=1, it is wrong because it violates the original equation."
+    )
+    chinese = r"FINAL: \boxed{x=2}。若取 x=1，这个不对，因此排除该分支。"
+
+    assert not Finalizer.has_unresolved_self_retraction(english)
+    assert not Finalizer.has_unresolved_self_retraction(chinese)
+
+
+def test_bare_unresolved_retraction_is_still_rejected():
+    assert Finalizer.has_unresolved_self_retraction(
+        r"FINAL: \boxed{x=2}. This is incorrect."
     )
 
 

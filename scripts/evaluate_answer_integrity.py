@@ -53,6 +53,10 @@ def evaluate(input_file: Path, output_dir: Path) -> dict:
     missing_required_goal_indices: list[str] = []
     certified_tool_route_indices: list[str] = []
     certified_tool_answer_hits = 0
+    certified_tool_miss_indices: list[str] = []
+    model_route_indices: list[str] = []
+    model_route_answer_hits = 0
+    model_route_miss_indices: list[str] = []
     projected_semantic_miss_indices: list[str] = []
     sympy = SympyTool()
     sources: dict[str, int] = {}
@@ -118,7 +122,15 @@ def evaluate(input_file: Path, output_dir: Path) -> dict:
             certified_tool_route_indices.append(idx)
             tool_hit = equivalent_answers(tool_answer, item["answer"])
             certified_tool_answer_hits += int(tool_hit)
+            if not tool_hit:
+                certified_tool_miss_indices.append(idx)
             semantic_hit = semantic_hit or tool_hit
+        else:
+            model_route_indices.append(idx)
+            model_hit = equivalent_answers(final_response, item["answer"])
+            model_route_answer_hits += int(model_hit)
+            if not model_hit:
+                model_route_miss_indices.append(idx)
         if not semantic_hit:
             projected_semantic_miss_indices.append(idx)
         corrected_selected += int(selected.get("verification_verdict") == "corrected")
@@ -151,7 +163,20 @@ def evaluate(input_file: Path, output_dir: Path) -> dict:
         "missing_required_goal_indices": missing_required_goal_indices,
         "certified_tool_route_count": len(certified_tool_route_indices),
         "certified_tool_answer_hits": certified_tool_answer_hits,
+        "certified_tool_answer_accuracy": (
+            certified_tool_answer_hits / len(certified_tool_route_indices)
+            if certified_tool_route_indices else None
+        ),
+        "certified_tool_miss_indices": certified_tool_miss_indices,
         "certified_tool_route_indices": certified_tool_route_indices,
+        "model_route_count": len(model_route_indices),
+        "model_route_answer_hits": model_route_answer_hits,
+        "model_route_answer_accuracy": (
+            model_route_answer_hits / len(model_route_indices)
+            if model_route_indices else None
+        ),
+        "model_route_indices": model_route_indices,
+        "model_route_miss_indices": model_route_miss_indices,
         "projected_semantic_hits_with_current_tools": processed - len(projected_semantic_miss_indices),
         "projected_semantic_miss_indices": projected_semantic_miss_indices,
     }

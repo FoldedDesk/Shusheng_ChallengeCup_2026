@@ -42,8 +42,43 @@ class Finalizer:
         r"\boptional\s+(?:brief\s+)?note\b|"
         r"\[\s*(?:explanation|proof|reasoning|derivation|answer|content)(?:\s+text)?\s*\]|"
         r"\[(?:note|method|check)\.[^\]\n]+\]|必查字段|"
-        r"让我(?:验证|确认|组织)|我(?:需要|应该)|输出时)",
+        r"\blet(?:'s| us)\s+(?:assemble|compose)\s+(?:the\s+)?(?:final\s+)?(?:text|answer|response)\b|"
+        r"(?im:^\s*first\s+line\s*[:：])|\bthen\s+(?:the\s+)?(?:proof|argument|explanation)\b|"
+        r"\bi\s+(?:will|'ll)\s+formulate\b|"
+        r"让我(?:验证|确认|组织)|我(?:需要|应该)|输出时|"
+        r"(?:现在|下面)?(?:组装|组织)(?:最终)?(?:文本|答案|回复)|第一行\s*[:：]|然后写(?:证明|论证|解释))",
         re.IGNORECASE,
+    )
+    _SELF_RETRACTION = re.compile(
+        r"\b(?:my|our)\s+(?:calculation|computation|answer|result|derivation|reasoning)\s+"
+        r"(?:is|was|may\s+be|might\s+be)\s+(?:wrong|incorrect|not\s+correct|off)\b|"
+        r"\b(?:my|our|the)\s+interpretation\b[^.!?\n]{0,40}\b(?:is|was|seems?)\s+off\b|"
+        r"\b(?:this|that|it)\s+needs?\s+(?:a\s+)?correction\b|"
+        r"\b(?:this|that|the)\s+(?:check|calculation|computation|argument|proof|derivation)\s+"
+        r"needs?\s+(?:a\s+)?correction\b|"
+        r"\b(?:this|that|the)\b[^.!?\n]{0,50}\bneeds?\s+(?:a\s+)?correction\b|"
+        r"\bi\s+(?:may|might)\s+have\b|"
+        r"\b(?:which|what)\s+(?:answer|result|value)\s+is\s+correct\b|"
+        r"此处(?:仍)?需(?:要)?修正|这里(?:仍)?需(?:要)?修正|需要修正|"
+        r"(?:我的|上述|前述)?(?:计算|推导|答案|结果|结论)(?:可能)?(?:有误|不对)|"
+        r"(?:这个|这里|此处)(?:结论|结果|答案|推导)不对|我(?:可能|也许)(?:算错|漏掉|忽略|有误)|"
+        r"(?:究竟|到底)(?:哪个|哪一个)?(?:答案|结果|数值)(?:才)?(?:正确|对)",
+        re.IGNORECASE,
+    )
+    _AMBIGUOUS_SELF_RETRACTION = re.compile(
+        r"\b(?:this|that|it)\s+(?:is|was)\s+(?:incorrect|not\s+correct|wrong)\b|"
+        r"(?:这个|这里|此处)不对",
+        re.IGNORECASE,
+    )
+    _DISCARDED_BRANCH_CONTEXT = re.compile(
+        r"\b(?:if|when|assuming|suppose|discarded|rejected|alternative|branch|case|"
+        r"candidate|root)\b|若|假设|排除|舍去|另一分支|该分支|此分支|候选根|这种情形",
+        re.IGNORECASE,
+    )
+    _CORRECTION_RESOLUTION = re.compile(
+        r"(?im)(?:^\s*(?:FINAL(?:\s+ANSWER)?|【\s*最终答案\s*】|最终答案)\s*[:：=]|"
+        r"\bcorrected\s+(?:final\s+)?answer\s*[:：=]|(?:更正|修正)后(?:的)?(?:最终)?答案\s*[:：为=])"
+        r"[ \t]*(?:\\boxed\{[^\n]+\}|[^\s\n][^\n]*)"
     )
 
     @staticmethod
@@ -138,6 +173,30 @@ class Finalizer:
     @staticmethod
     def contains_meta(value: str) -> bool:
         return bool(Finalizer._META.search(str(value or "")))
+
+    @staticmethod
+    def has_unresolved_self_retraction(value: str) -> bool:
+        """Detect a candidate that disowns its result without a later final correction."""
+        text = str(value or "")
+        matches = list(Finalizer._SELF_RETRACTION.finditer(text))
+        for match in Finalizer._AMBIGUOUS_SELF_RETRACTION.finditer(text):
+            sentence_start = max(
+                text.rfind(marker, 0, match.start())
+                for marker in (".", "!", "?", "。", "！", "？", "\n")
+            ) + 1
+            sentence_ends = [
+                position
+                for marker in (".", "!", "?", "。", "！", "？", "\n")
+                if (position := text.find(marker, match.end())) >= 0
+            ]
+            sentence_end = min(sentence_ends) if sentence_ends else len(text)
+            sentence = text[sentence_start:sentence_end]
+            if not Finalizer._DISCARDED_BRANCH_CONTEXT.search(sentence):
+                matches.append(match)
+        if not matches:
+            return False
+        last_match = max(matches, key=lambda item: item.start())
+        return not Finalizer._CORRECTION_RESOLUTION.search(text, last_match.end())
 
     @staticmethod
     def extract_solution(candidate: str) -> str:
@@ -277,6 +336,8 @@ class Finalizer:
             reasons.append("meta_text")
         if Finalizer._META.search(value):
             reasons.append("meta_text")
+        if Finalizer.has_unresolved_self_retraction(value):
+            reasons.append("unresolved_self_retraction")
         if not re.search(r"[\w\u4e00-\u9fff=+\-*/^\\]", value):
             reasons.append("meaningless_fragment")
         if re.fullmatch(r"[\\`'\"\s]+", value):
@@ -304,6 +365,8 @@ class Finalizer:
             reasons.append("unclosed_latex_brace")
         if not Finalizer._balanced_group_delimiters(value):
             reasons.append("unclosed_group_delimiter")
+        if Finalizer._unescaped_count(value, '"') % 2 or value.count("“") != value.count("”"):
+            reasons.append("unclosed_quote")
         if re.search(r"[,，:：;；=+*/^\\]\s*$", value):
             reasons.append("trailing_fragment")
         last_line = next((line.strip() for line in reversed(value.splitlines()) if line.strip()), "")

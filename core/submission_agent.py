@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from dataclasses import replace
 import inspect
 from pathlib import Path
 import re
@@ -22,11 +23,12 @@ from reasoning.candidate_selector import (
 from reasoning.finalizer import ExtractionResult, Finalizer
 from reasoning.math_equivalence import equivalent_answers
 from tools.sympy_tool import SympyTool
-from tools.tool_contract import ToolResult, result_from_legacy_hint
+from tools.tool_contract import ToolResult, problem_fingerprint, result_from_legacy_hint
 
 
 SUBMISSION_SOFT_BUDGET_SECONDS = 270
 OPTIONAL_CALL_MIN_REMAINING_SECONDS = 135
+TRUNCATED_RECOVERY_MIN_REMAINING_SECONDS = 30
 
 
 class SubmissionAgent:
@@ -46,7 +48,32 @@ class SubmissionAgent:
         cards = self.retriever.retrieve(spec) if self._should_retrieve(spec) else RetrievalBundle((), ())
         evidence = self._tool_evidence(self.sympy.results_for(text), spec)
         tool_answer = self._whole_tool_answer(evidence)
-        direct_tool_route = bool(tool_answer)
+        tool_preflight = (
+            self._assess_candidates("", "", "", tool_answer, spec, evidence)
+            if tool_answer else []
+        )
+        direct_tool_route = any(
+            item.source == "sympy_verified"
+            and item.validation_tier in {"complete", "degraded"}
+            and item.shape_valid
+            and item.formatting_valid
+            and item.tool_status == "pass"
+            for item in tool_preflight
+        )
+        tool_preflight_failed = bool(tool_answer and not direct_tool_route)
+        if tool_preflight_failed:
+            evidence = tuple(
+                replace(
+                    item,
+                    scope="subexpression" if item.scope == "whole_goal" else item.scope,
+                    certificate_issues=tuple(dict.fromkeys((
+                        *item.certificate_issues,
+                        "direct_candidate_validation_failed",
+                    ))),
+                )
+                for item in evidence
+            )
+            tool_answer = ""
         deep_reasoning = self._use_deep_reasoning(spec, text)
         deep_verification = self._use_deep_verification(spec, deep_reasoning)
         budget = plan_stage_budget(spec, direct_tool_route, deep_reasoning=deep_reasoning)
@@ -64,6 +91,7 @@ class SubmissionAgent:
                 "deep_solve": deep_reasoning,
                 "deep_verification": deep_verification,
                 "independent_review_required": budget.require_independent_review,
+                "tool_preflight_failed_open": tool_preflight_failed,
             }},
             {"step": "retrieval", "content": cards.trace_content()},
             {"step": "tool_evidence", "content": self._evidence_trace(evidence)},
@@ -141,7 +169,9 @@ class SubmissionAgent:
         )
         if conflict:
             repair_mode = "arbitration"
-        elif review_mode == "continue" and usable_second:
+        elif review_mode == "continue" and (
+            usable_second or (second.strip() and deep_verification)
+        ):
             # Answer recovery is an extraction step, not a correctness check.
             # Challenge it in a fresh bounded context with explicit failure
             # modes instead of repeating another correlated long solve.
@@ -178,12 +208,18 @@ class SubmissionAgent:
                 trace,
                 budget,
                 started_at,
-                0 if selected_before_repair is None else OPTIONAL_CALL_MIN_REMAINING_SECONDS,
+                0 if selected_before_repair is None else (
+                    TRUNCATED_RECOVERY_MIN_REMAINING_SECONDS
+                    if second_truncated else OPTIONAL_CALL_MIN_REMAINING_SECONDS
+                ),
             )
         ):
             continuing_verifier = repair_mode == "continue_verify"
             targeted_auditor = repair_mode in {"verify_recovered", "retry_verify"}
-            independent_verifier = False
+            # A recovered value from a truncated hard solve is only extraction,
+            # not correctness evidence.  Spend the existing bounded audit call
+            # on a genuine independent reasoning pass; do not add another call.
+            independent_verifier = bool(targeted_auditor and deep_verification)
             if targeted_auditor:
                 repair_request = self._candidate_audit_request(
                     text, spec, cards, evidence, candidates
@@ -234,7 +270,7 @@ class SubmissionAgent:
                 [
                     item for item in candidates
                     if self._raw_source(item.source) == repair_mode
-                    and item.verification_verdict == "corrected"
+                    and item.verification_verdict in {"confirmed", "corrected"}
                     and item.validation_tier == "complete"
                 ],
                 {"verify"},
@@ -260,28 +296,59 @@ class SubmissionAgent:
             if (
                 targeted_auditor
                 and arbitration.strip()
-                and not usable_third
+                and (
+                    not usable_third
+                    or (
+                        correction_changes_complete_candidate
+                        and not decisive_single_correction
+                    )
+                )
                 and self._can_call(
-                    trace, budget, started_at, OPTIONAL_CALL_MIN_REMAINING_SECONDS
+                    trace,
+                    budget,
+                    started_at,
+                    (
+                        TRUNCATED_RECOVERY_MIN_REMAINING_SECONDS
+                        if third_truncated else OPTIONAL_CALL_MIN_REMAINING_SECONDS
+                    ),
                 )
             ):
-                retry_request = (
-                    self._correction_confirmation_request(
+                retry_prior_response = ""
+                retry_followup = ""
+                if correction_changes_complete_candidate:
+                    retry_request = self._correction_confirmation_request(
                         text,
                         selected_before_repair.answer,
                         proposed_correction.answer,
                         spec,
                     )
-                    if correction_changes_complete_candidate
-                    else self._audit_retry_request(repair_request, arbitration, spec)
-                )
+                elif third_truncated:
+                    # Preserve the blind auditor's accumulated derivation. A
+                    # fresh short prompt after a length stop discards exactly
+                    # the work that may have reached the decisive theorem.
+                    retry_request = repair_request
+                    retry_prior_response = arbitration
+                    retry_followup = self._audit_continuation_instruction(spec)
+                else:
+                    retry_request = self._audit_retry_request(
+                        repair_request, arbitration, spec
+                    )
                 verification_completion, fourth_truncated = self._call(
                     retry_request,
                     "audit_retry",
-                    budget.emergency_tokens,
+                    (
+                        budget.repair_tokens
+                        if correction_changes_complete_candidate
+                        else budget.emergency_tokens
+                    ),
                     trace,
                     started_at,
-                    thinking_mode=False,
+                    prior_response=retry_prior_response,
+                    followup=retry_followup,
+                    thinking_mode=bool(
+                        correction_changes_complete_candidate
+                        and deep_verification
+                    ),
                 )
                 candidates.extend(self._assess_candidates(
                     "", "", verification_completion, "", spec, evidence,
@@ -313,6 +380,7 @@ class SubmissionAgent:
             if decisive_single_correction and proposed_correction is not None
             else []
         )
+        completed_blind_audit_corrections: list[CandidateAssessment] = []
         if selected_before_repair is not None and verification_completion.strip():
             retry_correction = self._best_stage_candidate(
                 [
@@ -336,10 +404,42 @@ class SubmissionAgent:
                 )
             ):
                 deterministically_certified_corrections.append(retry_correction)
+            completed_blind_audit = self._best_stage_candidate(
+                [
+                    item for item in candidates
+                    if self._raw_source(item.source) == "audit_retry"
+                    and item.verification_verdict in {"confirmed", "corrected"}
+                    and item.validation_tier == "complete"
+                    and not item.rejected_reasons
+                ],
+                {"verify"},
+            )
+            if (
+                repair_mode == "verify_recovered"
+                and review_mode == "continue"
+                and first_truncated
+                and third_truncated
+                and not fourth_truncated
+                and self._uses_candidate_blind_audit(spec)
+                and self._raw_source(selected_before_repair.source) == "continue"
+                and completed_blind_audit is not None
+                and not equivalent_answers(
+                    completed_blind_audit.answer, selected_before_repair.answer
+                )
+                and self._has_audit_support(verification_completion, spec)
+            ):
+                # The baseline is only a quick value recovered from an
+                # unfinished solve.  A complete continuation of the separate
+                # deep, candidate-blind recomputation is stronger evidence,
+                # even though the provider split that audit across two calls.
+                completed_blind_audit_corrections.append(completed_blind_audit)
         selection_candidates = self._without_uncorroborated_corrections(
             candidates,
             selected_before_repair,
-            tuple(deterministically_certified_corrections),
+            tuple((
+                *deterministically_certified_corrections,
+                *completed_blind_audit_corrections,
+            )),
             spec,
         )
         selected = arbitration_selection or self._select(selection_candidates)
@@ -415,6 +515,13 @@ class SubmissionAgent:
                     and any(
                         verified_recovery is item
                         for item in deterministically_certified_corrections
+                    )
+                ),
+                "changed_correction_completed_blind_audit": bool(
+                    verified_recovery
+                    and any(
+                        verified_recovery is item
+                        for item in completed_blind_audit_corrections
                     )
                 ),
             },
@@ -731,11 +838,7 @@ class SubmissionAgent:
         review_context = cards.review_context()
         if review_context:
             content += ("Alternative method hint:\n" if english else "备选方法提示：\n") + review_context + "\n"
-        use_domain_fact = (
-            spec.profile.answer_shape in {"choice", "truth"}
-            or "definition_or_structure_conditions" in set(spec.risk_flags)
-        )
-        domain_fact = cards.verification_fact_context() if use_domain_fact else ""
+        domain_fact = cards.verification_fact_context()
         if domain_fact:
             content += (
                 "One curated domain fact (check its assumptions independently):\n"
@@ -770,28 +873,64 @@ class SubmissionAgent:
         candidate_answer = candidate_answer[:1200] or "[no usable candidate]"
         english = SubmissionAgent._answer_language(spec) == "en"
         checklist = SubmissionAgent._audit_checklist(spec, english)
+        blind_recompute = SubmissionAgent._uses_candidate_blind_audit(spec)
         if english:
-            content = (
-                f"Problem:\n{problem}\n\nCandidate recovered from a truncated deep draft:\n"
-                f"{candidate_answer}\n\nAdversarially audit this candidate. Do not echo it by default and do not "
-                "restart a long full solution. Recompute the smallest decisive step that can falsify it; search "
-                "for a missing branch, counterexample, factor-of-two error, or failed boundary case.\n"
-                f"Required answer obligations:\n{SubmissionAgent._goal_context(spec)}\n"
-                f"Mandatory audit checklist:\n{checklist}\n"
-            )
+            if blind_recompute:
+                content = (
+                    f"Problem:\n{problem}\n\nPerform a fresh candidate-blind audit. Another solver's value is deliberately "
+                    "withheld to prevent anchoring. Do not try to infer it. Independently recompute the smallest "
+                    "decisive identity, enumeration, invariant, counterexample, or two-sided bound, then state your "
+                    "own result.\n"
+                    f"Required answer obligations:\n{SubmissionAgent._goal_context(spec)}\n"
+                    f"Mandatory audit checklist:\n{checklist}\n"
+                )
+            else:
+                content = (
+                    f"Problem:\n{problem}\n\nCandidate recovered from a truncated deep draft:\n"
+                    f"{candidate_answer}\n\nAdversarially audit this candidate. Do not echo it by default and do not "
+                    "restart a long full solution. Recompute the smallest decisive step that can falsify it; search "
+                    "for a missing branch, counterexample, factor-of-two error, or failed boundary case.\n"
+                    f"Required answer obligations:\n{SubmissionAgent._goal_context(spec)}\n"
+                    f"Mandatory audit checklist:\n{checklist}\n"
+                )
         else:
-            content = (
-                f"题目：\n{problem}\n\n从截断的深度草稿中恢复出的候选答案：\n{candidate_answer}\n\n"
-                "请对该候选做对抗性核验，不得默认照抄，也不要重新展开冗长完整解答。只重算最有判别力的一步，"
-                "主动寻找遗漏分支、反例、二倍因子错误或边界失败。\n"
-                f"必须覆盖的作答要求：\n{SubmissionAgent._goal_context(spec)}\n"
-                f"强制核验清单：\n{checklist}\n"
-            )
+            if blind_recompute:
+                content = (
+                    f"题目：\n{problem}\n\n请做一次不接触候选值的独立核验；为避免锚定，另一位求解者的答案已故意隐藏，"
+                    "不得猜测它。请独立重算最有判别力的恒等式、枚举、不变量、反例或双向界，再给出你自己的结果。\n"
+                    f"必须覆盖的作答要求：\n{SubmissionAgent._goal_context(spec)}\n"
+                    f"强制核验清单：\n{checklist}\n"
+                )
+            else:
+                content = (
+                    f"题目：\n{problem}\n\n从截断的深度草稿中恢复出的候选答案：\n{candidate_answer}\n\n"
+                    "请对该候选做对抗性核验，不得默认照抄，也不要重新展开冗长完整解答。只重算最有判别力的一步，"
+                    "主动寻找遗漏分支、反例、二倍因子错误或边界失败。\n"
+                    f"必须覆盖的作答要求：\n{SubmissionAgent._goal_context(spec)}\n"
+                    f"强制核验清单：\n{checklist}\n"
+                )
         review_context = cards.review_context()
         if review_context:
             content += ("Checked method hint:\n" if english else "经校订的方法提示：\n") + review_context + "\n"
+        domain_fact = cards.verification_fact_context()
+        if domain_fact:
+            content += (
+                "One curated domain fact (recheck every assumption before using it):\n"
+                if english else
+                "一条经校订的领域事实（使用前须重新核对全部前提）：\n"
+            ) + domain_fact + "\n"
         if evidence:
             content += ("Verified local evidence:\n" if english else "已核验的本地证据：\n") + SubmissionAgent._evidence_context(evidence) + "\n"
+        if blind_recompute:
+            return content + (
+                "Return exactly three compact lines. First: CHECK: an independently reproducible computation, "
+                "counterexample, invariant, or two-sided bound. Second: VERDICT: CONFIRMED if that CHECK certifies "
+                "your own FINAL, otherwise VERDICT: UNRESOLVED. Third and last: FINAL: \\boxed{your actual complete answer}."
+                if english else
+                "严格只返回三行。第一行：CHECK: 可独立复现的计算、反例、不变量或双向界。第二行：若该 CHECK 能核证"
+                "你自己的 FINAL，写 VERDICT: CONFIRMED，否则写 VERDICT: UNRESOLVED。第三行且最后一行："
+                "FINAL: \\boxed{你独立算出的完整答案}。"
+            )
         return content + (
             "Return exactly three compact lines. First: CHECK: the decisive computation, counterexample, invariant, or two-sided bound. "
             "Second: VERDICT: CONFIRMED, VERDICT: CORRECTED, or VERDICT: UNRESOLVED. "
@@ -805,6 +944,15 @@ class SubmissionAgent:
         )
 
     @staticmethod
+    def _uses_candidate_blind_audit(spec: ProblemSpec) -> bool:
+        """Whether the audit prompt withholds the recovered candidate value."""
+        return bool(
+            spec.verification_required
+            or spec.profile.difficulty == "hard"
+            or getattr(spec.profile, "topic", "general").startswith("olympiad_")
+        )
+
+    @staticmethod
     def _audit_checklist(spec: ProblemSpec, english: bool) -> str:
         risks = set(spec.risk_flags)
         requirement_names = {
@@ -813,6 +961,80 @@ class SubmissionAgent:
             for requirement in goal.requirements
         }
         items: list[str] = []
+        if "statement_integrity_audit" in risks:
+            items.append(
+                "Segment the mathematical core, definitions, and late addenda. Keep every coherent condition binding. Only if the literal task is contradictory, type-incompatible, explicitly irrelevant, or ill-posed, compare it with the smallest coherent repair and justify which interpretation determines FINAL."
+                if english else
+                "区分数学核心、定义和后加条款。所有自洽条件都必须保留；只有字面题目自相矛盾、类型不兼容、明确无关或失去良定义时，才比较字面解释与最小一致修复，并核证 FINAL 采用哪一种。"
+            )
+        if "olympiad_problem" in risks:
+            items.append(
+                "Map every coefficient, inequality direction, ratio orientation, endpoint, and extremal quantifier to this statement; do not reuse a remembered source answer."
+                if english else
+                "逐项核对本题的系数、不等号方向、比值方向、端点和极值量词；不得套用记忆中的原题答案。"
+            )
+        stochastic_turn_process = bool(re.search(
+            r"概率|随机|期望|方差|掷|骰子|硬币|马尔可夫|"
+            r"\b(?:probability|random(?:ly)?|expected|expectation|variance|"
+            r"(?:roll|flip)(?:ing|s|ed)?|fair\s+(?:die|dice|coin)|markov)\b",
+            getattr(spec, "problem_text", ""),
+            re.IGNORECASE,
+        ))
+        if not stochastic_turn_process and re.search(
+            r"轮流(?:选择|取|放|移动)|回合制|"
+            r"\b(?:take\s+turns|turn[- ]based game|cannot move|unable to move|optimal play)\b",
+            getattr(spec, "problem_text", ""),
+            re.IGNORECASE,
+        ):
+            items.append(
+                "Recheck whose previous moves constrain legality, who moves first, the exact terminal condition, and minimax quantifiers."
+                if english else
+                "重新核对合法性由谁的历史着法约束、谁先手、精确终止条件和 minimax 量词。"
+            )
+        if re.search(
+            r"分裂域|伽罗瓦|Galois|splitting\s+field",
+            getattr(spec, "problem_text", ""),
+            re.IGNORECASE,
+        ):
+            items.append(
+                "Verify that the proposed field is minimal, contains every root, and has the stated tower degree before deciding Galois normality."
+                if english else
+                "先核对所给域确为包含全部根的最小域及其逐层次数，再判断 Galois 正规性。"
+            )
+        if re.search(
+            r"傅里叶变换|Fourier\s*(?:变换|transform)",
+            getattr(spec, "problem_text", ""),
+            re.IGNORECASE,
+        ):
+            items.append(
+                "State and consistently use the Fourier normalization and sign convention; check shifts and scale factors."
+                if english else
+                "明确并始终使用同一 Fourier 归一化和符号约定，检查平移相位与尺度因子。"
+            )
+        if re.search(
+            r"Latin\s+squares?|拉丁方|"
+            r"(?:rows?|columns?|行|列)[\s\S]{0,240}(?:permutations?|排列)"
+            r"[\s\S]{0,500}(?:diagonals?|对角线)",
+            getattr(spec, "problem_text", ""),
+            re.IGNORECASE,
+        ):
+            items.append(
+                "After normalizing a row, give a reproducible completion table, recurrence, or explicit case list. Restore labels by an actual free group action and audit every possible row, column, and symbol symmetry factor."
+                if english else
+                "固定一行后必须给出可复现的补全表、递推或明确分类；恢复标签时须证明群作用自由，并逐一核对行、列、符号置换造成的倍率。"
+            )
+        if re.search(
+            r"nowhere[- ]zero\s+flows?|无处零流|无处为零流|"
+            r"(?:flow|流)[\s\S]{0,200}(?:finite\s+(?:field|group)|有限域|有限群|"
+            r"\\mathbb\s*\{?Z\}?\s*/|Z\s*/\s*\d)",
+            getattr(spec, "problem_text", ""),
+            re.IGNORECASE,
+        ):
+            items.append(
+                "Parameterize the full cycle space, then enforce nonzero value on every edge functional. A dimension count or nonzero basis coordinates is insufficient. Use a flow polynomial only with a valid deletion-contraction computation or planar-dual hypothesis."
+                if english else
+                "先参数化完整循环空间，再对每条边对应的线性函数施加非零条件；只数维数或只令基坐标非零均不充分。使用流多项式时必须有删除-收缩计算或满足平面对偶前提。"
+            )
         if any(name.startswith("parameter_dependency_") for name in requirement_names):
             items.append(
                 "Retain every free parameter in FINAL and test at least two legal parameter values."
@@ -884,6 +1106,8 @@ class SubmissionAgent:
         """
         task = getattr(spec.profile, "task_kind", spec.profile.problem_type)
         shape = spec.profile.answer_shape
+        topic = getattr(spec.profile, "topic", "general")
+        subject = getattr(spec.profile, "primary_subject", spec.profile.subject)
         requirements = {
             item.name for goal in spec.goals for item in goal.requirements
         }
@@ -899,6 +1123,88 @@ class SubmissionAgent:
                 "仅从题设前提推出候选，不引入题面未给出的默认约定。"
             ),
         ]
+        if "statement_integrity_audit" in set(spec.risk_flags):
+            steps.append(
+                "Before calculating, test whether every late clause is type-compatible and logically connected to the target. If the literal reading is well-posed, keep it; otherwise solve both the literal and minimally coherent readings and select only with an explicit consistency reason."
+                if english else
+                "计算前检查每条后加条款是否类型兼容且与目标有逻辑联系；字面解释良定义时必须保留，否则同时处理字面解释和最小一致解释，并仅凭明确的一致性理由选择。"
+            )
+        if topic == "olympiad_functional_equation":
+            steps.append(
+                "Use decisive substitutions to split every branch; verify each resulting function in the original equation and prove that no branch remains."
+                if english else
+                "用有判别力的代入拆尽全部分支；把每个候选代回原方程，并证明没有遗留分支。"
+            )
+        elif topic == "olympiad_polynomial":
+            steps.append(
+                "Track degree, multiplicity, and leading coefficient; relate roots through factorization or derivatives and independently check the real-root count."
+                if english else
+                "跟踪次数、重数和首项系数；用因式分解或导数联系各根，并独立核对实根数量。"
+            )
+        elif topic == "olympiad_number_theory":
+            steps.append(
+                "Factor the decisive expression, separate prime/valuation cases, and prove both that every listed integer works and every omitted integer fails."
+                if english else
+                "分解决定性表达式，按素因子或赋值分类，并同时证明列出的整数均成立、遗漏的整数均不成立。"
+            )
+        elif topic == "olympiad_sequence":
+            steps.append(
+                "Derive an invariant or closed form and verify both the initial value and recurrence; use modular periods or monotonicity to exclude other cases."
+                if english else
+                "推导不变量或闭式并同时核对初值与递推；再用模周期或单调性排除其他情形。"
+            )
+        elif topic == "olympiad_combinatorics":
+            steps.append(
+                "Define the exact state or counted object, including player ownership and terminal rules; test the smallest legal instances and audit symmetry factors."
+                if english else
+                "精确定义状态或计数对象，包括归属关系与终止规则；检查最小合法实例并核对对称因子。"
+            )
+        elif topic == "olympiad_geometry":
+            steps.append(
+                "Choose coordinates, trigonometric ratios, or directed angles; numerically sanity-check one nondegenerate configuration and verify attainability."
+                if english else
+                "选择坐标、三角比或有向角；对一个非退化构型做数值健全性检查，并核验等号/构型可达。"
+            )
+        elif topic == "olympiad_inequality":
+            steps.append(
+                "Separate the universal bound from equality or limiting cases; test signs and boundary behavior before claiming sharpness."
+                if english else
+                "把普遍界与等号/极限情形分开证明；在声称最优前检查符号和边界行为。"
+            )
+        elif subject == "抽象代数" and re.search(
+            r"分裂域|伽罗瓦|Galois|splitting\s+field",
+            getattr(spec, "problem_text", ""),
+            re.IGNORECASE,
+        ):
+            steps.append(
+                "List all roots, give generators for their field, prove each tower degree, and distinguish splitting/normality from irreducibility."
+                if english else
+                "列出全部根与分裂域生成元，逐层证明扩张次数，并区分分裂/正规性与不可约性。"
+            )
+        if re.search(
+            r"Latin\s+squares?|拉丁方|"
+            r"(?:rows?|columns?|行|列)[\s\S]{0,240}(?:permutations?|排列)"
+            r"[\s\S]{0,500}(?:diagonals?|对角线)",
+            getattr(spec, "problem_text", ""),
+            re.IGNORECASE,
+        ):
+            steps.append(
+                "Normalize only a symmetry whose orbit size is proved. Enumerate normalized completions with an explicit state table or exhaustive cases, then multiply by the verified orbit size exactly once."
+                if english else
+                "只固定已证明轨道大小的对称；用明确状态表或穷尽分类统计标准化补全，再且仅再乘一次经核证的轨道大小。"
+            )
+        if re.search(
+            r"nowhere[- ]zero\s+flows?|无处零流|无处为零流|"
+            r"(?:flow|流)[\s\S]{0,200}(?:finite\s+(?:field|group)|有限域|有限群|"
+            r"\\mathbb\s*\{?Z\}?\s*/|Z\s*/\s*\d)",
+            getattr(spec, "problem_text", ""),
+            re.IGNORECASE,
+        ):
+            steps.append(
+                "Choose a spanning-tree cycle basis, express every edge value as a linear form in the cycle coordinates, and count assignments for which all those forms are nonzero; verify orientation invariance by coordinate sign changes."
+                if english else
+                "选取生成树循环基，把每条边流量写成循环坐标的线性式，统计所有这些线性式均非零的赋值；再以坐标变号核验方向无关性。"
+            )
         if shape == "choice":
             steps.append(
                 "Build a truth table for every option from its definition, then form the complete label set."
@@ -1017,6 +1323,22 @@ class SubmissionAgent:
         )
 
     @staticmethod
+    def _audit_continuation_instruction(spec: ProblemSpec) -> str:
+        """Finish a truncated independent audit without restarting its proof."""
+        if SubmissionAgent._answer_language(spec) == "en":
+            return (
+                "Stop expanding the derivation. Using only the audit above, return exactly three "
+                "compact lines now: CHECK: the decisive reproducible fact already established; "
+                "VERDICT: CONFIRMED if it certifies your result, otherwise UNRESOLVED; "
+                "FINAL: \\boxed{the complete answer}."
+            )
+        return (
+            "停止展开推导。仅依据上面的独立核验，立即严格返回三行："
+            "CHECK: 已得到的决定性可复现事实；若能核证结果写 VERDICT: CONFIRMED，"
+            "否则写 VERDICT: UNRESOLVED；最后写 FINAL: \\boxed{完整答案}。"
+        )
+
+    @staticmethod
     def _correction_confirmation_request(
         problem: str,
         original_answer: str,
@@ -1025,12 +1347,16 @@ class SubmissionAgent:
     ) -> str:
         """Ask a fresh stage to arbitrate a value-changing correction."""
         english = SubmissionAgent._answer_language(spec) == "en"
+        alternative = str(getattr(spec, "alternative_method", "") or "independent_check")
+        checklist = SubmissionAgent._audit_checklist(spec, english)
         if english:
             return (
                 f"Problem:\n{problem}\n\nA completed candidate says:\n{original_answer[:1200]}\n\n"
                 f"A later audit proposes a different answer:\n{corrected_answer[:1200]}\n\n"
                 "Independently recompute the smallest decisive identity, enumeration, substitution, or boundary case. "
                 "Do not trust either label and do not copy either derivation.\n"
+                f"Preferred independent method: {alternative}.\n"
+                f"Mandatory audit checklist:\n{checklist}\n"
                 f"Required answer obligations:\n{SubmissionAgent._goal_context(spec)}\n"
                 "Return exactly three compact lines: CHECK: an independently reproducible calculation; "
                 "VERDICT: CONFIRMED if the later correction is right, CORRECTED if a different result is right, "
@@ -1040,6 +1366,8 @@ class SubmissionAgent:
             f"题目：\n{problem}\n\n已有完整候选：\n{original_answer[:1200]}\n\n"
             f"后续核验提出了不同答案：\n{corrected_answer[:1200]}\n\n"
             "请独立重算最有判别力的恒等式、枚举、代入或边界情形；不得相信任一标签，也不得照抄任一推导。\n"
+            f"优先采用的独立方法：{alternative}。\n"
+            f"强制核验清单：\n{checklist}\n"
             f"必须覆盖的作答要求：\n{SubmissionAgent._goal_context(spec)}\n"
             "严格只返回三行：CHECK: 可独立复现的计算；若后续修正正确则写 VERDICT: CONFIRMED，"
             "若应为第三个结果则写 VERDICT: CORRECTED，无法核证则写 VERDICT: UNRESOLVED；"
@@ -1321,7 +1649,8 @@ class SubmissionAgent:
             if result is None or not result.result.strip():
                 continue
             support_required = bool(
-                SubmissionAgent._contract_value(spec, "mode", "") == "proof"
+                SubmissionAgent._contract_value(spec, "mode", "")
+                in {"proof", "answer_with_support"}
                 or getattr(spec.profile, "task_kind", spec.profile.problem_type)
                 in {"proof", "derivation", "explanation", "construction"}
                 or any(goal.kind in {"proof", "construction"} for goal in spec.goals)
@@ -1375,6 +1704,12 @@ class SubmissionAgent:
         tool_contract = result.contract
         if tool_contract is None or not result.verified:
             return False
+        if (
+            not result.certificate.source_fingerprint
+            or result.certificate.source_fingerprint
+            != problem_fingerprint(spec.problem_text)
+        ):
+            return False
         # Generic symbolic handlers deliberately solve only a narrow syntactic
         # fragment.  Their static contract is necessary but not sufficient:
         # ProblemSpec also rejects higher derivatives, constrained-domain
@@ -1420,6 +1755,78 @@ class SubmissionAgent:
     ) -> bool:
         """Reject direct routes when the prompt transforms or filters a matched result."""
         text = str(problem or "")
+        if operation == "angle_ratio_line_point_maximum":
+            # Here "half of the other" is the defining angle relation, not a
+            # post-processing instruction applied to the requested answer.
+            text = re.sub(
+                r"one of the angles([^.!?\n]{0,100})is equal to half of the other",
+                r"one of the angles\1satisfies the defining ratio",
+                text,
+                flags=re.IGNORECASE,
+            )
+        if operation == "right_triangle_two_cevian_ratio":
+            # The factor two is part of this route's fully matched target, not
+            # an uncovered post-processing instruction.
+            text = re.sub(
+                r"Compute\s+the\s+ratio\s+\$?2\s*\\times\s*YQ/ZP\$?",
+                "Compute the defined cevian ratio",
+                text,
+                flags=re.IGNORECASE,
+            )
+        if operation == "sparse_green_neighborhood_threshold":
+            # Here "twice" belongs to the no-recoloring rule already checked
+            # by the exact matcher; it does not transform the requested value.
+            text = re.sub(
+                r"No\s+cell\s+may\s+be\s+colou?red\s+green\s+twice",
+                "No cell may be recolored",
+                text,
+                flags=re.IGNORECASE,
+            )
+        output_command = (
+            r"(?:\b(?:report|return|express)\b|"
+            r"\bstate\b(?!\s+(?:space|recursion|transition|equation|variable|vector|diagram|process))|"
+            r"报告|返回|表达(?!式)|陈述)"
+        )
+        # A second imperative output clause changes the requested object even
+        # when the deterministic matcher still recognizes the original stem.
+        # Exact full-statement handlers normally stop matching such a suffix;
+        # this guard protects routes implemented as independent token searches.
+        for directive in re.finditer(
+            rf"(?:[.;!?。；！？]\s*|\b(?:and|then)\s+|(?:并|然后|再)\s*)"
+            rf"(?P<command>{output_command})",
+            text,
+            re.IGNORECASE,
+        ):
+            prefix = text[:directive.start()]
+            if re.search(
+                r"求|计算|判断|给出|写出|列出|确定|"
+                r"\b(?:find|determine|solve|calculate|compute|evaluate|identify|give|write|list|"
+                r"what\s+(?:is|are)|how\s+many)\b",
+                prefix,
+                re.IGNORECASE,
+            ):
+                return True
+
+        # Even as the only explicit imperative, these phrases request a
+        # transformed object rather than the base value a broad matcher found.
+        if re.search(
+            rf"{output_command}[^\n。！？.!?]{{0,140}}"
+            r"(?:\bmodulo\b|\bmod\s+\d|\bremainder\b|取模|模\s*\d|余数)",
+            text,
+            re.IGNORECASE,
+        ) or re.search(
+            rf"{output_command}[^\n。！？.!?]{{0,180}}(?:"
+            r"\b(?:the\s+)?(?:number|count|cardinality)\s+of\s+"
+            r"(?:such|these|those|the\s+(?:above|resulting|valid|possible))\b|"
+            r"\bhow\s+many\s+(?:such|these|those|valid|possible)\b|"
+            r"\b(?:rather\s+than|instead\s+of)\b|"
+            r"\bnot\b[^.!?\n]{0,40}\bthemselves\b|"
+            r"(?:这些|上述|所得|符合条件的)[^。！？.!?\n]{0,30}(?:数量|个数)|"
+            r"而不是|而非|不要[^。！？\n]{0,30}本身)",
+            text,
+            re.IGNORECASE,
+        ):
+            return True
         if re.search(
             r"\b(?:and\s+then|then)\s+(?:add|subtract|multiply|divide|square|cube|double|"
             r"take|report|return|compute|evaluate|find)\b|"
@@ -1517,6 +1924,41 @@ class SubmissionAgent:
                 r"(?:并|另外|额外)[^。！？\n]{0,60}(?:均值|检验|p\s*[- ]?值|证明|推导)|"
                 r"\b(?:also|additionally)\b[^.!?\n]{0,60}"
                 r"\b(?:mean|test|p\s*[- ]?value|prove|derive)\b",
+            "round_robin_unextendable_schedule_minimum":
+                r"\b(?:home|away|bye|rest)\b|"
+                r"\b(?:consecutive|successive)\s+rounds?\b|"
+                r"\b(?:forbidden|required|fixed)\s+(?:pair|match|opponent)\b|"
+                r"(?:主场|客场|轮空|连续两轮|指定对手|禁止对阵)",
+            "path_domino_maximin_uncovered":
+                r"\b(?:skip|pass)\s+(?:a\s+)?turn\b|"
+                r"\b(?:forbidden|blocked|weighted)\s+squares?\b|"
+                r"\bsquare\s+\d+\b[^.!?\n]{0,30}\b(?:forbidden|blocked|unavailable)\b|"
+                r"(?:跳过回合|禁放|禁止覆盖|障碍格|加权格)",
+            "odd_checkerboard_l_tromino_minimum":
+                r"\b(?:every|each|all)\s+L[- ]?tromino(?:es)?\b[^.!?\n]{0,40}"
+                r"\b(?:touch|contain|avoid|use only)\b|"
+                r"\b(?:forbidden|blocked)\s+squares?\b|"
+                r"(?:每块|所有)L形三连方[^。！？\n]{0,30}(?:接触|包含|避开|只能)|"
+                r"(?:禁放|障碍格)",
+            "two_by_two_flip_closure_minimum":
+                r"\b(?:synchronous|simultaneous)\s+(?:update|updates|operation|operations)\b|"
+                r"\b(?:every|any)\s+(?:legal\s+)?(?:sequence|choice)\b[^.!?\n]{0,30}"
+                r"\b(?:succeed|reach|finish)\b|"
+                r"\b(?:toroidal|periodic\s+boundary|never\s+(?:changed|flipped))\b|"
+                r"(?:同步更新|同时更新|任意操作序列|周期边界|永不翻转|不可改变)",
+            "bounded_self_exponential_divisibility":
+                r"\b(?:prime|composite|odd|even|perfect\s+square|coprime)\b|"
+                r"\b(?:except|excluding|exclude|not\s+divisible|subject\s+to)\b|"
+                r"\b(?:and|且|并且)\s*n\s*(?:[<>]|\\?leq|\\?geq|<=|>=)|"
+                r"(?:素数|合数|奇数|偶数|完全平方数|互素|排除|除外|不被[^。！？\n]{0,12}整除)|"
+                r"(?:且|并且)\s*n\s*(?:[<>≤≥]|不等于)",
+            "competing_coin_patterns":
+                r"\b(?:given|conditioned\s+on|assuming|start(?:ing)?\s+with|"
+                r"initial\s+prefix|already\s+observed|first\s+toss\s+is)\b|"
+                r"\b(?:stopping\s+time|number\s+of\s+tosses|expected\s+(?:time|tosses)|variance)\b|"
+                r"\b(?:reset|restart|forced|dependent|markov|preceding\s+toss)\b|"
+                r"(?:已知|条件是|假设|开始时|已有|第一次抛掷)[^。！？\n]{0,30}[HT正反]|"
+                r"(?:停止时刻|抛掷次数|期望次数|重置|重新开始|强制|依赖|前一次抛掷)",
         }
         if operation == "quadratic_congruence_count":
             congruences = re.findall(
@@ -1899,27 +2341,44 @@ class SubmissionAgent:
             or not baseline.formatting_valid
         ):
             return candidates
-        if baseline.validation_tier == "degraded" and spec is not None:
-            missing_results = {
-                requirement.name
-                for goal in spec.goals
-                for requirement in goal.result_requirements
-                if not requirement.matches(baseline.answer)
-            }
-            # A concrete missing dependency, unit, or requested component is
-            # mechanically checkable.  A corrected audit may repair it in one
-            # pass.  Exhaustiveness is semantic: merely saying "all" is not
-            # enough evidence to replace a usable singleton or finite set.
-            if missing_results and missing_results != {"exhaustive_result"}:
-                return candidates
+        # A degraded baseline is still mathematical evidence. Missing prose,
+        # a requested method, or a formatting obligation does not authorize a
+        # single later audit to replace its value. A changed value must be
+        # corroborated just as it is for a complete baseline; an equivalent
+        # audit may still add the omitted support without restriction. The
+        # narrow exception below repairs a strict missing parameter dependency
+        # with a complete candidate-blind extremal audit; it does not apply to
+        # an ordinary incomplete proof or formatting degradation.
         audit_sources = {
             "verify_recovered", "continue_verify", "retry_verify", "audit_retry"
         }
+        missing_parameter_dependency = bool(
+            baseline.validation_tier == "degraded"
+            and spec is not None
+            and "extremal_two_sided_bound" in set(spec.risk_flags)
+            and SubmissionAgent._uses_candidate_blind_audit(spec)
+            and any(
+                requirement.name.startswith("parameter_dependency_")
+                and not requirement.matches(baseline.answer)
+                for goal in spec.goals
+                for requirement in goal.result_requirements
+            )
+        )
         return [
             item for item in candidates
             if (
                 SubmissionAgent._raw_source(item.source) not in audit_sources
                 or equivalent_answers(item.answer, baseline.answer)
+                or (
+                    missing_parameter_dependency
+                    and item.validation_tier == "complete"
+                    and item.verification_verdict in {"confirmed", "corrected"}
+                    and item.complete_goals
+                    and item.shape_valid
+                    and item.formatting_valid
+                    and not item.rejected_reasons
+                    and item.tool_status != "conflict"
+                )
                 or any(
                     equivalent_answers(item.answer, certified.answer)
                     for certified in deterministically_certified
@@ -2037,6 +2496,57 @@ class SubmissionAgent:
         )
         if not decisive:
             return False
+        problem_text = str(getattr(spec, "problem_text", "")) if spec is not None else ""
+        relation_count = len(re.findall(
+            r"(?:=|!=|≠|<|>|≤|≥|\\(?:ne|neq|leq?|geq?|mid|nmid)\b)",
+            support,
+            re.IGNORECASE,
+        ))
+        if re.search(
+            r"Latin\s+squares?|拉丁方|"
+            r"(?:rows?|columns?|行|列)[\s\S]{0,240}(?:permutations?|排列)"
+            r"[\s\S]{0,500}(?:diagonals?|对角线)",
+            problem_text,
+            re.IGNORECASE,
+        ):
+            case_markers = len(re.findall(
+                r"\bcase\s*\d+\b|情形\s*[一二三四五六七八九十\d]+|"
+                r"(?:row|行)\s*[=:：]\s*\([^()]+\)",
+                support,
+                re.IGNORECASE,
+            ))
+            explicit_search = bool(re.search(
+                r"(?:exhaust(?:ive|ively)?|enumerat(?:e|ed|ion)|遍历|穷举|枚举)"
+                r"[^.!?。！？\n]{0,140}(?:\d+\s*\^\s*\d+|\d+!|all\s+\d+|全部\s*\d+)",
+                support,
+                re.IGNORECASE,
+            ))
+            table_or_recurrence = bool(re.search(
+                r"\b(?:table|recurrence|state\s+table|counts?)\b[^.!?\n]{0,120}"
+                r"(?:\d+\s*[,，]\s*){2,}\d+|"
+                r"(?:表格|递推|状态表|各情形数量)[^。！？\n]{0,120}"
+                r"(?:\d+\s*[,，]\s*){2,}\d+",
+                support,
+                re.IGNORECASE,
+            ))
+            if not (case_markers >= 2 or explicit_search or table_or_recurrence):
+                return False
+        if re.search(
+            r"nowhere[- ]zero\s+flows?|无处零流|无处为零流|"
+            r"(?:flow|流)[\s\S]{0,200}(?:finite\s+(?:field|group)|有限域|有限群|"
+            r"\\mathbb\s*\{?Z\}?\s*/|Z\s*/\s*\d)",
+            problem_text,
+            re.IGNORECASE,
+        ):
+            valid_flow_method = bool(re.search(
+                r"cycle\s+(?:basis|coordinates?|space)|edge\s+(?:linear\s+)?forms?|"
+                r"inclusion[- ]exclusion|deletion[- ]contraction|exhaustive\s+enumeration|"
+                r"循环基|循环坐标|边线性式|容斥|删除[-—]收缩|穷举|遍历",
+                support,
+                re.IGNORECASE,
+            ))
+            if not (valid_flow_method and relation_count >= 2):
+                return False
         risks = set(getattr(spec, "risk_flags", ())) if spec is not None else set()
         if "extremal_two_sided_bound" in risks:
             bound_direction = bool(re.search(
@@ -2053,8 +2563,8 @@ class SubmissionAgent:
                 support,
                 re.IGNORECASE,
             ))
-            relation_count = len(re.findall(r"(?<![<>!])=(?!=)|[<>≤≥]", support))
-            concrete = relation_count >= 2 or bool(re.search(
+            extremal_relation_count = len(re.findall(r"(?<![<>!])=(?!=)|[<>≤≥]", support))
+            concrete = extremal_relation_count >= 2 or bool(re.search(
                 r"\\?\{[^{}]*\d[^{}]*\}|"
                 r"(?:[A-Za-z]\s*=\s*[-+]?\d[^,;\n]*[,;]\s*){2,}",
                 support,
@@ -2693,6 +3203,11 @@ class SubmissionAgent:
         ):
             return True
         if getattr(spec.profile, "topic", "general").startswith("olympiad_"):
+            return True
+        if spec.primary_method in {
+            "tiling_coloring_and_cut_invariant",
+            "slice_color_incidence_chain_bound",
+        }:
             return True
         theoretical = {
             "抽象代数", "拓扑学", "泛函分析", "复分析", "常微分方程",

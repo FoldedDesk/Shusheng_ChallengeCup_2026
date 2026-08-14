@@ -8,6 +8,13 @@ import re
 from classifier.difficulty import classify_difficulty
 from classifier.problem_type import classify_problem_type
 from classifier.choice import has_choice_options
+from classifier.advanced_families import (
+    LACUNARY_NATURAL_BOUNDARY_PATTERN,
+    RUNGE_KUTTA_STABILITY_PATTERN,
+    SPECIALIZED_TOPIC_PATTERNS,
+    SPECIALIZED_TOPICS,
+    TWO_DIMENSIONAL_POLYHARMONIC_FUNDAMENTAL_PATTERN,
+)
 from classifier.subject import classify_subjects
 from classifier.target import extract_target_clause
 
@@ -64,20 +71,28 @@ _OLYMPIAD_TOPICS = (
         r"(?::|such\s+that|satisfying)\s*[^.!?]{0,500}"
         r"[A-Za-z]\s*\([^)]*\)\s*=\s*[^.!?]{0,300}[A-Za-z]\s*\(",
     ),
-    ("olympiad_geometry", r"\b(triangles?|quadrilaterals?|polygons?|hexagons?|circle|cyclic|tangent|collinear|concurrent|circumcircle|incircle|orthocenter|circumcenter|incenter|angle bisector)\b"),
-    ("olympiad_number_theory", r"\b(integer solutions?|pairs?\s+of\s+(?:(?:positive|nonnegative|nonzero)\s+)?integers?|triples?\s+of\s+(?:(?:positive|nonnegative|nonzero)\s+)?integers?|diophantine|divisibility|divisible|divides|congruence|modulo|prime numbers?|gcd|lcm|totient|pell equation|factorials?|positive divisors?)\b|\\pmod|\\mid"),
+    ("olympiad_geometry", r"\b(triangles?|quadrilaterals?|polygons?|hexagons?|hypotenuse|circle|cyclic|tangent|collinear|concurrent|circumcircle|incircle|orthocenter|circumcenter|incenter|angle bisector)\b"),
+    (
+        "olympiad_number_theory",
+        r"\b(integer solutions?|pairs?\s+of\s+(?:(?:positive|nonnegative|nonzero)\s+)?integers?|"
+        r"triples?\s+of\s+(?:(?:positive|nonnegative|nonzero)\s+)?integers?|diophantine|"
+        r"divisibility|divisible|divides|congruence|modulo|prime numbers?|gcd|lcm|totient|"
+        r"pell equation|factorials?|positive divisors?|numerical semigroups?)\b|"
+        r"\b(?:(?:positive|nonnegative|whole)\s+)?integers?[^.!?]{0,160}"
+        r"(?:represented|representable|expressed|expressible)\s+as\s+a\s+sum\b|\\pmod|\\mid",
+    ),
     (
         "olympiad_combinatorics",
         r"\b(colorings?|arrangements?|permutations?|combinations?|pigeonhole|double counting|"
         r"tournaments?|subsets?|ways\s+to|spanning trees?|labeled trees?|posets?|linear extensions?|"
         r"bracelets?|necklaces?|binary strings?|lattice paths?|generating functions?|coefficients?|"
         r"heaps?|losing positions?|winning positions?|codewords?|hamming weight|tilings?|dominoes?|"
-        r"boards?|partitions?|surjective functions?|injective functions?|boolean variables?|"
+        r"tiles?|boards?|chessboards?|partitions?|surjective functions?|injective functions?|boolean variables?|"
         r"satisfying assignments?|conjunctive normal form|selected seats?|graphs?)\b",
     ),
     ("olympiad_inequality", r"\b(inequalit\w*|am[- ]gm|cauchy[- ]schwarz|positive reals?|minimum possible|maximum possible|minimum value|maximum value)\b"),
     ("olympiad_polynomial", r"\b(polynomials?|vieta|integer roots?|real roots?|complex roots?|roots?,\s*counted\s+with\s+multiplicity|monic polynomial)\b"),
-    ("olympiad_sequence", r"\b(sequences?|recurrence relations?|recursive sequence)\b"),
+    ("olympiad_sequence", r"\b(sequences?|recurrence relations?|recursive sequences?|fibonacci numbers?|lucas numbers?)\b"),
     ("olympiad_general", r"\b(olympiad|imo|aime|amc|math contest|mathematical competition)\b"),
 )
 
@@ -85,19 +100,20 @@ _OLYMPIAD_TOPICS = (
 _OLYMPIAD_SIGNAL = re.compile(
     r"\b(?:olympiad|imo|aime|amc|math contest|mathematical competition|"
     r"prove|show\s+that|find\s+all|determine\s+all|classify\s+all|for\s+all|"
-    r"least\s+possible|greatest\s+possible|minimum\s+possible|maximum\s+possible|"
+    r"least\s+possible|greatest\s+possible|smallest\s+possible|largest\s+possible|minimum\s+possible|maximum\s+possible|"
     r"functional equations?|diophantine|pigeonhole|double counting|"
     r"number\s+of\s+ways|how\s+many(?:\s+ways)?|find\s+the\s+number|"
     r"determine\s+the\s+number|find\s+the\s+coefficient|construct|for\s+every|"
     r"least\s+nonnegative\s+residue|greatest\s+integer|least\s+positive\s+integer|"
     r"smallest\s+integer|"
-    r"minimum\s+value|maximum\s+value|find\s+the\s+exact)\b",
+    r"minimum\s+value|maximum\s+value|smallest\s+(?:value|size|cardinality)|"
+    r"largest\s+(?:value|size|cardinality)|smallest\s+and\s+largest\s+possible\s+value|find\s+the\s+exact)\b",
     re.IGNORECASE,
 )
 
 
 _OLYMPIAD_GEOMETRY_MARKERS = re.compile(
-    r"\b(?:triangles?|quadrilaterals?|polygons?|hexagons?|circle|cyclic|tangent|collinear|concurrent|"
+    r"\b(?:triangles?|quadrilaterals?|polygons?|hexagons?|hypotenuse|circle|cyclic|tangent|collinear|concurrent|"
     r"circumcircle|incircle|orthocenter|circumcenter|incenter|angle bisector)\b",
     re.IGNORECASE,
 )
@@ -108,6 +124,32 @@ _COMBINATORIAL_OBJECT_PRIORITY = re.compile(
     r"injective functions?|bracelets?|necklaces?|binary strings?|lattice paths?|"
     r"linear extensions?|spanning trees?|labeled trees?|tournaments?|colorings?)\b",
     re.IGNORECASE | re.DOTALL,
+)
+
+
+_ADDITIVE_COUNTING_PRIORITY = re.compile(
+    r"\b(?:number\s+of\s+ways|how\s+many\s+ways?)\b[^.!?]{0,180}"
+    r"\b(?:represented|representable|expressed|expressible|written)\s+as\s+a\s+sum\b|"
+    r"(?:多少种|多少个|几种)[^。！？]{0,100}(?:表示|写)(?:成|为)[^。！？]{0,80}(?:之和|的和)",
+    re.IGNORECASE | re.DOTALL,
+)
+
+
+_DECISION_GAME_PRIORITY = re.compile(
+    r"轮流(?:选择|取|放|移动)|无法(?:行动|选择|移动)[^。！？]{0,40}(?:输|失败)|"
+    r"\b(?:players?|contestants?)\s+take\s+turns\s+"
+    r"(?:choos(?:e|ing)|select(?:ing)?|remov(?:e|ing)|plac(?:e|ing)|mov(?:e|ing))\b|"
+    r"\b(?:no\s+legal\s+move|unable\s+to\s+move|winning\s+strategy|optimal\s+play|"
+    r"initial\s+position\s+(?:is\s+)?losing)\b",
+    re.IGNORECASE,
+)
+
+
+_STOCHASTIC_MARKERS = re.compile(
+    r"概率|随机|期望|方差|掷|骰子|硬币|马尔可夫|"
+    r"\b(?:probability|random(?:ly)?|expected|expectation|variance|fair\s+(?:die|dice|coin)|"
+    r"roll(?:ing|s|ed)?|markov)\b",
+    re.IGNORECASE,
 )
 
 
@@ -129,6 +171,13 @@ _PARAMETRIC_INEQUALITY_PRIORITY = re.compile(
 
 
 _TOPIC_SUBJECTS = {
+    "directed_euler_circuits": "离散数学",
+    "plane_rooted_tree_enumeration": "离散数学",
+    "lacunary_natural_boundary": "复分析",
+    "runge_kutta_stability": "数值分析",
+    "spherical_triangle_area": "微分几何",
+    "weierstrass_sine_product": "复分析",
+    "two_dimensional_polyharmonic_fundamental_solution": "偏微分方程",
     "olympiad_geometry": "初等几何",
     "olympiad_number_theory": "数论",
     "olympiad_combinatorics": "离散数学",
@@ -153,11 +202,20 @@ def classify_profile(problem: str) -> ProblemProfile:
     topic = _classify_topic(lowered)
     if topic in _TOPIC_SUBJECTS:
         topic_subject = _TOPIC_SUBJECTS[topic]
-        if subject not in {"进阶数学", topic_subject}:
-            secondary_subject = subject
-        subject = topic_subject
-        subject_confidence = "high" if subject_route.primary == topic_subject else "medium"
-        matched_signals = (*matched_signals, f"{topic_subject}:topic:{topic}")
+        strong_subject_conflict = bool(
+            subject_route.confidence == "high"
+            and subject not in {"进阶数学", topic_subject}
+        )
+        if strong_subject_conflict:
+            # A generic contest word must not turn an explicit Fourier, matrix,
+            # probability, or numerical-analysis problem into another field.
+            topic = "general"
+        else:
+            if subject not in {"进阶数学", topic_subject}:
+                secondary_subject = subject
+            subject = topic_subject
+            subject_confidence = "high" if subject_route.primary == topic_subject else "medium"
+            matched_signals = (*matched_signals, f"{topic_subject}:topic:{topic}")
 
     answer_shape = _answer_shape(text, problem_type, target)
     if subject == "进阶数学" and answer_shape == "roots" and re.search(
@@ -172,7 +230,9 @@ def classify_profile(problem: str) -> ProblemProfile:
         "zh" if re.search(r"[\u4e00-\u9fff]", text) else "en"
     )
     difficulty = classify_difficulty(text, problem_type)
-    if re.search(r"\b(prove|show|construct|counterexample|bijection|induction)\b", lowered):
+    if topic in SPECIALIZED_TOPICS:
+        difficulty = "hard"
+    elif re.search(r"\b(prove|show|construct|counterexample|bijection|induction)\b", lowered):
         difficulty = "hard"
     elif topic.startswith("olympiad_") and topic != "olympiad_general":
         difficulty = "hard"
@@ -182,11 +242,14 @@ def classify_profile(problem: str) -> ProblemProfile:
     confidence = "high" if answer_shape in {"number", "roots", "expression", "matrix"} else "medium"
     if problem_type in {"proof", "derivation", "explanation"}:
         confidence = "low"
+    elif topic in SPECIALIZED_TOPICS:
+        confidence = "medium"
     elif topic.startswith("olympiad_"):
         confidence = "medium"
     tool_eligible = (
         problem_type == "calculation"
         and answer_shape in {"number", "roots", "expression", "matrix"}
+        and topic not in SPECIALIZED_TOPICS
         and not topic.startswith("olympiad_")
     )
     return ProblemProfile(
@@ -208,11 +271,22 @@ def classify_profile(problem: str) -> ProblemProfile:
 
 
 def _classify_topic(lowered: str) -> str:
+    for topic, pattern in SPECIALIZED_TOPIC_PATTERNS:
+        if re.search(pattern, lowered, re.IGNORECASE | re.DOTALL):
+            return topic
     has_olympiad_signal = bool(_OLYMPIAD_SIGNAL.search(lowered))
     if _GEOMETRIC_COLLECTION_COMBINATORICS.search(lowered):
         return "olympiad_combinatorics"
     if _PARAMETRIC_INEQUALITY_PRIORITY.search(lowered):
         return "olympiad_inequality"
+    if _ADDITIVE_COUNTING_PRIORITY.search(lowered):
+        return "olympiad_combinatorics"
+    if (
+        has_olympiad_signal
+        and _DECISION_GAME_PRIORITY.search(lowered)
+        and not _STOCHASTIC_MARKERS.search(lowered)
+    ):
+        return "olympiad_combinatorics"
     if has_olympiad_signal and _COMBINATORIAL_OBJECT_PRIORITY.search(lowered):
         return "olympiad_combinatorics"
     geometry_markers = set(_OLYMPIAD_GEOMETRY_MARKERS.findall(lowered))
@@ -242,12 +316,61 @@ def _classify_topic(lowered: str) -> str:
 def _answer_shape(problem: str, problem_type: str, target: str = "") -> str:
     target_text = target or extract_target_clause(problem)
     lowered = target_text.lower()
+    # A requested fundamental solution is a formula even when the prompt also
+    # mandates a proof of its distributional normalization.
+    if re.search(
+        TWO_DIMENSIONAL_POLYHARMONIC_FUNDAMENTAL_PATTERN,
+        problem,
+        re.IGNORECASE | re.DOTALL,
+    ) and re.search(
+        r"(?:求|确定|写出|给出|构造)[^。.!?\n]{0,160}(?:基本解|基解)|"
+        r"\b(?:find|determine|write|give|construct)\b[^.!?\n]{0,180}"
+        r"\bfundamental\s+solution\b",
+        problem,
+        re.IGNORECASE,
+    ):
+        return "expression"
     if problem_type in {"proof", "derivation", "explanation"}:
         return "proof"
     if problem_type == "construction":
         return "expression"
     if has_choice_options(problem):
         return "choice"
+    if re.search(LACUNARY_NATURAL_BOUNDARY_PATTERN, target_text, re.IGNORECASE | re.DOTALL):
+        return "expression"
+    if re.search(RUNGE_KUTTA_STABILITY_PATTERN, target_text, re.IGNORECASE | re.DOTALL) and re.search(
+        r"稳定函数|stability\s+function|R\s*\(\s*z\s*\)",
+        target_text,
+        re.IGNORECASE,
+    ):
+        return "expression"
+    # An interval in a minimax or approximation problem is the domain of the
+    # requested polynomial, not the answer itself.  Keep this before the broad
+    # interval/range rule below.
+    polynomial_is_requested = bool(re.search(
+        r"(?:求|确定|构造|写出|给出)[^。.!?\n]{0,180}(?:多项式|逼近式)|"
+        r"\b(?:find|determine|construct|give)\b[^.!?\n]{0,180}\bpolynomial\b",
+        target_text,
+        re.IGNORECASE,
+    ))
+    roots_are_requested = bool(re.search(
+        r"(?:求|确定|写出|给出)\s*(?:该|这个|此|所有|全部|多项式的)*\s*(?:根|零点)|"
+        r"(?:求|确定|写出|给出)[^。.!?\n]{0,100}多项式[^。.!?\n]{0,40}"
+        r"(?:的)?(?:全部|所有)?(?:根|零点)|"
+        r"\b(?:find|determine|give|list)\s+(?:all\s+|the\s+)?(?:roots?|zeros?)\b",
+        target_text,
+        re.IGNORECASE,
+    ))
+    if polynomial_is_requested and not roots_are_requested:
+        return "expression"
+    if re.search(
+        r"(?:求|确定|计算|写出|给出)[^。.!?\n]{0,160}(?:同调群|胞腔链复形)|"
+        r"\b(?:find|determine|compute|write|give)\b[^.!?\n]{0,160}"
+        r"(?:H_?\{?\d+\}?\s*\(|homology\s+groups?|cellular\s+chain\s+complex)",
+        target_text,
+        re.IGNORECASE,
+    ):
+        return "expression"
     if re.search(
         r"(?:化简|简化)[^。.!?\n]{0,120}(?:表达式|式子)|"
         r"\bsimplif(?:y|ication)\b[^.!?\n]{0,120}\b(?:expression|formula)\b",

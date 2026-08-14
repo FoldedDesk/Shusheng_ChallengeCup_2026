@@ -55,8 +55,16 @@ _RESULT_WITH_NAMED_PROOF = re.compile(
     r"(?:a\s+|the\s+)?(?:complete\s+|rigorous\s+)?proof\b)|"
     r"\bwith\s+(?:a\s+)?(?:complete\s+|rigorous\s+)?proof\b"
     r"[^.!?\n]{0,100}\b(?:determine|find)\b|"
+    r"\b(?:determine|find)\b[^.!?\n]{0,500}[.!;]\s*"
+    r"(?:the\s+)?(?:proof|argument|justification)\s+"
+    r"(?:must|should|shall|is\s+required\s+to)\b|"
     r"(?:求|确定)[^。！？!?\n]{0,500}(?:并|且|，|,|；|;)\s*"
-    r"(?:给出|写出)\s*(?:一个|(?:完整|严格)的?)?\s*(?:证明|论证)"
+    r"(?:给出|写出)\s*(?:一个|(?:完整|严格)的?)?\s*(?:证明|论证)|"
+    r"(?:求|确定)[^。！？!?\n]{0,500}[。；;]\s*"
+    r"(?:并?要求|且要求|要求|须|需)\s*(?:给出|写出)?"
+    r"[^。！？!?\n]{0,40}(?:证明|论证)|"
+    r"(?:求|确定)[^。！？!?\n]{0,500}[。；;]\s*"
+    r"(?:证明|论证)\s*(?:须|需|必须|应当?|要求)"
     r")",
     re.IGNORECASE,
 )

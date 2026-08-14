@@ -196,6 +196,160 @@ class ScoreFirstPipelineTest(unittest.TestCase):
         self.assertNotIn("second half", client.calls[2]["messages"][1]["content"])
         self.assertFalse(client.calls[2]["thinking_mode"])
 
+    def test_nonempty_invalid_hard_continuation_gets_deep_blind_verification(self):
+        client = StructuredRecordingClient([
+            ModelCallResult("Deep analysis: unfinished", finish_reason="length"),
+            ModelCallResult("The continuation is still unfinished", finish_reason="length"),
+            ModelCallResult(
+                "CHECK: Since v_3(2025)=4 and v_5(2025)=2, v_3(n)>=2 and v_5(n)>=1; "
+                "therefore n=45 works and every smaller positive integer fails.\n"
+                "VERDICT: CONFIRMED\n"
+                r"FINAL: \boxed{45}"
+            ),
+        ])
+        problem = (
+            "Find the least positive integer n in this Diophantine divisibility problem "
+            "such that n^2 is divisible by 2025. "
+            r"Remember to put your final answer within \boxed{}."
+        )
+
+        result = ReasoningAgent(client).solve(problem, {})
+
+        self.assertEqual(result["final_response"], r"\boxed{45}")
+        self.assertEqual(len(client.calls), 3)
+        self.assertTrue(client.calls[2]["thinking_mode"])
+        self.assertIn("candidate-blind audit", client.calls[2]["messages"][1]["content"])
+        self.assertEqual(
+            self._step(result, "equivalence")["content"]["repair_mode"],
+            "verify_recovered",
+        )
+
+    @patch.object(SubmissionAgent, "_remaining_ms", return_value=31_000)
+    def test_truncated_audit_recovery_calls_run_with_thirty_one_seconds_left(self, _remaining):
+        client = StructuredRecordingClient([
+            ModelCallResult("Deep analysis: unfinished", finish_reason="length"),
+            ModelCallResult(
+                r"FINAL: \boxed{45}" "\nThe independent check continues",
+                finish_reason="length",
+            ),
+            ModelCallResult(
+                "CHECK: prime-valuation calculation is almost complete",
+                finish_reason="length",
+            ),
+            ModelCallResult(
+                "CHECK: Since v_3(2025)=4 and v_5(2025)=2, v_3(n)>=2 and v_5(n)>=1; "
+                "therefore n=45 works and every smaller positive integer fails.\n"
+                "VERDICT: CONFIRMED\n"
+                r"FINAL: \boxed{45}"
+            ),
+        ])
+        problem = (
+            "Find the least positive integer n in this Diophantine divisibility problem "
+            "such that n^2 is divisible by 2025. "
+            r"Remember to put your final answer within \boxed{}."
+        )
+
+        result = ReasoningAgent(client).solve(problem, {})
+
+        self.assertEqual(result["final_response"], r"\boxed{45}")
+        self.assertEqual(len(client.calls), 4)
+        self.assertEqual(
+            [message["role"] for message in client.calls[3]["messages"]],
+            ["system", "user", "assistant", "user"],
+        )
+        self.assertIn(
+            "prime-valuation calculation is almost complete",
+            client.calls[3]["messages"][2]["content"],
+        )
+        self.assertEqual(
+            self._step(result, "selection")["content"]["source"],
+            "audit_retry",
+        )
+
+    def test_completed_blind_audit_beats_quick_value_recovered_from_truncated_solve(self):
+        client = StructuredRecordingClient([
+            ModelCallResult("Deep derivation is unfinished", finish_reason="length"),
+            ModelCallResult(r"FINAL: \boxed{5}"),
+            ModelCallResult(
+                "Independent derivation obtains the decisive identity but the final simplification is",
+                finish_reason="length",
+            ),
+            ModelCallResult(
+                "CHECK: Direct substitution into the independently derived identity gives the exact value 2+2=4.\n"
+                "VERDICT: CONFIRMED\n"
+                r"FINAL: \boxed{4}"
+            ),
+        ])
+        problem = (
+            "Determine the exact value in this hard Diophantine calculation. "
+            "A rigorous proof must derive the decisive identity and independently substitute the result. "
+            r"Remember to put your final answer within \boxed{}."
+        )
+
+        result = ReasoningAgent(client).solve(problem, {})
+
+        self.assertIn(r"\boxed{4}", result["final_response"])
+        self.assertNotIn(r"\boxed{5}", result["final_response"])
+        self.assertEqual(len(client.calls), 4)
+        selection = self._step(result, "selection")["content"]
+        self.assertEqual(selection["source"], "audit_retry")
+        self.assertTrue(selection["changed_correction_completed_blind_audit"])
+        self.assertFalse(selection["changed_correction_deterministically_certified"])
+
+    def test_completed_candidate_visible_audit_cannot_use_blind_audit_exception(self):
+        client = StructuredRecordingClient([
+            ModelCallResult("Routine derivation is unfinished", finish_reason="length"),
+            ModelCallResult(r"FINAL: \boxed{4}"),
+            ModelCallResult(
+                "The candidate-visible audit has not finished its check",
+                finish_reason="length",
+            ),
+            ModelCallResult(
+                "CHECK: direct substitution into the proposed relation gives 4+4=8.\n"
+                "VERDICT: CORRECTED\n"
+                r"FINAL: \boxed{8}"
+            ),
+        ])
+        problem = r"Find the value. Remember to put your final answer within \boxed{}."
+
+        result = ReasoningAgent(client).solve(problem, {})
+
+        self.assertEqual(result["final_response"], r"\boxed{4}")
+        self.assertEqual(len(client.calls), 4)
+        self.assertIn(
+            "Candidate recovered from a truncated deep draft",
+            client.calls[2]["messages"][1]["content"],
+        )
+        selection = self._step(result, "selection")["content"]
+        self.assertFalse(selection["changed_correction_completed_blind_audit"])
+
+    @patch.object(SubmissionAgent, "_remaining_ms", return_value=29_000)
+    def test_truncated_recovery_still_respects_thirty_second_floor(self, _remaining):
+        client = StructuredRecordingClient([
+            ModelCallResult("Deep analysis: unfinished", finish_reason="length"),
+            ModelCallResult(
+                r"FINAL: \boxed{45}" "\nThe independent check continues",
+                finish_reason="length",
+            ),
+        ])
+        problem = (
+            "Find the least positive integer n in this Diophantine divisibility problem "
+            "such that n^2 is divisible by 2025. "
+            r"Remember to put your final answer within \boxed{}."
+        )
+
+        result = ReasoningAgent(client).solve(problem, {})
+
+        self.assertEqual(result["final_response"], r"\boxed{45}")
+        self.assertEqual(len(client.calls), 2)
+        self.assertEqual(
+            self._step(result, "equivalence")["content"]["repair_mode"],
+            "verify_recovered",
+        )
+        self.assertFalse(
+            self._step(result, "equivalence")["content"]["third_stage_used"]
+        )
+
     def test_recovered_hard_answer_is_adversarially_audited_and_corrected(self):
         client = StructuredRecordingClient([
             ModelCallResult("Deep analysis: unfinished", finish_reason="length"),
@@ -217,10 +371,11 @@ class ScoreFirstPipelineTest(unittest.TestCase):
         self.assertTrue(client.calls[0]["thinking_mode"])
         self.assertFalse(client.calls[1]["thinking_mode"])
         self.assertEqual(client.calls[1]["max_tokens"], 2048)
-        self.assertFalse(client.calls[2]["thinking_mode"])
+        self.assertTrue(client.calls[2]["thinking_mode"])
         self.assertEqual(client.calls[2]["max_tokens"], 4096)
         self.assertEqual(len(client.calls[2]["messages"]), 2)
-        self.assertIn("9", client.calls[2]["messages"][1]["content"])
+        self.assertIn("candidate-blind audit", client.calls[2]["messages"][1]["content"])
+        self.assertNotIn(r"\boxed{9}", client.calls[2]["messages"][1]["content"])
         self.assertEqual(
             self._step(result, "model_call_solve")["content"]["routing_role"],
             "deep_reasoning",
@@ -231,7 +386,7 @@ class ScoreFirstPipelineTest(unittest.TestCase):
         )
         self.assertEqual(
             self._step(result, "model_call_verify_recovered")["content"]["routing_role"],
-            "quick_response",
+            "deep_reasoning",
         )
         selection = self._step(result, "selection")["content"]
         self.assertEqual(selection["source"], "verify_recovered")
@@ -256,14 +411,15 @@ class ScoreFirstPipelineTest(unittest.TestCase):
 
         self.assertEqual(result["final_response"], r"\boxed{45}")
         self.assertTrue(client.calls[1]["thinking_mode"])
-        self.assertFalse(client.calls[2]["thinking_mode"])
+        self.assertTrue(client.calls[2]["thinking_mode"])
         self.assertEqual(client.calls[2]["max_tokens"], 4096)
         self.assertEqual(
             [message["role"] for message in client.calls[2]["messages"]],
             ["system", "user"],
         )
         self.assertNotIn("Independent deep calculation", client.calls[2]["messages"][1]["content"])
-        self.assertIn("9", client.calls[2]["messages"][1]["content"])
+        self.assertIn("candidate-blind audit", client.calls[2]["messages"][1]["content"])
+        self.assertNotIn(r"\boxed{9}", client.calls[2]["messages"][1]["content"])
         self.assertEqual(
             self._step(result, "equivalence")["content"]["repair_mode"],
             "retry_verify",
@@ -309,6 +465,18 @@ class ScoreFirstPipelineTest(unittest.TestCase):
             "provider_truncated_ambiguous_box",
             validation["retry_verify"]["rejected_reasons"],
         )
+        self.assertEqual(
+            [message["role"] for message in client.calls[3]["messages"]],
+            ["system", "user", "assistant", "user"],
+        )
+        self.assertIn(
+            "Yet the direct count gives",
+            client.calls[3]["messages"][2]["content"],
+        )
+        self.assertIn(
+            "停止展开推导",
+            client.calls[3]["messages"][3]["content"],
+        )
         self.assertEqual(self._step(result, "selection")["content"]["source"], "audit_retry")
 
     def test_uncertified_recovered_answer_audit_gets_a_fresh_retry(self):
@@ -333,7 +501,7 @@ class ScoreFirstPipelineTest(unittest.TestCase):
         self.assertEqual(len(client.calls), 4)
         self.assertEqual(
             [call["thinking_mode"] for call in client.calls],
-            [True, False, False, False],
+            [True, False, True, False],
         )
         self.assertEqual(
             [call["max_tokens"] for call in client.calls],
@@ -531,7 +699,44 @@ class ScoreFirstPipelineTest(unittest.TestCase):
         self.assertEqual(selection["source"], "continue")
         self.assertFalse(selection["changed_correction_corroborated"])
 
-    def test_value_changing_audit_does_not_trigger_disagreement_only_fourth_call(self):
+    def test_extremal_risk_does_not_let_one_audit_override_degraded_baseline(self):
+        problem = (
+            "Find the minimum integer N such that every admissible configuration has "
+            "at most N exceptional indices, and exhibit a configuration attaining N."
+        )
+        spec = build_problem_spec(problem)
+        self.assertIn("extremal_two_sided_bound", spec.risk_flags)
+        baseline = replace(
+            assess_candidate("25", "continue", spec, ()),
+            validation_tier="degraded",
+            shape_valid=True,
+            formatting_valid=True,
+            rejected_reasons=(),
+        )
+        one_audit = replace(
+            assess_candidate(
+                "40",
+                "verify_recovered",
+                spec,
+                (),
+                explicit_answer=True,
+                verification_verdict="corrected",
+            ),
+            validation_tier="complete",
+            complete_goals=True,
+            shape_valid=True,
+            formatting_valid=True,
+            rejected_reasons=(),
+        )
+
+        filtered = SubmissionAgent._without_uncorroborated_corrections(
+            [baseline, one_audit], baseline, spec=spec
+        )
+
+        self.assertIn(baseline, filtered)
+        self.assertNotIn(one_audit, filtered)
+
+    def test_value_changing_audit_requires_independent_fourth_call(self):
         client = StructuredRecordingClient([
             ModelCallResult("Deep analysis: unfinished", finish_reason="length"),
             ModelCallResult(r"FINAL: \boxed{25}"),
@@ -551,11 +756,21 @@ class ScoreFirstPipelineTest(unittest.TestCase):
             {},
         )
 
-        self.assertEqual(result["final_response"], r"\boxed{25}")
-        self.assertEqual(len(client.calls), 3)
+        self.assertEqual(result["final_response"], r"\boxed{40}")
+        self.assertEqual(len(client.calls), 4)
+        self.assertTrue(client.calls[3]["thinking_mode"])
+        self.assertEqual(client.calls[3]["max_tokens"], 4096)
+        self.assertIn(
+            "Preferred independent method",
+            client.calls[3]["messages"][1]["content"],
+        )
+        self.assertIn(
+            "Mandatory audit checklist",
+            client.calls[3]["messages"][1]["content"],
+        )
         selection = self._step(result, "selection")["content"]
-        self.assertEqual(selection["source"], "continue")
-        self.assertFalse(selection["changed_correction_corroborated"])
+        self.assertEqual(selection["source"], "verify_recovered")
+        self.assertTrue(selection["changed_correction_corroborated"])
 
     def test_rejected_second_audit_does_not_corroborate_changed_answer(self):
         spec = build_problem_spec("Find the value.")

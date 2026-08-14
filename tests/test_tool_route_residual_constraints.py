@@ -6,6 +6,7 @@ import pytest
 from classifier.problem_spec import build_problem_spec
 from core.submission_agent import SubmissionAgent
 from tools.sympy_tool import SympyTool
+from user_agent import ReasoningAgent
 
 
 DATASET = Path(__file__).parents[1] / "sample_data" / "judge1_style_112_hard_v1.jsonl"
@@ -30,6 +31,30 @@ CASES = {
     "odd_fiber_functions": (5040, r"Also require $f(1)=1$."),
 }
 
+OPEN_INTERVAL_PROBLEM = r"""Find the smallest positive integer $n$ such that there exist real numbers $x_1, \ldots, x_n$ between $-1$ and $1$ satisfying
+\[
+\sum_{i=1}^n x_i^2 + \left(\sum_{i=1}^n x_i\right)^2 = 20, \quad |x_1 + \ldots + x_n| < 1.
+\]"""
+
+SUBSET_CARD_PROBLEM = (
+    "A card deck consists of 1024 cards. On each card, a set of distinct decimal digits is written "
+    "in such a way that no two of these sets coincide, including an empty card. Two players "
+    "alternately take cards from the deck, one card per turn. After the deck is empty, each player "
+    "checks if he can throw out one of his cards so that each of the ten digits occurs on an even "
+    "number of his remaining cards. If one player can do this but the other one cannot, the one who "
+    "can is the winner; otherwise, a draw is declared. Determine all possible first moves of the "
+    "first player after which the opponent has a winning strategy."
+)
+
+
+class _RecordingClient:
+    def __init__(self):
+        self.calls = []
+
+    def chat(self, **kwargs):
+        self.calls.append(kwargs)
+        return r"FINAL: \boxed{1}"
+
 
 def _problem(idx):
     return ROWS[idx]["problem"].split("Remember to put", 1)[0].strip()
@@ -40,6 +65,74 @@ def _matching(problem, operation):
         result for result in SympyTool().results_for(problem)
         if result.operation == operation
     ]
+
+
+@pytest.mark.parametrize(
+    "directive",
+    (
+        "Report n modulo 2.",
+        "Return n modulo 2.",
+        "Express n modulo 2.",
+        "State n modulo 2.",
+        "报告 n 模 2 的余数。",
+    ),
+)
+def test_postfixed_modulo_directive_is_a_new_goal_and_downgrades_whole_route(directive):
+    changed = OPEN_INTERVAL_PROBLEM + ". " + directive
+    results = _matching(changed, "open_interval_quadratic_minimum_dimension")
+    spec = build_problem_spec(changed)
+    requirement_names = {
+        requirement.name
+        for goal in spec.goals
+        for requirement in goal.requirements
+    }
+
+    assert len(results) == 1
+    assert len(spec.goals) >= 2
+    assert "output_modulo_transform" in requirement_names
+    evidence = SubmissionAgent._tool_evidence(results, spec)
+    assert evidence[0].scope == "subexpression"
+    assert SubmissionAgent._whole_tool_answer(evidence) == ""
+
+
+@pytest.mark.parametrize(
+    "directive",
+    (
+        "Report the number of such moves, not the moves themselves.",
+        "Return the count of these moves instead of listing them.",
+        "State how many such moves exist rather than the moves themselves.",
+        "返回这些着法的数量，而不是着法本身。",
+    ),
+)
+def test_postfixed_output_object_replacement_downgrades_whole_route(directive):
+    changed = SUBSET_CARD_PROBLEM + " " + directive
+    results = _matching(changed, "subset_xor_card_game_losing_first_move")
+    spec = build_problem_spec(changed)
+    requirement_names = {
+        requirement.name
+        for goal in spec.goals
+        for requirement in goal.requirements
+    }
+
+    assert len(results) == 1
+    assert len(spec.goals) >= 2
+    assert "output_object_transform" in requirement_names
+    evidence = SubmissionAgent._tool_evidence(results, spec)
+    assert evidence[0].scope == "subexpression"
+    assert SubmissionAgent._whole_tool_answer(evidence) == ""
+
+
+def test_output_transform_cannot_take_the_zero_call_route_end_to_end():
+    client = _RecordingClient()
+    result = ReasoningAgent(client).solve(
+        OPEN_INTERVAL_PROBLEM + ". Report n modulo 2.",
+        {},
+    )
+    call_plan = next(step for step in result["trace"] if step["step"] == "call_plan")
+
+    assert call_plan["content"]["route"] == "model"
+    assert client.calls
+    assert result["final_response"] != "21"
 
 
 @pytest.mark.parametrize("operation", CASES)
@@ -74,6 +167,8 @@ def test_retained_trigger_with_extra_constraint_never_bypasses_model(operation):
     (
         " 最终只需给出所求量加1后的值。",
         " Report the requested quantity plus 1 as the final answer.",
+        " Report the result modulo 2.",
+        " Return the number of such results rather than the results themselves.",
         " 另外要求答案满足一个额外限制。",
         " Additionally require the answer to satisfy an extra restriction.",
     ),

@@ -245,7 +245,7 @@ class MultiDomainRagRoutingTest(unittest.TestCase):
         self.assertEqual(card.domain, "数论")
         self.assertEqual(card.effective_domains, ("数论", "抽象代数"))
 
-    def test_low_confidence_domain_guess_alone_does_not_inject_a_card(self):
+    def test_domain_guess_alone_never_injects_an_unrelated_loaded_note(self):
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "数值分析.txt"
             path.write_text("A domain-specific theorem with no query terms.\n", encoding="utf-8")
@@ -263,7 +263,7 @@ class MultiDomainRagRoutingTest(unittest.TestCase):
             high = retriever.retrieve(replace(spec, profile=high_profile))
 
         self.assertFalse(any(card.id.startswith("note.") for card in low.solve_cards))
-        self.assertTrue(any(card.id.startswith("note.") for card in high.solve_cards))
+        self.assertFalse(any(card.id.startswith("note.") for card in high.solve_cards))
         self.assertEqual(high.primary_subject, "数值分析")
         self.assertEqual(high.subject_confidence, "high")
 

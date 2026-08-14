@@ -5,6 +5,16 @@ from __future__ import annotations
 from dataclasses import asdict, dataclass
 import re
 
+from classifier.advanced_families import (
+    DIRECTED_EULER_CIRCUIT_PATTERN,
+    LACUNARY_NATURAL_BOUNDARY_PATTERN,
+    PLANE_ROOTED_TREE_PATTERN,
+    RUNGE_KUTTA_STABILITY_PATTERN,
+    SPECIALIZED_TOPICS,
+    SPHERICAL_TRIANGLE_AREA_PATTERN,
+    TWO_DIMENSIONAL_POLYHARMONIC_FUNDAMENTAL_PATTERN,
+    WEIERSTRASS_SINE_PRODUCT_PATTERN,
+)
 from classifier.choice import answer_choice_labels
 from classifier.profile import ProblemProfile, classify_profile
 from classifier.target import extract_target_clause
@@ -668,15 +678,258 @@ def build_problem_spec(problem: str) -> ProblemSpec:
     risk_score = _risk_score(semantic_text, profile, goals, risks)
     primary, alternative = _METHODS.get(profile.subject, ("definition_and_case_analysis", "direct_check"))
     topic = getattr(profile, "topic", "general")
-    if "global_connectivity" in risks:
+    if topic == "directed_euler_circuits" or re.search(
+        DIRECTED_EULER_CIRCUIT_PATTERN,
+        semantic_text,
+        re.IGNORECASE | re.DOTALL,
+    ):
+        primary, alternative = (
+            "best_theorem_with_fixed_arc_normalization",
+            "directed_matrix_tree_and_exit_ordering_check",
+        )
+    elif topic == "plane_rooted_tree_enumeration" or re.search(
+        PLANE_ROOTED_TREE_PATTERN,
+        semantic_text,
+        re.IGNORECASE | re.DOTALL,
+    ):
+        primary, alternative = (
+            "lukasiewicz_words_and_cycle_lemma",
+            "rooted_plane_tree_degree_sequence_formula",
+        )
+    elif topic == "lacunary_natural_boundary" or re.search(
+        LACUNARY_NATURAL_BOUNDARY_PATTERN,
+        semantic_text,
+        re.IGNORECASE | re.DOTALL,
+    ):
+        primary, alternative = (
+            "radius_then_dense_boundary_singularities",
+            "fabry_or_hadamard_gap_theorem",
+        )
+    elif topic == "runge_kutta_stability" or re.search(
+        RUNGE_KUTTA_STABILITY_PATTERN,
+        semantic_text,
+        re.IGNORECASE | re.DOTALL,
+    ):
+        primary, alternative = (
+            "order_conditions_then_stability_function",
+            "imaginary_axis_modulus_and_infinity_limit",
+        )
+    elif topic == "spherical_triangle_area" or re.search(
+        SPHERICAL_TRIANGLE_AREA_PATTERN,
+        semantic_text,
+        re.IGNORECASE | re.DOTALL,
+    ):
+        primary, alternative = (
+            "spherical_cosine_law_then_girard_excess",
+            "gram_matrix_or_vector_angle_area_check",
+        )
+    elif topic == "weierstrass_sine_product" or re.search(
+        WEIERSTRASS_SINE_PRODUCT_PATTERN,
+        semantic_text,
+        re.IGNORECASE | re.DOTALL,
+    ):
+        primary, alternative = (
+            "weierstrass_sine_product_then_imaginary_substitution",
+            "zero_set_normalization_and_log_derivative_check",
+        )
+    elif topic == "two_dimensional_polyharmonic_fundamental_solution" or re.search(
+        TWO_DIMENSIONAL_POLYHARMONIC_FUNDAMENTAL_PATTERN,
+        semantic_text,
+        re.IGNORECASE | re.DOTALL,
+    ):
+        primary, alternative = (
+            "radial_laplacian_recurrence_and_flux_normalization",
+            "fourier_symbol_and_distributional_constant_check",
+        )
+    elif "global_connectivity" in risks:
         primary, alternative = (
             "frontier_state_dp_with_connectivity",
             "exact_small_case_enumeration_and_subtour_check",
+        )
+    elif re.search(
+        r"CW\s*(?:复形|complex(?:es)?)|胞腔(?:同调|链复形|边界(?:映射|算子)?)|同调群|"
+        r"附着映射|粘附映射|"
+        r"\b(?:cellular\s+(?:homology|chain\s+complex|boundary(?:\s+map)?)|"
+        r"homology\s+groups?|attaching\s+maps?)\b",
+        semantic_text,
+        re.IGNORECASE,
+    ):
+        primary, alternative = (
+            "cellular_chain_complex_then_smith_normal_form",
+            "fundamental_group_abelianization_check",
+        )
+    elif re.search(
+        r"切比雪夫|极小极大(?:多项式|逼近)?|最佳一致逼近|等振荡|交错定理|"
+        r"\b(?:chebyshev|minimax\s+(?:polynomial|approximation)|best\s+uniform\s+approximation|"
+        r"equioscillation|alternation\s+theorem)\b",
+        semantic_text,
+        re.IGNORECASE,
+    ):
+        primary, alternative = (
+            "chebyshev_affine_map_and_normalized_alternation",
+            "equioscillation_linear_system_check",
+        )
+    elif re.search(
+        r"拉丁方|拉丁矩阵|行列(?:均|各)(?:为|是)?排列|"
+        r"每个符号[^。！？\n]{0,50}每行(?:和|与|、)?每列[^。！？\n]{0,30}(?:恰好|正好)?出现一次|"
+        r"\b(?:latin\s+squares?|rows?\s+and\s+columns?\s+(?:are|form)\s+permutations?|"
+        r"each\s+row\s+and\s+(?:each\s+)?column\s+(?:is|forms?)\s+a\s+permutation|"
+        r"row(?:\s*[/&-]\s*|\s+and\s+)column\s+permutations?|"
+        r"each\s+symbol\s+(?:must\s+)?occurs?\s+exactly\s+once\s+in\s+every\s+row\s+"
+        r"and\s+(?:in\s+)?every\s+column|"
+        r"every\s+row\s+and\s+(?:every\s+)?column\s+contains?\s+each\s+symbol\s+exactly\s+once)\b",
+        semantic_text,
+        re.IGNORECASE,
+    ):
+        primary, alternative = (
+            "normalize_symmetry_then_exhaust_structural_cases",
+            "exact_enumeration_with_orbit_size_check",
+        )
+    elif re.search(
+        r"无处零流|处处非零流|图流多项式|循环空间|圈空间|Tutte\s*多项式|"
+        r"\b(?:nowhere[- ]zero\s+(?:graph\s+)?flows?|flow\s+polynomial|cycle\s+space|"
+        r"tutte\s+polynomial)\b",
+        semantic_text,
+        re.IGNORECASE,
+    ):
+        primary, alternative = (
+            "cycle_space_coordinate_inclusion_exclusion",
+            "tutte_flow_polynomial_or_exact_edge_enumeration",
+        )
+    elif re.search(
+        r"分裂域|伽罗瓦|Galois|splitting\s+field|extension\s+degree",
+        semantic_text,
+        re.IGNORECASE,
+    ):
+        primary, alternative = (
+            "irreducible_factor_then_field_tower",
+            "generate_all_roots_and_check_normality_degree",
+        )
+    elif re.search(r"傅里叶变换|Fourier\s*(?:变换|transform)", semantic_text, re.IGNORECASE):
+        primary, alternative = (
+            "split_into_standard_fourier_transform_pairs",
+            "direct_integral_with_shift_and_normalization_check",
+        )
+    elif re.search(
+        r"(?:tiles?|方砖|瓷砖)[\s\S]{0,500}(?:covering|覆盖)[\s\S]{0,500}"
+        r"(?:same\s+nonzero\s+number|相同非零数|multiplicity|重数)",
+        semantic_text,
+        re.IGNORECASE,
+    ):
+        primary, alternative = (
+            "coverage_multiplicity_double_counting",
+            "periodic_construction_and_boundary_residue_check",
+        )
+    elif re.search(
+        r"tournaments?[\s\S]{0,700}(?:arrives?|到达)[\s\S]{0,500}"
+        r"(?:departs?|离开)[\s\S]{0,500}(?:hotel|住宿|stay)",
+        semantic_text,
+        re.IGNORECASE,
+    ):
+        primary, alternative = (
+            "arrival_departure_interval_lower_bound",
+            "explicit_complete_schedule_and_cost_recount",
+        )
+    elif re.search(
+        r"bijection[\s\S]{0,700}(?:x_?\{?1\}?\s*\+\s*1|coordinate\s+translations?)"
+        r"|双射[\s\S]{0,700}(?:坐标平移|横纵坐标)",
+        semantic_text,
+        re.IGNORECASE,
+    ):
+        primary, alternative = (
+            "translation_invariant_order_and_ideal_bounds",
+            "construct_extreme_linear_extensions",
+        )
+    elif re.search(
+        r"(?:flood|green\s+cells?|洪水|绿色格)[\s\S]{0,700}"
+        r"(?:grid|neighbou?rhood|boundary|网格|邻域|边界)|"
+        r"(?:grid|网格)[\s\S]{0,500}(?:green\s+cells?|绿色格)",
+        semantic_text,
+        re.IGNORECASE,
+    ):
+        primary, alternative = (
+            "isoperimetric_boundary_growth_bound",
+            "finite_window_simulation_then_extremal_construction",
+        )
+    elif re.search(
+        r"(?:多米诺|多连方|铺砌|铺满)[\s\S]{0,700}(?:矩形|棋盘|最少|最小)|"
+        r"\b(?:domino(?:es)?|tromino(?:es)?|tetromino(?:es)?|hexomino(?:es)?|"
+        r"polyomino(?:es)?)\b[\s\S]{0,700}\b(?:tile|tiling|rectangle|board|minimum|minimal)\b",
+        semantic_text,
+        re.IGNORECASE,
+    ):
+        primary, alternative = (
+            "tiling_coloring_and_cut_invariant",
+            "boundary_profile_dp_then_periodic_construction",
+        )
+    elif re.search(
+        r"(?:单位立方体|小立方体)[\s\S]{0,700}(?:截面|薄片|三个方向)[\s\S]{0,500}"
+        r"(?:颜色集合|不同颜色)|"
+        r"\bunit\s+cubes?\b[\s\S]{0,700}\b(?:slices?|rectangular\s+prisms?)\b"
+        r"[\s\S]{0,500}\b(?:sets?\s+of\s+(?:distinct\s+)?colou?rs?|orientations?)\b",
+        semantic_text,
+        re.IGNORECASE,
+    ):
+        primary, alternative = (
+            "slice_color_incidence_chain_bound",
+            "nested_layer_construction_and_small_order_check",
+        )
+    elif re.search(
+        r"\bn\W*good\s+functions?\b[\s\S]{0,900}\bexotic\s+integers?\b|"
+        r"n[- ]?好函数[\s\S]{0,900}奇异整数",
+        semantic_text,
+        re.IGNORECASE,
+    ):
+        primary, alternative = (
+            "classify_divisibility_preserving_integer_functions",
+            "parity_characterization_then_rank_formula",
+        )
+    elif re.search(
+        r"(?:方程|等式)[\s\S]{0,300}(?:全部|所有)正整数(?:有序)?解|"
+        r"\b(?:determine|find|classify)\s+all\s+positive\s+integer"
+        r"(?:\s+ordered)?\s+(?:pairs?|solutions?)\b",
+        semantic_text,
+        re.IGNORECASE,
+    ) and re.search(
+        r"[xy]\s*\^\s*\{?2\}?[\s\S]{0,180}[xy]|"
+        r"(?:Vieta|韦达|二次方程|quadratic)",
+        semantic_text,
+        re.IGNORECASE,
+    ):
+        primary, alternative = (
+            "vieta_jumping_descent",
+            "pell_discriminant_recurrence_check",
+        )
+    elif re.search(
+        r"轮流(?:选择|取|放|移动)|回合制|"
+        r"\b(?:players?[^.!?]{0,80}take\s+turns|take\s+turns|turn[- ]based game|optimal play|moves? first)\b",
+        semantic_text,
+        re.IGNORECASE,
+    ) and not re.search(
+        r"概率|随机|期望|方差|掷|骰子|硬币|马尔可夫|"
+        r"\b(?:probability|random(?:ly)?|expected|expectation|variance|"
+        r"(?:roll|flip)(?:ing|s|ed)?|fair\s+(?:die|dice|coin)|markov)\b",
+        semantic_text,
+        re.IGNORECASE,
+    ):
+        primary, alternative = (
+            "state_space_minimax_with_terminal_payoff",
+            "small_parameter_game_tree_then_invariant_strategy",
         )
     elif topic == "olympiad_inequality":
         primary, alternative = (
             "sharp_inequality_with_equality_or_limit_case",
             "extremal_family_and_parameter_check",
+        )
+    elif topic == "olympiad_functional_equation":
+        primary, alternative = (
+            "special_substitutions_then_case_exhaustion",
+            "verify_candidates_and_force_injectivity_or_periodicity",
+        )
+    elif topic == "olympiad_polynomial":
+        primary, alternative = (
+            "factorization_derivative_or_root_configuration",
+            "degree_multiplicity_and_numeric_root_check",
         )
     elif topic == "olympiad_combinatorics":
         primary, alternative = (
@@ -776,6 +1029,24 @@ def _answer_contract(
         for requirement in goal.requirements
         if requirement.category == "support"
     ))
+    # A proof/justification sentence often follows the result sentence and is
+    # intentionally not split into a second external goal. Preserve that
+    # global support obligation in the single answer contract.
+    if (
+        not _is_result_or_nonexistence_alternative(semantic_text)
+        and (
+            _mandatory_result_support_clause(semantic_text)
+            or re.search(
+                r"说明.*(?:理由|为何|原因)|解释|证明|论证|推导|归一化|规范化|"
+                r"prove|show|explain|justify|derive|normalization|normalisation|"
+                r"justification|show\s+your\s+work",
+                semantic_text,
+                re.IGNORECASE,
+            )
+        )
+        and "reasoning" not in support
+    ):
+        support = (*support, "reasoning")
     formal_proof = (
         not _is_result_or_nonexistence_alternative(semantic_text)
         and profile.task_kind == "proof"
@@ -801,11 +1072,13 @@ def _answer_contract(
                 for requirement in goal.requirements
                 if requirement.category == "support"
             ),
+            *((support) if len(goals) == 1 else ()),
             *(("reasoning",) if formal_proof else ()),
         ))),
         unit=_explicit_unit(goal.instruction) or (unit if len(goals) == 1 else ""),
         validation_requirements=tuple(dict.fromkeys((
             *(requirement.name for requirement in goal.requirements),
+            *((support) if len(goals) == 1 else ()),
             *(("reasoning",) if formal_proof else ()),
         ))),
         result_requirements=tuple(dict.fromkeys(
@@ -882,22 +1155,70 @@ def _explicit_unit(text: str) -> str:
 
 _GOAL_COMMAND = (
     r"求|计算|判断|说明|证明|给出|验证|比较|写出|指出|列出|构造|"
+    r"报告|返回|表达(?!式)|陈述|"
     r"\b(?:prove|show|find|determine|solve|calculate|compute|evaluate|verify|compare|"
-    r"explain|justify|derive|construct|classify|state|identify|describe|give|write|list)\b|"
+    r"explain|justify|derive|construct|classify|state|report|return|express|identify|"
+    r"describe|give|write|list)\b|"
     r"what\s+(?:is|are)|is\s+it\s+possible|if\s+(?:it\s+)?is\s+possible"
 )
 
 _SPLIT_GOAL_COMMAND = (
-    r"求|计算|判断|给出|写出|指出|列出|构造|"
-    r"\b(?:find|determine|solve|calculate|compute|evaluate|construct|classify|state|identify|"
-    r"describe|give|write|list)\b|what\s+(?:is|are)|is\s+it\s+possible|"
+    r"求|计算|判断|给出|写出|指出|列出|构造|报告|返回|表达(?!式)|陈述|"
+    r"\b(?:find|determine|solve|calculate|compute|evaluate|construct|classify|state|report|"
+    r"return|express|identify|describe|give|write|list)\b|what\s+(?:is|are)|is\s+it\s+possible|"
     r"if\s+(?:it\s+)?is\s+possible"
 )
+
+_OUTPUT_DIRECTIVE = (
+    r"(?:\b(?:report|return|express)\b|"
+    r"\bstate\b(?!\s+(?:space|recursion|transition|equation|variable|vector|diagram|process))|"
+    r"报告|返回|表达(?!式)|陈述)"
+)
+
+
+def _output_transform_requirements(text: str) -> tuple[Requirement, ...]:
+    """Record post-processing asks that a base mathematical result cannot cover."""
+    value = str(text or "")
+    requirements: list[Requirement] = []
+    if re.search(
+        rf"{_OUTPUT_DIRECTIVE}[^\n。！？.!?]{{0,120}}"
+        r"(?:\bmodulo\b|\bmod\s+\d|\bremainder\b|取模|模\s*\d|余数)",
+        value,
+        re.IGNORECASE,
+    ):
+        requirements.append(Requirement(
+            "output_modulo_transform",
+            (("mod",), ("remainder",), ("余数",), ("取模",)),
+            strict=False,
+            category="result",
+        ))
+    output_clause = re.search(
+        rf"{_OUTPUT_DIRECTIVE}[^\n。！？.!?]{{0,180}}",
+        value,
+        re.IGNORECASE,
+    )
+    if output_clause and re.search(
+        r"\b(?:the\s+)?(?:number|count|cardinality)\s+of\s+"
+        r"(?:such|these|those|the\s+(?:above|resulting|valid|possible))\b|"
+        r"\bhow\s+many\s+(?:such|these|those|valid|possible)\b|"
+        r"(?:这些|上述|所得|符合条件的)[^。！？.!?\n]{0,30}(?:数量|个数)|"
+        r"\b(?:rather\s+than|instead\s+of)\b|\bnot\b[^.!?\n]{0,40}\bthemselves\b|"
+        r"而不是|而非|不要[^。！？\n]{0,30}本身",
+        output_clause.group(0),
+        re.IGNORECASE,
+    ):
+        requirements.append(Requirement(
+            "output_object_transform",
+            (("number",), ("count",), ("cardinality",), ("数量",), ("个数",)),
+            strict=False,
+            category="result",
+        ))
+    return tuple(requirements)
 
 _ELABORATION_CLAUSE = re.compile(
     r"^\s*(?:给出|写出|指出|列出|(?:state|identify|write|give)\b).*"
     r"(?:所用|理由|依据|条件|结论|含义|计算式|截断|具体公式|转移矩阵|"
-    r"derivation|justification|reason|condition|criterion|conclusion|supporting formula|"
+        r"证明|论证|derivation|proof|justification|reason|condition|criterion|conclusion|supporting formula|"
     r"family|construction|example|blocks?|cov\s*\()",
     re.IGNORECASE | re.DOTALL,
 )
@@ -914,7 +1235,23 @@ def _goals(text: str, profile: ProblemProfile) -> list[Goal]:
     for index, item in enumerate(selected[:6]):
         # Keep every option in the answer contract. A verb inside one option
         # (for example "求最小值") is not the question's target.
-        target = item if profile.answer_shape == "choice" else extract_target_clause(item)
+        result_with_support = bool(
+            _mandatory_result_support_clause(item)
+            or (
+                profile.problem_type == "proof"
+                and re.search(
+                r"(?:求|确定|计算|find|determine|compute)[\s\S]{0,900}"
+                r"(?:证明|论证|\b(?:proof|argument|justification)\b)",
+                item,
+                re.IGNORECASE,
+            )
+            )
+        )
+        target = (
+            item
+            if profile.answer_shape == "choice" or result_with_support
+            else extract_target_clause(item)
+        )
         part_profile = classify_profile(target)
         part_shape = "choice" if profile.answer_shape == "choice" else part_profile.answer_shape
         if re.search(r"分裂域|splitting\s+field", target, re.IGNORECASE):
@@ -979,7 +1316,8 @@ def _independent_goal_target(text: str) -> str:
     """Return a short explicitly requested symbol for a split subproblem."""
     value = str(text or "")
     matches = list(re.finditer(
-        r"(?:求|计算|写出|给出|find|determine|solve\s+for|calculate|compute)\s*"
+        r"(?:求|计算|写出|给出|报告|返回|表达(?!式)|陈述|"
+        r"find|determine|solve\s+for|calculate|compute|report|return|express|state)\s*"
         r"(?:the\s+(?:value|values)\s+of\s+)?"
         r"([A-Za-z](?:_\{?[A-Za-z0-9]+\}?)?)\b",
         value,
@@ -988,10 +1326,45 @@ def _independent_goal_target(text: str) -> str:
     return matches[-1].group(1) if matches else ""
 
 
+def _mandatory_result_support_clause(text: str) -> bool:
+    """Recognize proof or normalization requirements attached to one result."""
+    value = str(text or "")
+    result = re.search(
+        r"(?:求出?|计算|确定|写出|给出|构造|"
+        r"\b(?:find|calculate|compute|determine|write|give|construct|evaluate)\b)",
+        value,
+        re.IGNORECASE,
+    )
+    if not result:
+        return False
+    suffix = value[result.end():]
+    return bool(re.search(
+        r"(?:证明|论证|推导|归一化|规范化|常数校准|系数校准)"
+        r"[^。！？\n]{0,50}(?:须|需|必须|应当?|要求)|"
+        r"(?:须|需|必须|应当?|要求)[^。！？\n]{0,80}"
+        r"(?:证明|论证|推导|说明[^。！？\n]{0,35}(?:归一化|规范化|常数|系数))|"
+        r"\b(?:proof|argument|derivation|normalization|normalisation|"
+        r"normalizing\s+constant|normalising\s+constant)\b"
+        r"[^.!?\n]{0,60}\b(?:must|shall|should|is\s+required\s+to)\b|"
+        r"\b(?:must|shall|should|required\s+to)\b[^.!?\n]{0,90}"
+        r"\b(?:prove|derive|justify|show|check|fix)\b[^.!?\n]{0,45}"
+        r"\b(?:normalization|normalisation|constant|coefficient)?\b",
+        suffix,
+        re.IGNORECASE,
+    ))
+
+
 def _split_goal_text(text: str) -> list[str]:
     """Split only explicit independent asks; keep conditions attached otherwise."""
     value = str(text or "").strip()
     if not value:
+        return [value]
+
+    # A mandatory proof/argument clause specifies how the requested result
+    # must be established; it is not an independent answer target.  Keeping
+    # the full text also protects notation such as H_1(X; R), whose semicolon
+    # is mathematical punctuation rather than a multipart delimiter.
+    if _mandatory_result_support_clause(value):
         return [value]
 
     # A sequence of fill-in lines is an explicit multipart contract even when
@@ -1060,14 +1433,15 @@ def _split_goal_text(text: str) -> list[str]:
 def _contains_goal_command(text: str) -> bool:
     value = re.sub(
         r"\b(?:can|could|may|might|must|should|will|would)\s+(?:then\s+)?"
-        r"(?:give|write|list|show|state|identify|describe)\b",
+        r"(?:give|write|list|show|state|report|return|express|identify|describe)\b",
         "",
         str(text or ""),
         flags=re.IGNORECASE,
     )
     value = re.sub(
         r"\b(?:wants?|wanted|tries|tried|aims?|attempts?)\s+to\s+"
-        r"(?:find|determine|solve|calculate|compute|evaluate|describe|give|write|list)\b",
+        r"(?:find|determine|solve|calculate|compute|evaluate|describe|give|write|list|"
+        r"report|return|express|state)\b",
         "",
         value,
         flags=re.IGNORECASE,
@@ -1183,7 +1557,7 @@ def _requires_almost_everywhere_zero_conclusion(text: str) -> bool:
 
 
 def _requirements(text: str, answer_shape: str) -> tuple[Requirement, ...]:
-    requirements: list[Requirement] = []
+    requirements: list[Requirement] = list(_output_transform_requirements(text))
     alternative_result = _is_result_or_nonexistence_alternative(text)
     if alternative_result:
         requirements.append(Requirement(
@@ -1191,6 +1565,81 @@ def _requirements(text: str, answer_shape: str) -> tuple[Requirement, ...]:
             (("number",), ("does not exist",), ("不存在",)),
             strict=True,
         ))
+    if re.search(LACUNARY_NATURAL_BOUNDARY_PATTERN, text, re.IGNORECASE | re.DOTALL):
+        radius_requested = bool(re.search(
+            r"(?:求|确定|计算|给出|写出|判定)[^。.!?\n]{0,100}收敛半径|"
+            r"\b(?:find|finding|determine|determining|compute|computing|give|state)\b[^.!?\n]{0,100}"
+            r"\b(?:the\s+)?radius(?:\s+of\s+convergence)?\b",
+            text,
+            re.IGNORECASE,
+        ))
+        domain_requested = bool(re.search(
+            r"(?:求|确定|给出|写出|判定)[^。.!?\n]{0,100}(?:收敛域|收敛圆盘|解析域)|"
+            r"\b(?:find|determine|give|state)\b[^.!?\n]{0,120}"
+            r"\b(?:domain|disk)\s+of\s+(?:convergence|analyticity)\b",
+            text,
+            re.IGNORECASE,
+        ))
+        boundary_requested = bool(re.search(
+            r"(?:证明|说明|判定|判断|确定|验证)[^。.!?\n]{0,160}自然边界|"
+            r"自然边界[^。.!?\n]{0,80}(?:证明|说明|判定|判断|确定|验证)|"
+            r"\b(?:prove|show|determine|decide|verify|whether)\b[^.!?\n]{0,180}"
+            r"\bnatural\s+boundary\b|"
+            r"\bis\b[^.!?\n]{0,120}\ba\s+natural\s+boundary\b|"
+            r"(?:解析延拓|全纯延拓)[^。.!?\n]{0,160}"
+            r"(?:每(?:一|条|个)?(?:边界)?圆?弧|任意(?:边界)?圆?弧|整个(?:收敛)?圆周)|"
+            r"\banalytic\s+continuation\b[^.!?\n]{0,180}"
+            r"\b(?:every|each|any)\s+(?:boundary\s+)?arc\b",
+            text,
+            re.IGNORECASE,
+        ))
+        if radius_requested:
+            requirements.append(Requirement(
+                "convergence_radius",
+                (("收敛半径",), ("radius", "convergence"), ("r=",)),
+                strict=True,
+            ))
+        if domain_requested:
+            requirements.append(Requirement(
+                "convergence_domain",
+                (
+                    ("收敛域",),
+                    ("收敛圆盘",),
+                    ("domain", "convergence"),
+                    ("|z|<",),
+                    (r"\lvert", "z", r"\rvert", "<"),
+                ),
+                strict=True,
+            ))
+        if boundary_requested:
+            requirements.append(Requirement(
+                "natural_boundary_classification",
+                (
+                    ("自然边界",),
+                    ("natural", "boundary"),
+                    ("不能", "解析延拓"),
+                    ("cannot", "analytically", "continue"),
+                ),
+                strict=True,
+            ))
+    if re.search(RUNGE_KUTTA_STABILITY_PATTERN, text, re.IGNORECASE | re.DOTALL):
+        if re.search(r"(?:求|确定|推导|写出|给出|计算)[^。.!?\n]{0,100}稳定函数|"
+                     r"\b(?:find|determine|derive|write|give|compute)\b[^.!?\n]{0,120}"
+                     r"\bstability\s+function\b", text, re.IGNORECASE):
+            requirements.append(Requirement(
+                "stability_function",
+                (("稳定函数",), ("stability", "function"), ("r(z)", "=")),
+                strict=True,
+            ))
+        if re.search(r"(?:无穷远|无穷大)[^。.!?\n]{0,50}(?:极限|趋于)|"
+                     r"(?:极限|趋于)[^。.!?\n]{0,50}(?:无穷远|无穷大)|"
+                     r"\b(?:limit|as\s+z)\b[^.!?\n]{0,80}\b(?:infinity|infty)\b|"
+                     r"R\s*\(\s*(?:\\infty|∞)\s*\)", text, re.IGNORECASE):
+            requirements.append(Requirement(
+                "stability_infinity_limit",
+                (("无穷", "极限"), ("lim", "infty"), ("r(infty)",), ("∞",)),
+                strict=True,
+            ))
     for parameter in _answer_parameters(text):
         requirements.append(Requirement(
             f"parameter_dependency_{parameter.lower()}",
@@ -1360,10 +1809,15 @@ def _requirements(text: str, answer_shape: str) -> tuple[Requirement, ...]:
             (("分布",), ("distribution",), (r"\sim",), ("poisson",), ("normal",)),
             strict=True,
         ))
-    if not alternative_result and re.search(
-        r"说明.*(?:理由|为何|原因)|解释|证明|prove|show|explain|justify|show\s+your\s+work",
-        text,
-        re.IGNORECASE,
+    if not alternative_result and (
+        _mandatory_result_support_clause(text)
+        or re.search(
+            r"说明.*(?:理由|为何|原因)|解释|证明|论证|推导|归一化|规范化|"
+            r"prove|show|explain|justify|derive|normalization|normalisation|justification|"
+            r"show\s+your\s+work",
+            text,
+            re.IGNORECASE,
+        )
     ):
         requirements.append(Requirement("reasoning", (("因为",), ("依据",), ("because",), ("since",), ("therefore",)), strict=False))
     if re.search(r"牛顿法|newton", text, re.IGNORECASE):
@@ -1782,10 +2236,12 @@ def _risk_score(text: str, profile: ProblemProfile, goals: list[Goal], risks: li
         score += 1
     if getattr(profile, "topic", "").startswith("olympiad_"):
         score += 2
+    if getattr(profile, "topic", "general") in SPECIALIZED_TOPICS:
+        score += 2
     if set(risks) & {
         "exhaustiveness_required", "integer_constraints", "functional_equation",
         "diagram_dependency", "parameter_dependency", "extremal_two_sided_bound",
-        "global_connectivity",
+        "global_connectivity", "statement_integrity_audit",
     }:
         score += 2
     if re.search(r"最大右侧存在区间|maximal right(?:-hand)? interval", text, re.IGNORECASE):
@@ -1981,6 +2437,20 @@ def _risks(text: str, profile: ProblemProfile, goal_count: int) -> list[str]:
     topic = getattr(profile, "topic", "general")
     if topic.startswith("olympiad_"):
         risks.append("olympiad_problem")
+    if topic == "directed_euler_circuits":
+        risks.append("euler_circuit_normalization")
+    elif topic == "plane_rooted_tree_enumeration":
+        risks.append("lukasiewicz_prefix_and_cycle_normalization")
+    elif topic == "lacunary_natural_boundary":
+        risks.extend(["theorem_scope", "analytic_continuation_scope"])
+    elif topic == "runge_kutta_stability":
+        risks.append("order_and_stability_conditions")
+    elif topic == "spherical_triangle_area":
+        risks.append("spherical_radius_angle_and_unit_normalization")
+    elif topic == "weierstrass_sine_product":
+        risks.append("entire_product_zero_set_and_normalization")
+    elif topic == "two_dimensional_polyharmonic_fundamental_solution":
+        risks.append("distributional_sign_and_flux_normalization")
     if re.search(r"(?:求|找出|确定|列出).*所有|\b(?:find|determine|classify)\s+all\b", text, re.IGNORECASE):
         risks.append("exhaustiveness_required")
     if topic == "olympiad_number_theory" or re.search(r"正整数|整数解|positive integers?|integer solutions?", text, re.IGNORECASE):
@@ -2018,4 +2488,61 @@ def _risks(text: str, profile: ProblemProfile, goal_count: int) -> list[str]:
         re.IGNORECASE | re.DOTALL,
     ):
         risks.append("global_connectivity")
+    if _needs_statement_integrity_audit(text):
+        risks.append("statement_integrity_audit")
     return list(dict.fromkeys(risks))
+
+
+def _needs_statement_integrity_audit(text: str) -> bool:
+    """Flag strong signs of a corrupted or semantically detached late clause.
+
+    This flag never removes text. It only asks the solver to compare the
+    literal reading with a minimally repaired reading when the literal task is
+    internally inconsistent or explicitly says that a clause is irrelevant.
+    """
+    value = str(text or "")
+    tuple_dimensions = {
+        int(item)
+        for item in re.findall(
+            r"\b(\d+)\s*[- ]\s*(?:dimensional\s+)?tuples?\b",
+            value,
+            re.IGNORECASE,
+        )
+    }
+    incompatible_dimensions = len(tuple_dimensions) >= 2 and bool(re.search(
+        r"\b(?:write|generate|obtain|produce|represent|map|transform)\b|"
+        r"写出|生成|得到|表示|映射|变换",
+        value,
+        re.IGNORECASE,
+    ))
+    explicitly_irrelevant = bool(re.search(
+        r"\b(?:additionally|also|in\s+addition)[\s\S]{0,700}?"
+        r"(?:does\s+not|do\s+not|cannot)\s+(?:affect|change|influence)\b|"
+        r"(?:另外|此外|附加)[\s\S]{0,500}?(?:不影响|不会改变|无关)",
+        value,
+        re.IGNORECASE,
+    ))
+    suspicious_addendum = bool(re.search(
+        r"\b(?:in\s+addition\s+to\s+(?:the\s+)?(?:given|above)\s+constraints|"
+        r"additionally)[\s\S]{0,500}?\b(?:random(?:ly)?|forced|broken|vip\s+lounge|"
+        r"mischievous|artifact)\b|"
+        r"(?:另外|此外|附加)[\s\S]{0,500}?(?:随机|强制|损坏|贵宾|恶作剧|神器)",
+        value,
+        re.IGNORECASE,
+    ))
+    stochastic_strategy_conflict = bool(
+        re.search(r"\b(?:coin|die|dice|random(?:ly)?)\b", value, re.IGNORECASE)
+        and re.search(r"\b(?:forced|required)\s+to\b", value, re.IGNORECASE)
+        and re.search(
+            r"\b(?:optimal(?:ly)?|perfect\s+strategy|wants?\s+to\s+(?:maximize|minimize)|"
+            r"play(?:s|ed)?\s+optimally)\b",
+            value,
+            re.IGNORECASE,
+        )
+    )
+    return bool(
+        incompatible_dimensions
+        or explicitly_irrelevant
+        or suspicious_addendum
+        or stochastic_strategy_conflict
+    )

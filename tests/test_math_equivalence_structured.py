@@ -64,6 +64,12 @@ def test_interval_notation_is_not_conflated_with_tuple_or_wrong_interval():
     assert not equivalent_answers("(1,2)", "(1,3)")
 
 
+def test_open_interval_and_chained_inequality_are_equivalent():
+    assert equivalent_answers(r"\boxed{(1,\infty)}", r"1<p<\infty")
+    assert equivalent_answers(r"p\in[1,\infty)", r"1\leq p<\infty")
+    assert not equivalent_answers(r"p\in[1,\infty)", r"1<p<\infty")
+
+
 def test_single_equation_can_omit_only_its_left_hand_side():
     assert equivalent_answers(r"[K:\mathbb Q]=16", "16")
     assert equivalent_answers(r"\lVert T^n\rVert=\frac{1}{n!}", r"\frac{1}{n!}")

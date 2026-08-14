@@ -120,6 +120,12 @@ def evaluate(items: list[dict], agent_output_dir: Path) -> dict:
     contract_box_missing_ids: list[str] = []
     sources: dict[str, int] = {}
     validation_tiers: dict[str, int] = {}
+    certified_route_ids: list[str] = []
+    certified_route_miss_ids: list[str] = []
+    model_route_ids: list[str] = []
+    model_route_miss_ids: list[str] = []
+    certified_route_hits = model_route_hits = 0
+    sympy = SympyTool()
     for item in items:
         path = agent_output_dir / f"{item['idx']}.json"
         if not path.is_file():
@@ -146,8 +152,22 @@ def evaluate(items: list[dict], agent_output_dir: Path) -> dict:
         if missing_for_item:
             missing_goal_ids.append(item["idx"])
         validation_tiers[assessment.validation_tier] = validation_tiers.get(assessment.validation_tier, 0) + 1
-        hits += int(equivalent_answers(final, item["answer"]))
+        semantic_hit = equivalent_answers(final, item["answer"])
+        hits += int(semantic_hit)
         normalized_hits += int(_normalized(final) == _normalized(item["answer"]))
+        evidence = SubmissionAgent._tool_evidence(sympy.results_for(item["problem"]), spec)
+        tool_answer = SubmissionAgent._whole_tool_answer(evidence)
+        if tool_answer:
+            certified_route_ids.append(item["idx"])
+            route_hit = equivalent_answers(tool_answer, item["answer"])
+            certified_route_hits += int(route_hit)
+            if not route_hit:
+                certified_route_miss_ids.append(item["idx"])
+        else:
+            model_route_ids.append(item["idx"])
+            model_route_hits += int(semantic_hit)
+            if not semantic_hit:
+                model_route_miss_ids.append(item["idx"])
         trace = record.get("trace", [])
         selection = next((step.get("content", {}) for step in trace if step.get("step") == "selection"), {})
         source = str(selection.get("source", "missing"))
@@ -181,6 +201,21 @@ def evaluate(items: list[dict], agent_output_dir: Path) -> dict:
         "selection_sources": sources,
         "normalized_standard_answer_hits": normalized_hits,
         "semantic_standard_answer_hits": hits,
+        "current_certified_route_count": len(certified_route_ids),
+        "current_certified_route_hits": certified_route_hits,
+        "current_certified_route_accuracy": (
+            certified_route_hits / len(certified_route_ids)
+            if certified_route_ids else None
+        ),
+        "current_certified_route_ids": certified_route_ids,
+        "current_certified_route_miss_ids": certified_route_miss_ids,
+        "current_model_route_count": len(model_route_ids),
+        "current_model_route_hits_from_saved_outputs": model_route_hits,
+        "current_model_route_accuracy_from_saved_outputs": (
+            model_route_hits / len(model_route_ids) if model_route_ids else None
+        ),
+        "current_model_route_ids": model_route_ids,
+        "current_model_route_miss_ids": model_route_miss_ids,
     }
 
 

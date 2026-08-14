@@ -39,6 +39,7 @@ def equivalent_answers(left: str, right: str) -> bool:
         _trigonometric_family_match,
         _entropy_identity_match,
         _optimization_result_match,
+        _interval_inequality_match,
         _approximate_exact_pair_match,
         _approximate_interval_match,
         _negative_convergence_match,
@@ -1137,6 +1138,102 @@ def _intervals(value: str) -> list[tuple[str, str, str, str]]:
         )
         for match in pattern.finditer(text)
     ]
+
+
+_INTERVAL_BOUND = (
+    r"(?:[-+]?\d+(?:\.\d+)?(?:/\d+)?|"
+    r"[-+]?\\(?:d?frac)\{[^{}]+\}\{[^{}]+\}|"
+    r"[-+]?\\sqrt\{[^{}]+\}|[-+]?(?:\\infty|∞))"
+)
+
+
+def _set_interval_signature(value: str) -> tuple[str, str, bool, bool] | None:
+    """Parse one-dimensional interval notation or a chained inequality."""
+    text = _unwrap_text_commands(_strip_math_wrappers(value))
+    text = text.replace(r"\leqslant", "<=").replace(r"\geqslant", ">=")
+    text = text.replace(r"\leq", "<=").replace(r"\geq", ">=")
+    text = text.replace("≤", "<=").replace("≥", ">=")
+
+    chain = re.search(
+        rf"(?P<lower>{_INTERVAL_BOUND})\s*(?P<lower_op><=|<)\s*"
+        rf"[A-Za-z](?:_\{{?[^}}\s]+\}}?)?\s*(?P<upper_op><=|<)\s*"
+        rf"(?P<upper>{_INTERVAL_BOUND})",
+        text,
+        re.IGNORECASE,
+    )
+    if chain:
+        return (
+            chain.group("lower"),
+            chain.group("upper"),
+            chain.group("lower_op") == "<",
+            chain.group("upper_op") == "<",
+        )
+
+    reverse = re.search(
+        rf"(?P<upper>{_INTERVAL_BOUND})\s*(?P<upper_op>>=|>)\s*"
+        rf"[A-Za-z](?:_\{{?[^}}\s]+\}}?)?\s*(?P<lower_op>>=|>)\s*"
+        rf"(?P<lower>{_INTERVAL_BOUND})",
+        text,
+        re.IGNORECASE,
+    )
+    if reverse:
+        return (
+            reverse.group("lower"),
+            reverse.group("upper"),
+            reverse.group("lower_op") == ">",
+            reverse.group("upper_op") == ">",
+        )
+
+    intervals = _intervals(text)
+    if not intervals:
+        return None
+    lower, upper, opening, closing = intervals[-1]
+    interval_semantics = bool(
+        re.search(
+            r"\\in\b|∈|区间|范围|定义域|解集|"
+            r"\b(?:interval|range|domain|solution\s+set)\b",
+            text,
+            re.IGNORECASE,
+        )
+        or re.search(r"\\infty|∞", f"{lower} {upper}")
+    )
+    if not interval_semantics:
+        return None
+    return lower, upper, opening == "(", closing == ")"
+
+
+def _infinite_bound(value: str) -> int | None:
+    compact = re.sub(r"\s+", "", value).replace(r"\infty", "∞")
+    if compact in {"∞", "+∞"}:
+        return 1
+    if compact == "-∞":
+        return -1
+    return None
+
+
+def _same_interval_bound(left: str, right: str) -> bool:
+    left_infinite = _infinite_bound(left)
+    right_infinite = _infinite_bound(right)
+    if left_infinite is not None or right_infinite is not None:
+        return left_infinite is not None and left_infinite == right_infinite
+    return _scalar_entry_match(left, right)
+
+
+def _interval_inequality_match(left: str, right: str) -> bool | None:
+    left_signature = _set_interval_signature(left)
+    right_signature = _set_interval_signature(right)
+    if left_signature is None and right_signature is None:
+        return None
+    if left_signature is None or right_signature is None:
+        return False
+    left_lower, left_upper, left_lower_open, left_upper_open = left_signature
+    right_lower, right_upper, right_lower_open, right_upper_open = right_signature
+    return bool(
+        left_lower_open == right_lower_open
+        and left_upper_open == right_upper_open
+        and _same_interval_bound(left_lower, right_lower)
+        and _same_interval_bound(left_upper, right_upper)
+    )
 
 
 def _displayed_decimal_places(value: str) -> int | None:

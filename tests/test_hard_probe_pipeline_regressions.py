@@ -100,6 +100,37 @@ class HardProbePipelineRegressionTest(unittest.TestCase):
         self.assertTrue(listed.accepted)
         self.assertTrue(certified_singleton.accepted)
 
+    def test_latin_square_audit_requires_reproducible_enumeration(self):
+        spec = build_problem_spec(
+            "A 4 by 4 array has every row and column a permutation, and both "
+            "diagonals have distinct entries. Determine the number with a rigorous proof."
+        )
+
+        self.assertFalse(SubmissionAgent._has_audit_support(
+            "CHECK: We enumerated all normalized arrays and found 12, so the total is 288.",
+            spec,
+        ))
+        self.assertTrue(SubmissionAgent._has_audit_support(
+            "CHECK: Exhaustively enumerating all 24^3 remaining row triples and filtering "
+            "every column and diagonal leaves 2 normalized completions; 24*2=48.",
+            spec,
+        ))
+
+    def test_finite_field_flow_audit_rejects_dimension_only_or_authority_claims(self):
+        spec = build_problem_spec(
+            "Count the nowhere-zero flows of K_5 over the finite field Z/3Z, with proof."
+        )
+
+        self.assertFalse(SubmissionAgent._has_audit_support(
+            "CHECK: The flow-space dimension is 10-5+1=6; a standard result gives 240.",
+            spec,
+        ))
+        self.assertTrue(SubmissionAgent._has_audit_support(
+            "CHECK: In a cycle basis, exhaustive enumeration of 3^6=729 coordinate "
+            "vectors and filtering all 10 edge linear forms gives 24 nonzero flows; 24>0.",
+            spec,
+        ))
+
     def test_truncated_deep_solve_uses_bounded_candidate_audit(self):
         client = RecordingClient([
             ModelCallResult("A long unfinished derivation", finish_reason="length"),
@@ -116,10 +147,10 @@ class HardProbePipelineRegressionTest(unittest.TestCase):
 
         self.assertEqual(result["final_response"], r"\boxed{2-2m}")
         self.assertEqual(len(client.calls), 3)
-        self.assertFalse(client.calls[2]["thinking_mode"])
+        self.assertTrue(client.calls[2]["thinking_mode"])
         self.assertEqual(client.calls[2]["max_tokens"], 4096)
-        self.assertIn("Candidate recovered from a truncated deep draft", client.calls[2]["messages"][1]["content"])
-        self.assertIn("-4", client.calls[2]["messages"][1]["content"])
+        self.assertIn("candidate-blind audit", client.calls[2]["messages"][1]["content"])
+        self.assertNotIn(r"\boxed{-4}", client.calls[2]["messages"][1]["content"])
 
     def test_uncertified_audit_gets_one_final_certified_retry(self):
         client = RecordingClient([

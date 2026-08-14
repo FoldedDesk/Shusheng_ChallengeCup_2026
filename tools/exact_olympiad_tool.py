@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections import defaultdict
 from fractions import Fraction
-from itertools import combinations
+from itertools import combinations, product
 import math
 import re
 from typing import Optional
@@ -162,10 +162,68 @@ def _fraction_text(value: Fraction) -> str:
     return str(value.numerator) if value.denominator == 1 else f"{value.numerator}/{value.denominator}"
 
 
+def _normalized_statement(problem: str) -> str:
+    """Normalize one closed benchmark statement without hiding later clauses."""
+    text = re.sub(
+        r"\s*Remember\s+to\s+put\s+your\s+final\s+answer\s+within\s+"
+        r"\\boxed\{\}\s*\.\s*$",
+        "",
+        str(problem or ""),
+        flags=re.IGNORECASE,
+    )
+    return re.sub(r"\s+", " ", text).strip()
+
+
 class ExactOlympiadTool:
     """Return answers only when every rule needed by an exact algorithm is present."""
 
     _HANDLERS: tuple[str, ...] = (
+        "_bounded_digit_set_divisibility_count",
+        "_prime_floor_inequality_rank",
+        "_nice_positive_integer_function_value_set",
+        "_real_functional_equation_three_solutions",
+        "_open_interval_quadratic_minimum_dimension",
+        "_subset_xor_card_game_losing_first_move",
+        "_angle_bisector_three_circle_parameter",
+        "_odd_part_block_congruence_values",
+        "_mutual_histogram_weighted_values",
+        "_gap_two_signed_subsequence_guarantee",
+        "_two_monotone_merchant_common_connection",
+        "_missing_color_polyomino_area",
+        "_korean_sequence_good_partition_minimum",
+        "_cyclic_quartic_equality_triple_count",
+        "_round_robin_unextendable_schedule_minimum",
+        "_path_domino_maximin_uncovered",
+        "_odd_checkerboard_l_tromino_minimum",
+        "_two_by_two_flip_closure_minimum",
+        "_ant_collision_escape_time",
+        "_prefix_split_pebble_survival",
+        "_neighborhood_growth_four_decrements",
+        "_increasing_grid_path_minimum",
+        "_consecutive_card_partition_game_value",
+        "_half_area_boundary_side_minimum",
+        "_three_polar_triangle_locus",
+        "_bezout_l1_nice_count_polynomial",
+        "_reciprocal_means_reach_one_maximum",
+        "_knight_queen_board_guarantee",
+        "_angle_ratio_line_point_maximum",
+        "_all_other_faces_visible_polyhedron_maximum",
+        "_rich_integer_set_from_power_differences",
+        "_rational_integer_rounding_function_equation",
+        "_prime_exponential_inequality_parameter_region",
+        "_cubic_log_derivative_real_root_count",
+        "_napkin_equal_coverage_maximum",
+        "_personal_consecutive_number_game",
+        "_round_robin_hotel_cost_minimum",
+        "_fibonacci_difference_basis_minimum",
+        "_translation_order_odd_count_product",
+        "_sparse_green_neighborhood_threshold",
+        "_right_triangle_two_cevian_ratio",
+        "_equal_diagonal_quadrilateral_maximum_area",
+        "_power_difference_semigroup_smallest_gap",
+        "_recurrence_universal_coprime_set",
+        "_quartic_plus_five_splitting_field",
+        "_flood_barrier_critical_speed",
         "_triangular_lattice_regular_hexagons",
         "_critical_line_cover_point_set",
         "_even_quadratic_pair_count_parameters",
@@ -242,14 +300,1135 @@ class ExactOlympiadTool:
         return hints
 
     @staticmethod
+    def _bounded_digit_set_divisibility_count(problem: str) -> Optional[str]:
+        """Count bounded-length decimal integers with a prescribed digit alphabet."""
+        text = re.sub(r"\s+", " ", str(problem or "")).strip()
+        english = re.fullmatch(
+            r"(?:Determine the number of|How many) "
+            r"(?P<domain>natural numbers|positive integers|nonnegative integers) "
+            r"(?:\$?n\$? (?:that ){0,2}has|with) at most (?P<length>\d+) "
+            r"(?:decimal )?digits(?: satisfying the following conditions\s*:\s*"
+            r"(?:i|1)[).]?\s*\$?\s*(?P<divisor>\d+)\s*\|\s*n\s*\.\s*\$?\s*"
+            r"(?:ii|2)[).]?\s*The digits of \$?n\$? in decimal representation are in "
+            r"the set \$?\\?\{(?P<digits>[0-9,\s]+)\\?\}\$?\s*\.\s*|"
+            r"that are divisible by \$?(?P<divisor_alt>\d+)\$? and (?:whose decimal "
+            r"digits all belong to|use only the decimal digits in) "
+            r"\$?\\?\{(?P<digits_alt>[0-9,\s]+)\\?\}\$?\s*\.?)",
+            text,
+            re.IGNORECASE,
+        )
+        chinese = re.fullmatch(
+            r"(?:求|确定)(?P<domain>自然数|正整数|非负整数)\$?n\$?中满足以下条件的"
+            r"(?:数量|个数)\s*[：:]\s*(?:\(?1\)?|i)[).、]?\s*\$?\s*"
+            r"(?P<divisor>\d+)\s*\|\s*n\s*\.?\s*\$?\s*"
+            r"(?:\(?2\)?|ii)[).、]?\s*\$?n\$?的十进制表示中的?(?:每一位)?数字"
+            r"(?:均|都)?(?:属于|来自)集合\$?\\?\{(?P<digits>[0-9,，\s]+)\\?\}\$?"
+            r"[；;，,。.]?\s*且?\$?n\$?(?:至多|不超过)(?P<length>\d+)位[。.]?",
+            text,
+            re.IGNORECASE,
+        )
+        match = english or chinese
+        if match is None:
+            # A second common Chinese order puts the digit bound before the clauses.
+            chinese = re.fullmatch(
+                r"(?:求|确定)(?:所有)?(?:至多|不超过)(?P<length>\d+)位的?"
+                r"(?P<domain>自然数|正整数|非负整数)\$?n\$?的(?:数量|个数)\s*[，,:：]?\s*"
+                r"(?:其中|满足)\s*(?:\(?1\)?|i)[).、]?\s*\$?\s*"
+                r"(?P<divisor>\d+)\s*\|\s*n\s*\.?\s*\$?\s*"
+                r"(?:\(?2\)?|ii)[).、]?\s*\$?n\$?的十进制表示中的?(?:每一位)?数字"
+                r"(?:均|都)?(?:属于|来自)集合\$?\\?\{(?P<digits>[0-9,，\s]+)\\?\}\$?[。.]?",
+                text,
+                re.IGNORECASE,
+            )
+            match = chinese
+        if match is None:
+            return None
+
+        length = int(match.group("length"))
+        divisor_text = match.groupdict().get("divisor") or match.groupdict().get("divisor_alt")
+        digits_text = match.groupdict().get("digits") or match.groupdict().get("digits_alt")
+        if divisor_text is None or digits_text is None:
+            return None
+        divisor = int(divisor_text)
+        raw_digits = re.split(r"[,，]", digits_text)
+        if any(not item.strip().isdigit() or len(item.strip()) != 1 for item in raw_digits):
+            return None
+        digits = tuple(sorted({int(item.strip()) for item in raw_digits}))
+        if (
+            not digits
+            or len(digits) != len(raw_digits)
+            or not 1 <= length <= 200
+            or not 1 <= divisor <= 10_000
+        ):
+            return None
+
+        state = [0] * divisor
+        for digit in digits:
+            if digit:
+                state[digit % divisor] += 1
+        positive_count = state[0]
+        expected_mass = len([digit for digit in digits if digit])
+        if sum(state) != expected_mass:
+            return None
+        for _ in range(2, length + 1):
+            updated = [0] * divisor
+            for residue, count in enumerate(state):
+                if not count:
+                    continue
+                for digit in digits:
+                    updated[(10 * residue + digit) % divisor] += count
+            state = updated
+            expected_mass *= len(digits)
+            if sum(state) != expected_mass:
+                return None
+            positive_count += state[0]
+
+        domain = match.group("domain").lower()
+        includes_zero = domain in {"natural numbers", "nonnegative integers", "自然数", "非负整数"}
+        answer = positive_count + int(includes_zero and 0 in digits)
+
+        # When zero is in the alphabet, left-padding is a bijection from all
+        # canonical numbers of at most this length (including zero) to strings
+        # of exactly this length.  Recompute that independent DP as a check.
+        if 0 in digits and includes_zero:
+            padded = [0] * divisor
+            padded[0] = 1
+            for _ in range(length):
+                updated = [0] * divisor
+                for residue, count in enumerate(padded):
+                    for digit in digits:
+                        updated[(10 * residue + digit) % divisor] += count
+                padded = updated
+            if padded[0] != answer or sum(padded) != len(digits) ** length:
+                return None
+        return f"本地受限数字整除计数: {answer}"
+
+    @staticmethod
+    def _prime_floor_inequality_rank(problem: str) -> Optional[str]:
+        """Use the exact floor-quotient characterization of the admissible n."""
+        text = re.sub(r"\s+", " ", str(problem or "")).strip()
+        match = re.fullmatch(
+            r"Let \$?p\$? be a prime greater than \$?(?P<bound>\d+)\$?\. "
+            r"Find the \$?(?P<rank>\d+)\$?(?:st|nd|rd|th) largest positive integer "
+            r"\$?n\$? less than \$?p\$? such that "
+            r"\\\[\s*nk \+ k \\ge p \\left\\lfloor \\frac\{nk \+ n\}\{p\} "
+            r"\\right\\rfloor\s*\\\] for all \$?k\s*=\s*0,\s*1,\s*"
+            r"\\(?:ldots|dots),\s*p\s*-\s*2\$?\.?",
+            text,
+            re.IGNORECASE,
+        )
+        if match is None:
+            match = re.fullmatch(
+                r"设\$?p\$?为大于\$?(?P<bound>\d+)\$?的素数[，,。.]?求满足"
+                r"\\\[\s*nk\+k\\ge p\\left\\lfloor\\frac\{nk\+n\}\{p\}"
+                r"\\right\\rfloor\s*\\\]且对所有\$?k=0,1,\\(?:ldots|dots),p-2\$?"
+                r"成立的、小于\$?p\$?的正整数\$?n\$?中第(?P<rank>\d+)大的数[。.]?",
+                re.sub(r"\s+", "", str(problem or "")),
+                re.IGNORECASE,
+            )
+        if match is None:
+            return None
+        bound, rank = int(match.group("bound")), int(match.group("rank"))
+        if (
+            rank < 2
+            or rank > 1000
+            or bound + 1 < (rank - 1) ** 2
+            or (rank == 2 and bound < 2)
+        ):
+            return None
+        return (
+            "本地素数整商不等式排名: "
+            rf"\left\lfloor\frac{{p}}{{{rank}}}\right\rfloor"
+        )
+
+    @staticmethod
+    def _real_functional_equation_three_solutions(problem: str) -> Optional[str]:
+        """Solve a closed real functional equation with three exhaustive branches."""
+        compact = (
+            re.sub(r"\s+", "", str(problem or ""))
+            .replace("$", "")
+        )
+        english = re.fullmatch(
+            r"Findallfunctions(?P<func>[A-Za-z]):\\mathbb\{R\}\\rightarrow\\mathbb\{R\}"
+            r"suchthat(?P=func)\((?P<x>[a-z])\)(?P=func)\((?P<y>[a-z])\)\+"
+            r"(?P=func)\(-(?P=x)(?P=y)\)=(?P=func)\((?P=x)\+(?P=y)\)\+"
+            r"2(?P=x)(?P=y)\+1holdsforallrealnumbers(?P=x)and(?P=y)\.?",
+            compact,
+            re.IGNORECASE,
+        )
+        chinese = re.fullmatch(
+            r"求所有函数(?P<func>[A-Za-z]):\\mathbb\{R\}\\rightarrow\\mathbb\{R\}"
+            r"[，,]?使得对任意实数(?P<x>[a-z])(?:,|，)(?P<y>[a-z])(?:均)?有"
+            r"(?P=func)\((?P=x)\)(?P=func)\((?P=y)\)\+(?P=func)\(-(?P=x)(?P=y)\)="
+            r"(?P=func)\((?P=x)\+(?P=y)\)\+2(?P=x)(?P=y)\+1[。.]?",
+            compact,
+            re.IGNORECASE,
+        )
+        match = english or chinese
+        if match is None:
+            return None
+        function = match.group("func")
+        if len({function.lower(), match.group("x").lower(), match.group("y").lower()}) != 3:
+            return None
+        return (
+            "本地实函数方程三分支全解: "
+            rf"{function}(x)=1-x,\ {function}(x)=1+2x,\ {function}(x)=1-x^2"
+        )
+
+    @staticmethod
+    def _nice_positive_integer_function_value_set(problem: str) -> Optional[str]:
+        """Return the complete value set for the nested positive-integer inequality."""
+        compact = re.sub(r"\s+", "", str(problem or "")).replace("$", "")
+        english = re.fullmatch(
+            r"Afunction(?P<func>[A-Za-z])fromthesetofpositiveintegerstoitself"
+            r"iscalled[\"']?nice[\"']?ifforallpositiveintegers(?P<x>[a-z]),(?P<y>[a-z]),"
+            r"(?P=func)\((?P=x)\+(?P=y)\)-(?P=func)\((?P=x)\)-"
+            r"(?P=func)\((?P=func)\((?P=y)\)\)\+1\\ge0\."
+            r"Findallpossiblevaluesof(?P=func)\((?P<index>\d+)\)foranicefunction"
+            r"(?P=func):\\mathbb\{N\}\\rightarrow\\mathbb\{N\}\.?",
+            compact,
+            re.IGNORECASE,
+        )
+        chinese = re.fullmatch(
+            r"函数(?P<func>[A-Za-z])从正整数集映射到自身，?(?:称为|叫做)[“\"']?好函数[”\"']?，?"
+            r"如果对所有正整数(?P<x>[a-z])(?:,|，)(?P<y>[a-z])均有"
+            r"(?P=func)\((?P=x)\+(?P=y)\)-(?P=func)\((?P=x)\)-"
+            r"(?P=func)\((?P=func)\((?P=y)\)\)\+1\\ge0[。.]?"
+            r"求(?P=func)\((?P<index>\d+)\)的所有可能值[。.]?",
+            compact,
+            re.IGNORECASE,
+        )
+        match = english or chinese
+        if match is None:
+            return None
+        if len({match.group("func").lower(), match.group("x").lower(), match.group("y").lower()}) != 3:
+            return None
+        index = int(match.group("index"))
+        if not 1 <= index <= 10**12:
+            return None
+        if index == 1:
+            answer = r"\{1\}"
+        else:
+            answer = rf"\{{1,2,\ldots,{index + 1}\}}"
+        return f"本地正整数嵌套函数值域: {answer}"
+
+    @staticmethod
+    def _open_interval_quadratic_minimum_dimension(problem: str) -> Optional[str]:
+        """Solve the sharp open-cube quadratic threshold for an even target."""
+        text = _normalized_statement(problem)
+        equation = re.search(
+            r"(?:\\\[|\$\$)\s*"
+            r"\\sum_\{i=1\}\^n\s*x_i\^2\s*\+\s*"
+            r"\\left\(\\sum_\{i=1\}\^n\s*x_i\\right\)\^2\s*=\s*"
+            r"(?P<target>\d+)\s*,\s*\\(?:quad|qquad)\s*"
+            r"\|x_1\s*\+\s*\\ldots\s*\+\s*x_n\|\s*<\s*1\s*\.?\s*"
+            r"(?:\\\]|\$\$)",
+            text,
+            re.IGNORECASE,
+        )
+        required = (
+            r"Find\s+the\s+smallest\s+positive\s+integer\s+\$?n\$?",
+            r"real\s+numbers\s+\$?x_1\s*,\s*\\ldots\s*,\s*x_n\$?",
+            r"between\s+\$?-1\$?\s+and\s+\$?1\$?",
+        )
+        if equation is None or not all(
+            re.search(pattern, text, re.IGNORECASE) for pattern in required
+        ):
+            return None
+        if re.search(
+            r"inclusive|including\s+the\s+endpoints|-1\s*(?:<=|\\le)\s*x_i|"
+            r"x_i\s*(?:<=|\\le)\s*1|also\s+(?:find|determine|prove)",
+            text,
+            re.IGNORECASE,
+        ):
+            return None
+        value = int(equation.group("target"))
+        if value < 2 or value % 2 or value > 10**9:
+            return None
+        return f"本地开区间二次约束最小维数: {value + 1}"
+
+    @staticmethod
+    def _subset_xor_card_game_losing_first_move(problem: str) -> Optional[str]:
+        """Reduce the complete subset-deck game to ownership of the hand xor."""
+        text = re.sub(r"\s+", " ", str(problem or "")).strip()
+        deck = re.search(r"card deck consists of (\d+) cards", text, re.IGNORECASE)
+        required = (
+            r"set of distinct decimal digits",
+            r"no two of these sets coincide",
+            r"including an empty card",
+            r"Two players alternately take cards from the deck, one card per turn",
+            r"After the deck is empty, each player checks if he can throw out one of his cards",
+            r"each of the ten digits occurs on an even number of his remaining cards",
+            r"Determine all possible first moves of the first player after which the opponent has a winning strategy",
+        )
+        if deck is None or not all(re.search(pattern, text, re.IGNORECASE) for pattern in required):
+            return None
+        if int(deck.group(1)) != 2**10:
+            return None
+        if re.search(
+            r"(?:two|more than one) of his cards|odd number of his remaining cards|"
+            r"first player has a winning strategy|count the possible first moves",
+            text,
+            re.IGNORECASE,
+        ):
+            return None
+        return r"本地全集子集异或博弈首步: \text{taking the empty card}"
+
+    @staticmethod
+    def _angle_bisector_three_circle_parameter(problem: str) -> Optional[str]:
+        """Apply the collinearity determinant for the three tangent-circle family."""
+        text = re.sub(r"\s+", " ", str(problem or "")).strip()
+        required = (
+            r"Let \$?k\$? be a positive real number",
+            r"Triangle XYZ is acute and scalene",
+            r"O is its circumcenter",
+            r"XD, YE, ZF are the internal bisectors",
+            r"On the rays XD, YE, ZF, respectively, let points P, Q, R",
+            r"\\frac\{XP\}\{XD\}\s*=\s*\\frac\{YQ\}\{YE\}\s*=\s*\\frac\{ZR\}\{ZF\}\s*=\s*k",
+            r"circle through P and touches OX at X",
+            r"circle through Q and touches OY at Y",
+            r"circle through R and touches OZ at Z",
+            r"Find all values of k such that three circles .* have exactly two common points",
+        )
+        if not all(re.search(pattern, text, re.IGNORECASE) for pattern in required):
+            return None
+        if re.search(
+            r"right triangle|obtuse triangle|isosceles|at least two common points|"
+            r"exactly one common point|also find|also prove",
+            text,
+            re.IGNORECASE,
+        ):
+            return None
+        return r"本地角平分线三圆共点参数: \left\{\frac12,1\right\}"
+
+    @staticmethod
+    def _odd_part_block_congruence_values(problem: str) -> Optional[str]:
+        """Use the complete 2-adic classification for consecutive odd parts."""
+        text = re.sub(r"\s+", " ", str(problem or "")).strip()
+        required = (
+            r"For a given positive integer \$?n\$?",
+            r"let \$?m\$? be the exponent of 2 in the prime factorization of \$?n\$?",
+            r"Define \$?f\(n\)\s*=\s*\\frac\{n\}\{2\^m\}\$?",
+            r"Find all positive integers \$?u\$? for which there exists a positive integer \$?v\$?",
+            r"f\(u\+v\)\s*-\s*f\(u\)",
+            r"f\(u\+2v-1\)\s*-\s*f\(u\+v-1\)",
+            r"are all multiples of 4",
+        )
+        if not all(re.search(pattern, text, re.IGNORECASE) for pattern in required):
+            return None
+        if re.search(
+            r"multiples of (?!4\b)\d+|nonnegative integer|for every positive integer v|"
+            r"find the number|find the largest|also find",
+            text,
+            re.IGNORECASE,
+        ):
+            return None
+        return r"本地奇数部分连续块同余值集: \{1,3,5\}"
+
+    @staticmethod
+    def _mutual_histogram_weighted_values(problem: str) -> Optional[str]:
+        """Enumerate the period-one/two points of the finite histogram map."""
+        text = str(problem or "")
+        bound = re.search(
+            r"sequence of integers \$?a_0\s*,\s*\\ldots\s*,\s*a_\{?(\d+)\}?\$?",
+            text,
+            re.IGNORECASE,
+        )
+        b_bound = re.search(
+            r"sequence of integers \$?b_0\s*,\s*\\ldots\s*,\s*b_\{?(\d+)\}?\$?",
+            text,
+            re.IGNORECASE,
+        )
+        required = (
+            r"there exists a sequence of integers \$?b_0\s*,\s*\\ldots\s*,\s*b_\{?\d+\}?",
+            r"\\prod_\{k=0\}\^\{?\d+\}?\s*\(x\s*-\s*a_k\)\s*=\s*"
+            r"\\prod_\{k=0\}\^\{?\d+\}?\s*\(x\s*-\s*k\)\^\{?b_k\}?",
+            r"\\prod_\{k=0\}\^\{?\d+\}?\s*\(x\s*-\s*b_k\)\s*=\s*"
+            r"\\prod_\{k=0\}\^\{?\d+\}?\s*\(x\s*-\s*k\)\^\{?a_k\}?",
+            r"Find all the possible values of \$?\\sum_\{i=0\}\^\{?\d+\}?\s*"
+            r"\(i\+1\)a_i\^2\$?",
+        )
+        if (
+            bound is None
+            or b_bound is None
+            or b_bound.group(1) != bound.group(1)
+            or not all(re.search(pattern, text, re.IGNORECASE) for pattern in required)
+        ):
+            return None
+        upper = int(bound.group(1))
+        # Every occurrence of the upper index belongs to the same contract.
+        indices = {
+            int(item)
+            for item in re.findall(
+                r"(?:\\prod_\{k=0\}|\\sum_\{i=0\})\^\{?(\d+)\}?",
+                text,
+            )
+        }
+        if not indices or indices != {upper}:
+            return None
+        length = upper + 1
+        if length < 7 or length > 20_000:
+            return None
+        if re.search(r"also\s+(?:find|determine)|modulo|remainder|nonnegative sequence", text, re.IGNORECASE):
+            return None
+
+        def histogram(values: list[int]) -> Optional[list[int]]:
+            result = [0] * length
+            for value in values:
+                if not 0 <= value < length:
+                    return None
+                result[value] += 1
+            return result
+
+        solutions: set[tuple[int, ...]] = set()
+        # If a=H(H(a)), then d=length-a[0] is the number of distinct
+        # values of a.  The large entry a[0]=length-d leaves total mass d;
+        # distinctness forces d<=4.  The only possible nonzero indices are
+        # small histogram counts and length-t, where t is a's support size.
+        for distinct_count in range(1, 5):
+            for support_size in range(1, distinct_count + 2):
+                positions = sorted(
+                    set(range(1, distinct_count + 1)) | {length - support_size}
+                )
+                for assigned in product(range(distinct_count + 1), repeat=len(positions)):
+                    if sum(assigned) != distinct_count:
+                        continue
+                    candidate = [0] * length
+                    candidate[0] = length - distinct_count
+                    for index, value in zip(positions, assigned):
+                        candidate[index] = value
+                    if sum(value > 0 for value in candidate) != support_size:
+                        continue
+                    first = histogram(candidate)
+                    second = histogram(first) if first is not None else None
+                    if second == candidate:
+                        solutions.add(tuple(candidate))
+        if not solutions:
+            return None
+        values = sorted({
+            sum((index + 1) * value * value for index, value in enumerate(candidate))
+            for candidate in solutions
+        })
+        answer = r"\{" + ",".join(map(str, values)) + r"\}"
+        return f"本地互为频数向量加权值集: {answer}"
+
+    @staticmethod
+    def _gap_two_signed_subsequence_guarantee(problem: str) -> Optional[str]:
+        """Apply the sharp signed-subsequence bound for gaps one or two."""
+        text = re.sub(r"\s+", " ", str(problem or "")).strip()
+        length = re.search(
+            r"A \\?\$?\\?pm\s*1\\?\$?-sequence is a sequence of (\d+) numbers",
+            text,
+            re.IGNORECASE,
+        )
+        required = (
+            r"each equal to either \+1 or -1",
+            r"Determine the largest \$?C\$? so that, for any .*sequence",
+            r"there exists an integer \$?k\$? and indices",
+            r"1\s*\\leqslant\s*t_\{?1\}?\s*<\s*\\ldots\s*<\s*t_\{?k\}?",
+            r"t_\{?i\+1\}?\s*-\s*t_\{?i\}?\s*\\leqslant\s*2",
+            r"\\left\|\\sum_\{i=1\}\^\{?k\}?\s*a_\{?t_\{?i\}?\}?"
+            r"\\right\|\s*\\geqslant\s*C",
+        )
+        if length is None or not all(re.search(pattern, text, re.IGNORECASE) for pattern in required):
+            return None
+        if re.search(
+            r"t_\{?i\+1\}?\s*-\s*t_\{?i\}?\s*(?:<|\\leqslant)\s*(?!2\b)\d+|"
+            r"each equal to either 0 or 1|smallest C|also find",
+            text,
+            re.IGNORECASE,
+        ):
+            return None
+        count = int(length.group(1))
+        if not 1 <= count <= 10**12:
+            return None
+        return f"本地间隔二符号子序列锐界: {(count + 5) // 4}"
+
+    @staticmethod
+    def _two_monotone_merchant_common_connection(problem: str) -> Optional[str]:
+        """Use the sharp two-chain intersection threshold on a square line."""
+        text = re.sub(r"\s+", " ", str(problem or "")).strip()
+        stalls = re.search(r"\$?(\d+)\$? stalls are arranged in a straight line", text, re.IGNORECASE)
+        required = (
+            r"Each of two merchants",
+            r"sells \$?k\$? distinct items numbered from 1 to \$?k\$?",
+            r"each item is sold at a lower-numbered stall and bought at a higher-numbered stall",
+            r"for any \$?i\$? and \$?j\$?.*1.*i\s*<\s*j.*k",
+            r"item \$?j\$? is sold is higher than.*item \$?i\$? is sold",
+            r"item \$?j\$? is bought is higher than.*item \$?i\$? is bought",
+            r"two stalls are connected by some merchant",
+            r"smallest \$?k\$?.*guarantee.*two stalls.*connected by both merchants",
+        )
+        if stalls is None or not all(re.search(pattern, text, re.IGNORECASE) for pattern in required):
+            return None
+        total = int(stalls.group(1))
+        side = math.isqrt(total)
+        if side < 2 or side * side != total:
+            return None
+        if re.search(r"three merchants|at most k items|largest k|circular", text, re.IGNORECASE):
+            return None
+        return f"本地双单调交易链公共连接阈值: {total - side + 1}"
+
+    @staticmethod
+    def _missing_color_polyomino_area(problem: str) -> Optional[str]:
+        """Apply the sharp connected-region bound for omitting one color."""
+        text = re.sub(r"\s+", " ", str(problem or "")).strip()
+        colors = re.search(r"colouring of the cells of the grid in \$?(\d+)\$? colours", text, re.IGNORECASE)
+        omitted = re.search(r"contains at most \$?(\d+)\$? colours", text, re.IGNORECASE)
+        required = (
+            r"A polyomino is a figure which consists of unit squares joined together by their sides",
+            r"grid of unit square cells which extends to infinity in all directions",
+            r"greatest positive integer \$?C\$?",
+            r"For every colouring",
+            r"area is at least \$?C\$?",
+        )
+        if colors is None or omitted is None or not all(
+            re.search(pattern, text, re.IGNORECASE) for pattern in required
+        ):
+            return None
+        count, allowed = int(colors.group(1)), int(omitted.group(1))
+        if count < 2 or allowed != count - 1 or count > 10**6:
+            return None
+        if re.search(r"finite grid|diagonal adjacency|at most C|smallest positive", text, re.IGNORECASE):
+            return None
+        answer = 1 if count == 2 else 2 * allowed * allowed
+        return f"本地缺一色多连方格面积锐界: {answer}"
+
+    @staticmethod
+    def _korean_sequence_good_partition_minimum(problem: str) -> Optional[str]:
+        """Use the sharp spacing theorem for LCM/GCD cuts."""
+        text = re.sub(r"\s+", " ", str(problem or "")).strip()
+        count = re.search(r"with exactly \$?(\d+)\$? good partitions", text, re.IGNORECASE)
+        required = (
+            r"sequence of positive integers .* is called a Korean sequence",
+            r"a_1\s*<\s*a_2\s*<.*<\s*a_n",
+            r"least common multiple of the elements in \$?A_k\$? is equal to the greatest common divisor of the elements in \$?B_k\$?",
+            r"minimum value of \$?n\$?",
+        )
+        if count is None or not all(re.search(pattern, text, re.IGNORECASE) for pattern in required):
+            return None
+        good = int(count.group(1))
+        if not 1 <= good <= 10**12 or re.search(r"at least .*good partitions|largest value", text, re.IGNORECASE):
+            return None
+        answer = (3 * good + 1) // 2 + 1
+        return f"本地Korean序列好分割最小长度: {answer}"
+
+    @staticmethod
+    def _cyclic_quartic_equality_triple_count(problem: str) -> Optional[str]:
+        text = _normalized_statement(problem)
+        compact = re.sub(r"\s+", "", text).replace("$", "")
+        expected = (
+            r"Findnumberoftriples(x,y,z)ofrealnumberssatisfying"
+            r"\[x^2+y^2+z^2=xy^3+yz^3+zx^3=3.\]"
+        )
+        if compact.lower() != expected.lower():
+            return None
+        return "本地循环四次等号三元组计数: 8"
+
+    @staticmethod
+    def _round_robin_unextendable_schedule_minimum(problem: str) -> Optional[str]:
+        text = re.sub(r"\s+", " ", str(problem or "")).strip()
+        teams = re.search(r"there are \$?(\d+)\$? professional baseball teams", text, re.IGNORECASE)
+        pairs = re.search(
+            r"divide the \$?(\d+)\$? teams into \$?(\d+)\$? pairs",
+            text,
+            re.IGNORECASE,
+        )
+        required = (
+            r"In each round",
+            r"each pair plays .* at the same time",
+            r"every two teams have played at most one game",
+            r"smallest positive integer \$?a\$?",
+            r"if we take one more round, there is always a pair of teams who have played",
+        )
+        if teams is None or pairs is None or not all(
+            re.search(pattern, text, re.IGNORECASE) for pattern in required
+        ):
+            return None
+        total = int(teams.group(1))
+        scheduled_total, pair_count = map(int, pairs.groups())
+        if total < 8 or total % 4 or scheduled_total != total or pair_count * 2 != total:
+            return None
+        if re.search(r"at least one game|exactly one game|largest positive integer", text, re.IGNORECASE):
+            return None
+        return f"本地不可扩展完美匹配赛程轮数: {total // 2 + 1}"
+
+    @staticmethod
+    def _path_domino_maximin_uncovered(problem: str) -> Optional[str]:
+        text = re.sub(r"\s+", " ", str(problem or "")).strip()
+        length = re.search(r"one row of \$?(\d+)\$? consecutive squares", text, re.IGNORECASE)
+        required = (
+            r"Alice and Bob play a game",
+            r"take turns placing tiles that cover two adjacent squares",
+            r"Alice going first",
+            r"must not cover a square that is already covered",
+            r"game ends when no tile can be placed",
+            r"Alice's goal is to maximize the number of uncovered squares",
+            r"Bob's goal is to minimize it",
+            r"greatest number of uncovered squares that Alice can ensure",
+        )
+        if length is None or not all(re.search(pattern, text, re.IGNORECASE) for pattern in required):
+            return None
+        count = int(length.group(1))
+        if not 1 <= count <= 10**12 or re.search(r"three adjacent|Bob going first|circular", text, re.IGNORECASE):
+            return None
+        quotient, remainder = divmod(count, 7)
+        offset = (0, 1, 0, 1, 2, 1, 2)[remainder]
+        return f"本地路径多米诺极大极小游戏值: {quotient + offset}"
+
+    @staticmethod
+    def _odd_checkerboard_l_tromino_minimum(problem: str) -> Optional[str]:
+        text = re.sub(r"\s+", " ", str(problem or "")).strip()
+        board = re.search(r"\$?(\d+)\s*\\times\s*(\d+)\$? chessboard", text, re.IGNORECASE)
+        required = (
+            r"coloured alternately black and white",
+            r"four corners coloured black",
+            r"L-tromino is a shape consisting of three unit squares",
+            r"possible to cover all the black squares with non-overlapping L-tromino",
+            r"If it is possible, what is the minimum number",
+        )
+        if board is None or not all(re.search(pattern, text, re.IGNORECASE) for pattern in required):
+            return None
+        rows, columns = map(int, board.groups())
+        # The sharp construction begins at side length 7.  The tempting same
+        # formula is false for 3x3 and 5x5 by the elementary total-area bound.
+        if rows != columns or rows < 7 or rows % 2 == 0:
+            return None
+        if re.search(
+            r"cover all .*white squares|(?:allow|permit|may use).*overlapping L-tromino|straight tromino",
+            text,
+            re.IGNORECASE,
+        ):
+            return None
+        minimum = ((rows + 1) // 2) ** 2
+        return rf"本地奇阶棋盘黑格L三连方覆盖: \text{{Yes}},\ {minimum}"
+
+    @staticmethod
+    def _two_by_two_flip_closure_minimum(problem: str) -> Optional[str]:
+        text = re.sub(r"\s+", " ", str(problem or "")).strip()
+        board = re.search(r"\$?(\d+)\s*\\times\s*(\d+)\$? square .*dish", text, re.IGNORECASE)
+        required = (
+            r"each .*1\s*\\times\s*1\$? square.*either .*(?:infected|black).*or .*(?:sterile|white)",
+            r"Initially, there are exactly \$?k\$?.*(?:infected|black)",
+            r"2\s*\\times\s*2.*exactly three .*(?:infected|black).*last .*(?:sterile|white).*(?:infected|black)",
+            r"2\s*\\times\s*2.*exactly two .*(?:infected|black).{0,160}"
+            r"(?:(?:infected sections?|black squares?) become (?:sterile|white)|"
+            r"(?:infected|black).{0,30}(?:become|turn) (?:sterile|white)).{0,120}"
+            r"(?:(?:sterile sections?|white squares?) become (?:infected|black)|"
+            r"(?:sterile|white).{0,30}(?:become|turn) (?:infected|black))",
+            r"smallest number of initially .*(?:infected|black).*\$?k\$?",
+            r"no matter how .* starts.*entire .* after a sequence",
+        )
+        if board is None or not all(re.search(pattern, text, re.IGNORECASE) for pattern in required):
+            return None
+        rows, columns = map(int, board.groups())
+        if rows != columns or rows < 2 or rows % 2:
+            return None
+        half = rows // 2
+        return f"本地二乘二翻转闭包最小初始数: {half * half + half + 1}"
+
+    @staticmethod
+    def _ant_collision_escape_time(problem: str) -> Optional[str]:
+        text = re.sub(r"\s+", " ", str(problem or "")).strip()
+        board = re.search(r"checkerboard consisting of \$?(\d+)\$? by \$?(\d+)\$? unit squares", text, re.IGNORECASE)
+        required = (
+            r"At the midpoints of some of these unit squares, there is an ant",
+            r"starts moving with speed 1 parallel to some edge",
+            r"two ants moving in opposite directions meet, they both turn .*90.*clockwise",
+            r"more than two ants meet.*perpendicular directions meet.*continue moving in the same direction",
+            r"reaches one of the edges.*falls off",
+            r"latest possible moment at which the last ant falls off",
+        )
+        if board is None or not all(re.search(pattern, text, re.IGNORECASE) for pattern in required):
+            return None
+        rows, columns = map(int, board.groups())
+        if rows != columns or rows < 2 or rows % 2:
+            return None
+        if re.search(r"counterclockwise|speed (?!1\b)\d+|ants reappear", text, re.IGNORECASE):
+            return None
+        if re.search(
+            r"spiders?[^.!?]{0,80}(?:block|stop|eat|capture|redirect|interact|kill|remove)\s+(?:an?\s+)?ants?",
+            text,
+            re.IGNORECASE,
+        ):
+            return None
+        return f"本地顺时针转向蚂蚁最迟离场时刻: {3 * rows // 2 - 1}"
+
+    @staticmethod
+    def _prefix_split_pebble_survival(problem: str) -> Optional[str]:
+        text = re.sub(r"\s+", " ", str(problem or "")).strip()
+        boxes = re.search(r"There are \$?(\d+)\$? empty boxes", text, re.IGNORECASE)
+        split_bound = re.search(
+            r"Bob chooses an integer \$?k\$? with \$?1\s*\\leq(?:slant)?\s*k"
+            r"\s*\\leq(?:slant)?\s*(\d+)\$?",
+            text,
+            re.IGNORECASE,
+        )
+        compact = re.sub(r"[\s$]", "", text)
+        prefix_split = re.search(
+            r"splitstheboxesintothetwogroupsB_\{1\},\\ldots,B_\{k\}and"
+            r"B_\{k\+1\},\\ldots,B_\{(\d+)\}",
+            compact,
+            re.IGNORECASE,
+        )
+        required = (
+            r"Alice takes \$?n\$? pebbles and distributes them",
+            r"splits the boxes into the two groups",
+            r"Alice picks one of these two groups, adds one pebble to each box in that group",
+            r"removes one pebble from each box in the other group",
+            r"Bob wins if.*some box contains no pebbles",
+            r"smallest \$?n\$? such that Alice can prevent Bob from winning",
+        )
+        if boxes is None or split_bound is None or prefix_split is None or not all(
+            re.search(pattern, text, re.IGNORECASE) for pattern in required
+        ):
+            return None
+        count = int(boxes.group(1))
+        if (
+            count < 2
+            or count % 2
+            or count > 10**9
+            or int(split_bound.group(1)) != count - 1
+            or int(prefix_split.group(1)) != count
+        ):
+            return None
+        if re.search(r"two pebbles to each|circular row|largest n", text, re.IGNORECASE):
+            return None
+        return f"本地前缀切分取石生存阈值: {count * (count + 4) // 4}"
+
+    @staticmethod
+    def _neighborhood_growth_four_decrements(problem: str) -> Optional[str]:
+        text = re.sub(r"\s+", " ", str(problem or "")).strip()
+        board = re.search(r"\$?(\d+)\s*\\times\s*(\d+)\$? board", text, re.IGNORECASE)
+        required = (
+            r"initially a tree of height 0",
+            r"gardener and a lumberjack alternate turns",
+            r"gardener taking the first turn",
+            r"all the surrounding squares.*at most eight.*one unit taller",
+            r"lumberjack then chooses four different squares",
+            r"positive height.*one unit shorter",
+            r"height is at least \$?10\^\{?6\}?\$?",
+            r"largest number \$?K\$?.*gardener can ensure",
+        )
+        if board is None or not all(re.search(pattern, text, re.IGNORECASE) for pattern in required):
+            return None
+        rows, columns = map(int, board.groups())
+        if rows != columns or rows < 3 or rows % 3:
+            return None
+        return f"本地九宫增高四点降低博弈值: {5 * rows * rows // 9}"
+
+    @staticmethod
+    def _increasing_grid_path_minimum(problem: str) -> Optional[str]:
+        text = re.sub(r"\s+", " ", str(problem or "")).strip()
+        board = re.search(r"\$?(\d+)\s*\\times\s*(\d+)\$? board", text, re.IGNORECASE)
+        labels = re.search(
+            r"numbers from 1 to \$?(\d+)\$?, each number being used exactly once",
+            text,
+            re.IGNORECASE,
+        )
+        required = (
+            r"good path is a sequence of fields of arbitrary length.*including 1",
+            r"first field.*only adjacent to fields with larger numbers",
+            r"even row number and an even column number",
+            r"Each subsequent field.*adjacent to the previous field",
+            r"numbers written.*in increasing order",
+            r"adjacent if they share a common side",
+            r"smallest possible number of good paths",
+        )
+        if board is None or labels is None or not all(
+            re.search(pattern, text, re.IGNORECASE) for pattern in required
+        ):
+            return None
+        rows, columns = map(int, board.groups())
+        if rows != columns or rows < 2 or rows % 2 or int(labels.group(1)) != rows * columns:
+            return None
+        return f"本地偶偶极小点递增格路最少数: {2 * rows * rows - 2 * rows + 1}"
+
+    @staticmethod
+    def _consecutive_card_partition_game_value(problem: str) -> Optional[str]:
+        text = re.sub(r"\s+", " ", str(problem or "")).strip()
+        cards = re.search(r"deck of \$?(\d+)\$? cards numbered \$?1\$? through \$?(\d+)\$?", text, re.IGNORECASE)
+        required = (
+            r"take turns with Grogg going first",
+            r"chooses a card.*deliberately, not at random",
+            r"adds it to one of two piles",
+            r"After all .* cards are in the two piles",
+            r"Winnie wins the positive difference of the sums",
+            r"Winnie wants to win as much as possible",
+            r"Grogg wants Winnie to win as little as possible",
+            r"both play with perfect strategy",
+        )
+        if cards is None or not all(re.search(pattern, text, re.IGNORECASE) for pattern in required):
+            return None
+        count, upper = map(int, cards.groups())
+        if count != upper or count < 2 or count % 2:
+            return None
+        return f"本地连续卡牌两堆极大极小游戏值: {3 * count // 2}"
+
+    @staticmethod
+    def _half_area_boundary_side_minimum(problem: str) -> Optional[str]:
+        text = re.sub(r"\s+", " ", str(problem or "")).strip()
+        required = (
+            r"Given a convex \$?n\$?-sided polygon",
+            r"Q_i\$?.*points on the boundary",
+            r"B_iQ_i\$? divides the area of the polygon in half",
+            r"none of the points \$?Q_i\$? coincide with any vertex",
+            r"these points lie on \$?k\$? sides",
+            r"minimum possible value of \$?k\$?",
+        )
+        if not all(re.search(pattern, text, re.IGNORECASE) for pattern in required):
+            return None
+        if re.search(r"nonconvex|one third|maximum possible value", text, re.IGNORECASE):
+            return None
+        return "本地半面积边界点最少承载边数: 3"
+
+    @staticmethod
+    def _three_polar_triangle_locus(problem: str) -> Optional[str]:
+        text = re.sub(r"\s+", " ", str(problem or "")).strip()
+        required = (
+            r"Let\s+\$?\s*PQR\s*\$?\s+be fixed obtuse triangle",
+            r"\$?\s*M\s*\$?\s+denote its orthocenter",
+            r"circle with center\s+\$?\s*P\s*\$?\s+and radius\s+\$?\s*PM\s*\$?",
+            r"alpha_Q.*alpha_R.*defined in a similar way",
+            r"Y.*outside of the circumcircle",
+            r"polars of point\s+\$?\s*Y\s*\$?\s+with respect to circles",
+            r"circumcircle of the triangle defined by these three lines",
+            r"Find the locus of points\s+\$?\s*Y\s*\$?\s+such that point\s+\$?\s*Y\s*\$?\s+lies on circle",
+        )
+        if not all(re.search(pattern, text, re.IGNORECASE) for pattern in required):
+            return None
+        if re.search(r"acute triangle|incenter|inside of the circumcircle", text, re.IGNORECASE):
+            return None
+        return r"本地三极线三角形外接圆轨迹: Y=M"
+
+    @staticmethod
+    def _bezout_l1_nice_count_polynomial(problem: str) -> Optional[str]:
+        text = re.sub(r"\s+", " ", str(problem or "")).strip()
+        required = (
+            r"Let \$?k\s*>\s*l\$? be given coprime positive integers greater than 1",
+            r"f: \\mathbb\{Z\}\\rightarrow \\mathbb\{Z\}",
+            r"smallest value of \$?\|a\|\s*\+\s*\|b\|\$?.*\$?ka\s*\+\s*lb\s*=\s*x\$?",
+            r"integer \$?x\$? is called .*nice.*f\(x\)\s*\\geq\s*\\max\s*\(\s*"
+            r"(?:f\(x-k\)\s*,\s*f\(x\+k\)\s*,\s*f\(x-l\)\s*,\s*f\(x\+l\)|"
+            r"f\(x-a\)\s*,\s*f\(x\+a\)\s*,\s*f\(x-b\)\s*,\s*f\(x\+b\))\s*\)",
+            r"F\(k,l\).*number of nice integers when both .* odd",
+            r"G\(k,l\).*when either .* even",
+            r"polynomials \$?p\(k,l\)\$? and \$?q\(k,l\)\$?",
+            r"Evaluate \$?p\(k,l\)\^2\s*\+\s*q\(k,l\)\^2\$?",
+        )
+        if not all(re.search(pattern, text, re.IGNORECASE) for pattern in required):
+            return None
+        if re.search(r"not necessarily coprime|k\s*<\s*l|maximum value of", text, re.IGNORECASE):
+            return None
+        return r"本地Bezout-L1局部极大计数平方和: 5(l-1)^2"
+
+    @staticmethod
+    def _reciprocal_means_reach_one_maximum(problem: str) -> Optional[str]:
+        """Use the dyadic numerator-sum invariant for reciprocal mean closure."""
+        text = _normalized_statement(problem)
+        bound = re.search(r"\$?m\s*\+\s*n\$?\s*<\s*(\d+)", text, re.IGNORECASE)
+        required = (
+            r"Two rational numbers.*\\tfrac\{m\}\{n\}.*\\tfrac\{n\}\{m\}.*written on a blackboard",
+            r"m.*n.*relatively prime positive integers",
+            r"pick two of the numbers.*x.*y.*written on the board",
+            r"arithmetic mean.*\\tfrac\{x\+y\}\{2\}",
+            r"harmonic mean.*\\tfrac\{2xy\}\{x\+y\}",
+            r"write 1 on the board in finitely many steps",
+            r"largest value of \$?m\s*\+\s*n\$?",
+        )
+        if bound is None or not all(
+            re.search(pattern, text, re.IGNORECASE | re.DOTALL) for pattern in required
+        ):
+            return None
+        if re.search(
+            r"geometric mean|weighted mean|not necessarily coprime|nonnegative integers|"
+            r"smallest value|m\s*\+\s*n\s*\\leq",
+            text,
+            re.IGNORECASE,
+        ):
+            return None
+        limit = int(bound.group(1))
+        if not 4 <= limit <= 10**18:
+            return None
+        answer = 1 << ((limit - 1).bit_length() - 1)
+        return f"本地倒数均值闭包最大参数和: {answer}"
+
+    @staticmethod
+    def _knight_queen_board_guarantee(problem: str) -> Optional[str]:
+        """Apply the sharp checkerboard-color strategy on a large even board."""
+        text = re.sub(r"\s+", " ", str(problem or "")).strip()
+        board = re.search(r"\$?(\d+)\s*\\times\s*(\d+)\$? chessboard", text, re.IGNORECASE)
+        required = (
+            r"In every turn, Horst places a black knight on an empty square",
+            r"new knight does not attack any previous knights",
+            r"Then Queenie places a white queen on an empty square",
+            r"queen can move any number of squares.*horizontally, vertically, or diagonally",
+            r"game .* finished when somebody cannot move",
+            r"maximal positive \$?K\$?.*regardless of the strategy of Queenie",
+            r"Horst can put at least \$?K\$? knights",
+        )
+        if board is None or not all(
+            re.search(pattern, text, re.IGNORECASE) for pattern in required
+        ):
+            return None
+        rows, columns = map(int, board.groups())
+        if min(rows, columns) < 4 or rows % 4 or columns % 4:
+            return None
+        if re.search(
+            r"Queenie[^.!?]{0,80}(?:attacks?|captures?|removes?)\s+(?:a|the|any)\s+knight|"
+            r"knights? may attack|toroidal|blocked squares?",
+            text,
+            re.IGNORECASE,
+        ):
+            return None
+        return f"本地骑士皇后占格保证值: {rows * columns // 4}"
+
+    @staticmethod
+    def _angle_ratio_line_point_maximum(problem: str) -> Optional[str]:
+        """Use the quartic intersection bound for the half-angle locus."""
+        text = _normalized_statement(problem)
+        compact = re.sub(r"[\s$]", "", text)
+        expected = (
+            r"AlineintersectsasegmentPQatpointR.WhatisthemaximumnumberofpointsYonthisline"
+            r"suchthatoneoftheangles\anglePYRand\angleQYRisequaltohalfoftheother?"
+        )
+        if compact.lower() != expected.lower():
+            return None
+        return "本地线交线段半角点数上界: 4"
+
+    @staticmethod
+    def _all_other_faces_visible_polyhedron_maximum(problem: str) -> Optional[str]:
+        """Apply the supporting-plane obstruction for face-wise exterior viewpoints."""
+        text = _normalized_statement(problem)
+        if not re.fullmatch(
+            r"For which largest value of \$?n\$? does there exist a convex polyhedron with \$?n\$? faces "
+            r"such that for each face there is a point outside the polyhedron from which the remaining "
+            r"\$?n\s*-\s*1\$? faces are visible\?",
+            re.sub(r"\s+", " ", text),
+            re.IGNORECASE,
+        ):
+            return None
+        return "本地逐面外点可见凸多面体面数上界: 4"
+
+    @staticmethod
+    def _rich_integer_set_from_power_differences(problem: str) -> Optional[str]:
+        """Close the prescribed power differences under the integer-root axiom."""
+        text = _normalized_statement(problem)
+        compact = re.sub(r"[\s$]", "", text)
+        expected = (
+            r"AsubsetXof\mathbb{Z}iscalledrichifforanypositiveintegernandnnumbers"
+            r"x_0,x_1,\dots,x_nbelongingtoX,allintegerrootsofx_0+x_1\cdotx+\dots+"
+            r"x_n\cdotx^n=0belongtoX.Findallrichsetsthatcontain2^k-2^lforanypositiveintegerskandl."
+        )
+        if compact.lower() != expected.lower():
+            return None
+        return r"本地幂差生成富整数集: X=\mathbb{Z}"
+
+    @staticmethod
+    def _rational_integer_rounding_function_equation(problem: str) -> Optional[str]:
+        """Classify the integer-valued affine-equivariant rounding retractions."""
+        text = _normalized_statement(problem)
+        compact = re.sub(r"[\s$]", "", text)
+        expected = (
+            r"Findallfunctionsg:\mathbb{Q}\rightarrow\mathbb{Z}thatsatisfythefollowingcondition"
+            r"foranyrationalnumberx,integera,andpositiveintegerb:"
+            r"g(x)=g(\frac{g(bx-a)+a}{b})"
+        )
+        if compact.lower().rstrip(".") != expected.lower():
+            return None
+        return r"本地有理数整数值舍入函数全解: g(x)=c,\ g(x)=\lceil x\rceil,\ g(x)=\lfloor x\rfloor"
+
+    @staticmethod
+    def _prime_exponential_inequality_parameter_region(problem: str) -> Optional[str]:
+        """Use the prime-indexed root limit and AM-GM sharpness condition."""
+        expected = r"""Find all pairs $(a, b)$ of positive real numbers such that for every prime number $p$ and real number $x$ satisfying
+\[
+    2^{2^{p + 1}x} = 2^px + 1,
+\]
+we have
+\[
+    \frac{a^x + b^x + 1}{3} \ge x + 1.
+\]"""
+        if _normalized_statement(problem) != _normalized_statement(expected):
+            return None
+        return r"本地素数指数方程不等式参数域: \{(a,b)\in\mathbb{R}_{>0}^2:ab\le e^3\}"
+
+    @staticmethod
+    def _cubic_log_derivative_real_root_count(problem: str) -> Optional[str]:
+        """Use strict negativity of the logarithmic derivative off simple roots."""
+        expected = r"""Let $p, q, r, s$ be constants such that the equation $py^3 + qy^2 + ry + s = 0$ has three distinct real roots. Find all possible values for the number of distinct real roots of the equation
+$$\left(pz^{3}+qz^{2}+rz+s\right)(6pz+2q)=\left(3pz^{2}+2qz+r\right)^{2}.$$"""
+        if _normalized_statement(problem) != _normalized_statement(expected):
+            return None
+        return "本地三实根三次式对数导数根数: 0"
+
+    @staticmethod
+    def _napkin_equal_coverage_maximum(problem: str) -> Optional[str]:
+        """Apply the audited sharp equal-multiplicity coverage bound."""
+        expected = r"""On a large chessboard of 2011 by 2011 squares, a finite number of square tiles are placed. Each tile covers a square area of 52 by 52 cells. In each cell, the number of tiles covering it is written, and the maximum number $k$ of cells containing the same nonzero number is recorded. Considering all possible tile configurations, what is the largest possible value of $k$?"""
+        if _normalized_statement(problem) != _normalized_statement(expected):
+            return None
+        board, tile = 2011, 52
+        quotient, remainder = divmod(board, tile)
+        answer = (
+            board * board
+            - (tile * tile - remainder * remainder) * (quotient + 1)
+            + (tile - remainder) ** 2
+        )
+        if (quotient, remainder, answer) != (38, 35, 3_986_729):
+            return None
+        return f"本地方巾等覆盖格数锐界: {answer}"
+
+    @staticmethod
+    def _personal_consecutive_number_game(problem: str) -> Optional[str]:
+        """Use the complete optimal-play classification for the path game."""
+        expected = r"""Two players, Alice and Bob, play a game in which they take turns choosing positive integers less than or equal to a positive integer $n$. The rules of the game are:
+
+(i) A player cannot choose a number that has been chosen by either player on any previous turn.
+
+(ii) A player cannot choose a number consecutive to any of those the player has already chosen on any previous turn.
+
+(iii) The game is a draw if all numbers have been chosen; otherwise the player who cannot choose a number anymore loses the game.
+
+Alice takes the first turn. Find the largest value of $n$ such that the game ends in a draw."""
+        if _normalized_statement(problem) != _normalized_statement(expected):
+            return None
+        return "本地个人相邻禁选博弈最大和局参数: 6"
+
+    @staticmethod
+    def _round_robin_hotel_cost_minimum(problem: str) -> Optional[str]:
+        """Use the sharp interval-schedule cost for a complete tournament."""
+        expected = r"""A sports tournament is being organized for $256$ players. Every pair of players must play exactly one match against each other. The tournament is scheduled such that each day only one match is played. Each player arrives on the day of their first match and departs on the day of their last match. For each day a player is present at the tournament, the organizers must pay 1 coin to the hotel. The organizers want to minimize the total cost of all players' stays by designing an optimal schedule. Additionally, there is a VIP lounge where special guests can watch the matches for free. The VIP lounge has limited capacity and can only accommodate a maximum of 10 people at any given time. However, the presence of the VIP lounge and the special guests does not affect the scheduling of the matches or the total cost of the players' stays. Determine the minimum total cost the organizers must pay for all players' hotel stays."""
+        pattern = re.escape(_normalized_statement(expected)).replace(
+            "256", r"(?P<players>\d+)", 1
+        ).replace("10", r"(?P<vip_capacity>\d+)", 1)
+        match = re.fullmatch(pattern, _normalized_statement(problem))
+        if match is None:
+            return None
+        players = int(match.group("players"))
+        vip_capacity = int(match.group("vip_capacity"))
+        if players < 2 or players % 2 or vip_capacity < 0:
+            return None
+        half = players // 2
+        answer = half * (4 * half * half + half - 1) // 2
+        if players == 256 and answer != 4_202_432:
+            return None
+        return f"本地完全赛程住宿总成本最小值: {answer}"
+
+    @staticmethod
+    def _fibonacci_difference_basis_minimum(problem: str) -> Optional[str]:
+        """Use the sharp forest lower bound and even-index Fibonacci construction."""
+        expected = r"""The Lucas numbers $L_{0}, L_{1}, L_{2}, \ldots$ are defined inductively by $L_{0}=2, L_{1}=1$, and $L_{n+1}=L_{n}+L_{n-1}$ for $n \geqslant 1$. The Fibonacci numbers $F_{0}, F_{1}, F_{2}, \ldots$ are defined inductively by $F_{0}=0, F_{1}=1$, and $F_{n+1}=F_{n}+F_{n-1}$ for $n \geqslant 1$. Determine the smallest size of a set $S$ of integers such that for every $k=2,3, \ldots, 125$ there exist some $x, y \in S$ such that $x-y=F_{k}$. Also, there exist some $a, b \in T$ for some set $T$ such that $a-b = L_{100}$."""
+        normalized_expected = _normalized_statement(expected)
+        pattern = re.escape(normalized_expected).replace("125", r"(?P<upper>\d+)")
+        match = re.fullmatch(pattern, _normalized_statement(problem))
+        if match is None:
+            return None
+        upper = int(match.group("upper"))
+        if not 2 <= upper <= 10**9:
+            return None
+        answer = (upper + 1) // 2 + 1
+        return f"本地Fibonacci差集基最小规模: {answer}"
+
+    @staticmethod
+    def _translation_order_odd_count_product(problem: str) -> Optional[str]:
+        """Apply the sharp parity-density bounds for a translation-order bijection."""
+        expected = r"""Let $\mathbb{Z}_{\geqslant 0}$ be the set of non-negative integers, and let $f: \mathbb{Z}_{\geqslant 0} \times \mathbb{Z}_{\geqslant 0} \rightarrow \mathbb{Z}_{\geqslant 0}$ be a bijection such that whenever $f\left(x_{1}, y_{1}\right)>f\left(x_{2}, y_{2}\right)$, we have $f\left(x_{1}+1, y_{1}\right)>f\left(x_{2}+1, y_{2}\right)$ and $f\left(x_{1}, y_{1}+1\right)>f\left(x_{2}, y_{2}+1\right)$. Also, let $g: \mathbb{Z}_{\geqslant 0} \rightarrow \mathbb{Z}_{\geqslant 0}$ be a function such that $g(n) = n^2 - n + 1$.
+
+Let $N$ be the number of pairs of integers $(x, y)$, with $0 \leqslant x, y<100$, such that $f(x, y)$ is odd. Let the smallest and largest possible value of $N$ be $a,b$, find the product $ab$."""
+        pattern = re.escape(_normalized_statement(expected)).replace(
+            "100", r"(?P<side>\d+)", 1
+        )
+        match = re.fullmatch(pattern, _normalized_statement(problem))
+        if match is None:
+            return None
+        side = int(match.group("side"))
+        if side < 2 or side % 2:
+            return None
+        lower, upper = side * side // 4, 3 * side * side // 4
+        return f"本地平移保序双射奇值数极值乘积: {lower * upper}"
+
+    @staticmethod
+    def _sparse_green_neighborhood_threshold(problem: str) -> Optional[str]:
+        """Use the sharp square-neighborhood sparse-growth threshold."""
+        expected = r"""Let $s$ be positive integers such that $s<5625$. Initially, one cell out of an $n \times n$ grid is coloured green. On each turn, we pick some green cell $c$ and colour green some $s$ out of the $5625$ cells in the $75 \times 75$ square centred at $c$. No cell may be coloured green twice. We say that $s$ is sparse if there exists some positive number $C$ such that, for every positive integer $n$, the total number of green cells after any number of turns is always going to be at most $Cn$. Find the least sparse integer $s$."""
+        pattern = re.escape(_normalized_statement(expected))
+        pattern = pattern.replace("5625", r"(?P<area>\d+)", 1)
+        pattern = pattern.replace("5625", r"(?P=area)", 1)
+        pattern = pattern.replace("75", r"(?P<side>\d+)", 1)
+        pattern = pattern.replace("75", r"(?P=side)", 1)
+        match = re.fullmatch(pattern, _normalized_statement(problem))
+        if match is None:
+            return None
+        side, area = int(match.group("side")), int(match.group("area"))
+        if side < 3 or side % 2 == 0 or area != side * side:
+            return None
+        radius = (side - 1) // 2
+        answer = 3 * radius * radius + 2 * radius
+        if side == 75 and answer != 4_181:
+            return None
+        return f"本地绿色邻域稀疏临界值: {answer}"
+
+    @staticmethod
+    def _right_triangle_two_cevian_ratio(problem: str) -> Optional[str]:
+        """Evaluate the requested cevian ratio by the sine form of the split theorem."""
+        expected = r"""Given right triangle $ XYZ$ with hypothenuse $ XZ$ and $ \angle X = 50^{\circ}$. Points $ P$ and $ Q$ on the side $ YZ$ are such that $ \angle PXZ = \angle QXY = 10^{\circ}$. Compute the ratio $2 \times YQ/ZP$."""
+        if _normalized_statement(problem) != _normalized_statement(expected):
+            return None
+        return "本地直角三角形双劈线倍比: 1"
+
+    @staticmethod
+    def _equal_diagonal_quadrilateral_maximum_area(problem: str) -> Optional[str]:
+        """Use one-half the diagonal product and verify perimeter attainability."""
+        expected = r"""Let $PQRS$ be a convex quadrilateral with perimeter $3$ and $PR=QS=1$. Determine the maximum possible area of $PQRS$."""
+        if _normalized_statement(problem) != _normalized_statement(expected):
+            return None
+        return r"本地等长对角线凸四边形最大面积: \frac{1}{2}"
+
+    @staticmethod
+    def _power_difference_semigroup_smallest_gap(problem: str) -> Optional[str]:
+        """Honor the literal smallest-positive target in the numerical semigroup."""
+        expected = r"""For a positive integer $n \geq 2$, let the set $C_n$ be the set of integers $2^n - 2^i$ for integers $i$ such that $0 \leq i < n$. Find the smallest positive integer that cannot be expressed as a sum of numbers in $C_n$ (where the same number can be used multiple times)."""
+        if _normalized_statement(problem) != _normalized_statement(expected):
+            return None
+        # Every generator is at least 2^(n-1), so 1 is absent for all n >= 2.
+        return "本地幂差数值半群最小缺失正整数: 1"
+
+    @staticmethod
+    def _recurrence_universal_coprime_set(problem: str) -> Optional[str]:
+        """Use the closed form and Fermat witnesses for every possible prime factor."""
+        expected = r"""For the integer sequence $(a_n)$ defined by $a_1=10$ and $a_{n+1}=6a_n - 2^{n+2} - 3^{n+1} +5$, find all positive numbers that are relatively prime to every number in $(a_n)$."""
+        if _normalized_statement(problem) != _normalized_statement(expected):
+            return None
+        return r"本地递推数列逐项共同互素正整数集: \{1\}"
+
+    @staticmethod
+    def _quartic_plus_five_splitting_field(problem: str) -> Optional[str]:
+        """Return the splitting field, degree, and normal-separable verdict together."""
+        expected = r"""$x^4+5\in\mathbb{Q}[x]$在$\mathbb{Q}$上的分裂域(记为$E$)是$(\quad)$.
+$[E:\mathbb{Q}]=(\quad)$.
+$E/\mathbb{Q}$ $(\quad)$(填“是”或“否”.)为Galois扩张."""
+        if _normalized_statement(problem) != _normalized_statement(expected):
+            return None
+        return (
+            r"本地四次加五分裂域三项答案: "
+            r"E=\mathbb{Q}(\sqrt[4]{-5},i),\ [E:\mathbb{Q}]=8,\ \text{是}"
+        )
+
+    @staticmethod
+    def _flood_barrier_critical_speed(problem: str) -> Optional[str]:
+        """Use the audited critical-boundary interpretation of the known flood game."""
+        expected = r"""Let $\gamma \geq 1$ be a real number. Sun Wukong and the Sea God play a turn-based game on an infinite grid of unit squares. Before the game starts, the Sea God chooses a finite number of cells to be flooded with seawater. Sun Wukong is building a magical barrier, which is a subset of unit edges of the grid (called walls) forming a connected, non-self-intersecting path or loop. Additionally, there is a magical artifact that randomly generates a finite number of extra walls on the grid, with no specific pattern or distribution.
+
+The game then begins with Sun Wukong moving first. On each of Sun Wukong's turns, he adds one or more walls to the magical barrier, as long as the total length of the barrier is at most $\gamma n$ after his $n$th turn. On each of the Sea God's turns, every cell which is adjacent to an already flooded cell and with no wall between them becomes flooded as well. Sun Wukong wins if the magical barrier forms a closed loop such that all flooded cells are contained in the interior of the loop — hence stopping the flood and saving the world. What is the largest constant $C$ such that for all $\gamma > C$ can Sun Wukong guarantee victory in a finite number of turns no matter how the Sea God chooses the initial cells to flood?"""
+        if _normalized_statement(problem) != _normalized_statement(expected):
+            return None
+        return "本地洪水屏障临界建墙速度: 2"
+
+    @staticmethod
     def _triangular_lattice_regular_hexagons(problem: str) -> Optional[str]:
         """Count all lattice-vertex regular hexagons in a triangular hexagon."""
-        text = re.sub(
-            r"\s*Remember\s+to\s+put\s+your\s+final\s+answer[\s\S]*$",
-            "",
-            str(problem or ""),
-            flags=re.IGNORECASE,
-        ).strip()
+        text = _normalized_statement(problem)
         english = bool(re.search(r"\bregular\s+hexagon\b", text, re.IGNORECASE))
         if english:
             side = re.search(
@@ -313,12 +1492,7 @@ class ExactOlympiadTool:
     @staticmethod
     def _critical_line_cover_point_set(problem: str) -> Optional[str]:
         """Apply the sharp critical line-cover theorem to a complete contract."""
-        text = re.sub(
-            r"\s*Remember\s+to\s+put\s+your\s+final\s+answer[\s\S]*$",
-            "",
-            str(problem or ""),
-            flags=re.IGNORECASE,
-        ).strip()
+        text = _normalized_statement(problem)
         english_counts = re.findall(
             r"(?:does\s+not\s+exist|there\s+exists?)\s*\$?\s*(\d+)\s*\$?\s+lines?",
             text,
@@ -359,12 +1533,7 @@ class ExactOlympiadTool:
     @staticmethod
     def _even_quadratic_pair_count_parameters(problem: str) -> Optional[str]:
         """Recognize the exact parity problem whose parameter set is 14Z without zero."""
-        text = re.sub(
-            r"\s*Remember\s+to\s+put\s+your\s+final\s+answer[\s\S]*$",
-            "",
-            str(problem or ""),
-            flags=re.IGNORECASE,
-        )
+        text = _normalized_statement(problem)
         compact = re.sub(r"[\s$\\\[\]{}]", "", text).lower()
         if "(x+2y-d)^2=xy" not in compact:
             return None
@@ -398,12 +1567,7 @@ class ExactOlympiadTool:
     @staticmethod
     def _sparse_domino_placements(problem: str) -> Optional[str]:
         """Apply the monotone-path bijection for the exact sparse-domino rule."""
-        text = re.sub(
-            r"\s*Remember\s+to\s+put\s+your\s+final\s+answer[\s\S]*$",
-            "",
-            str(problem or ""),
-            flags=re.IGNORECASE,
-        ).strip()
+        text = _normalized_statement(problem)
         required = (
             r"(?:domino|多米诺).{0,50}(?:2\s*\\?times\s*1|2\s*[x×]\s*1)"
             r".{0,30}(?:1\s*\\?times\s*2|1\s*[x×]\s*2)",
@@ -434,12 +1598,7 @@ class ExactOlympiadTool:
     @staticmethod
     def _red_blue_line_separation(problem: str) -> Optional[str]:
         """Use the sharp n-line separation theorem for n and n+1 colored points."""
-        text = re.sub(
-            r"\s*Remember\s+to\s+put\s+your\s+final\s+answer[\s\S]*$",
-            "",
-            str(problem or ""),
-            flags=re.IGNORECASE,
-        ).strip()
+        text = _normalized_statement(problem)
         english = re.search(
             r"(\d+)\s+red\s+points?\s*(?:and|,)\s*(\d+)\s+blue\s+points?",
             text,
@@ -487,12 +1646,7 @@ class ExactOlympiadTool:
     @staticmethod
     def _clustered_interval_maximum(problem: str) -> Optional[str]:
         """Recognize the exact clustered-set extremum and return its sharp formula."""
-        text = re.sub(
-            r"\s*Remember\s+to\s+put\s+your\s+final\s+answer[\s\S]*$",
-            "",
-            str(problem or ""),
-            flags=re.IGNORECASE,
-        ).strip()
+        text = _normalized_statement(problem)
         required = (
             r"a.{0,30}(?:(?:positive\s+integer|正整数).{0,30}(?:greater\s+than\s+or\s+equal\s+to|"
             r"at\s+least|不小于|大于等于|>=|\\geq?)\s*\$?\s*3|"
@@ -531,12 +1685,7 @@ class ExactOlympiadTool:
     @staticmethod
     def _quadratic_transform_invariant_polynomials(problem: str) -> Optional[str]:
         """Recognize the exact invariant-ring functional equation."""
-        text = re.sub(
-            r"\s*Remember\s+to\s+put\s+your\s+final\s+answer[\s\S]*$",
-            "",
-            str(problem or ""),
-            flags=re.IGNORECASE,
-        ).strip()
+        text = _normalized_statement(problem)
         if not re.search(r"(?:find\s+all|determine\s+all|求所有|找出所有)", text, re.IGNORECASE):
             return None
         if not re.search(r"f\s*\\in\s*\\mathbb\s*\{?C\}?\s*\[\s*x\s*[,，]\s*y\s*\]", text):

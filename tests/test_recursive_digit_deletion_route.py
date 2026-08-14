@@ -38,7 +38,15 @@ def _matching(problem: str):
     ]
 
 
-@pytest.mark.parametrize("problem", [ENGLISH, CHINESE])
+@pytest.mark.parametrize(
+    "problem",
+    [
+        ENGLISH,
+        CHINESE,
+        ENGLISH.replace("A deletion may not leave a leading zero. ", ""),
+        CHINESE.replace("删去后不允许前导零。", ""),
+    ],
+)
 def test_recursive_digit_deletion_route_is_certified_and_bilingual(problem):
     evidence = _matching(problem)
 
@@ -88,12 +96,15 @@ def test_returned_number_has_a_complete_recursive_divisor_chain():
             "A deletion may not leave a leading zero.",
             "Leading zeroes are allowed after deletion.",
         ),
+        ENGLISH.replace(
+            "A deletion may not leave a leading zero.",
+            "Leading zeroes are ignored after deletion.",
+        ),
         ENGLISH.replace("positive integer", "positive base-8 integer"),
         CHINESE.replace("最大的好数", "最小的好数"),
         CHINESE.replace("删去其中一个数字", "删去其中两个数字"),
         CHINESE.replace("删去后不允许前导零", "删去后允许前导零"),
-        ENGLISH.replace("A deletion may not leave a leading zero. ", ""),
-        CHINESE.replace("删去后不允许前导零。", ""),
+        CHINESE.replace("删去后不允许前导零", "删去后去掉前导零"),
     ],
 )
 def test_recursive_digit_deletion_route_rejects_changed_contract(problem):

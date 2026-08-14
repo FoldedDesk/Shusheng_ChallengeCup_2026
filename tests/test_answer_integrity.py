@@ -831,6 +831,36 @@ class AnswerIntegrityTest(unittest.TestCase):
         ):
             self.assertTrue(Finalizer.validate_structure(answer), answer)
 
+    def test_unresolved_self_retractions_are_hard_format_failures(self):
+        samples = (
+            r"FINAL: \boxed{384}. My calculation is wrong, or my interpretation seems off.",
+            r"FINAL: \boxed{\gamma=1-1/\sqrt2}. This stability check needs correction.",
+            r"【最终答案】42。此处需修正，但先保留这个结果。",
+            r"【最终答案】42。上述计算有误，尚未重新核算。",
+        )
+
+        for answer in samples:
+            with self.subTest(answer=answer):
+                self.assertIn(
+                    "unresolved_self_retraction",
+                    Finalizer.validate_structure(answer),
+                )
+
+    def test_meta_assembly_and_unclosed_quoted_answer_are_rejected(self):
+        for answer in (
+            "Let's assemble the final text. First line: FINAL: 2.",
+            "First line: natural boundary. Then the proof.",
+            "I will formulate the final response now.",
+            "现在组装最终答案，第一行：42。",
+        ):
+            with self.subTest(answer=answer):
+                self.assertIn("meta_text", Finalizer.validate_structure(answer))
+
+        self.assertIn(
+            "unclosed_quote",
+            Finalizer.validate_structure('Conclusion: natural boundary".'),
+        )
+
     def test_optional_note_residue_is_removed_from_a_tagged_answer(self):
         problem = (
             "对于时间序列的季节调整，常用的方法有( )、( )。"
