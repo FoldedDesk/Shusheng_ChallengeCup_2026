@@ -1,8 +1,0 @@
-{"idx": 4008, "problem": "求递推a_n=3a_{n-1}-2且a_1=1的通项，并利用不动点平移验证结果。", "answer": "a_n=2-1^{n-1}=1", "subject": "离散数学", "source": "official_distribution_112_hard"}
-{"idx": 4022, "problem": "设布尔代数中x+y=1且xy=0，化简表达式(x+z)(y+z)，并使用分配律说明。", "answer": "z", "subject": "离散数学", "source": "official_distribution_112_hard"}
-{"idx": 4024, "problem": "对f(x)=x^3-x-1在区间[1,2]作一次二分法迭代，求新区间并说明端点函数值异号。", "answer": "[1,1.5]", "subject": "数值分析", "source": "official_distribution_112_hard"}
-{"idx": 4039, "problem": "设f=1_[0,2]+2·1_(2,3]，求其在实数上的勒贝格积分，需按不交集合分解。", "answer": "4", "subject": "测度积分", "source": "official_distribution_112_hard"}
-{"idx": 4048, "problem": "设平面曲线γ(t)=(t,t^2)，求t=0处曲率，需先计算一阶和二阶导数。", "answer": "2", "subject": "微分几何", "source": "official_distribution_112_hard"}
-{"idx": 4066, "problem": "设G为群且a的阶为6，求a^4的阶并说明阶公式中的最大公因数。", "answer": "3", "subject": "抽象代数", "source": "official_distribution_112_hard"}
-{"idx": 4087, "problem": "解初值问题y'+2y=e^{-2x},y(0)=0，使用积分因子并给出显式解。", "answer": "y=xe^{-2x}", "subject": "常微分方程", "source": "official_distribution_112_hard"}
-{"idx": 4096, "problem": "在C[0,1]配备一致范数，证明评价泛函L(f)=f(1/2)有界并求其算子范数。", "answer": "||L||=1", "subject": "泛函分析", "source": "official_distribution_112_hard"}
