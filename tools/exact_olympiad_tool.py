@@ -166,6 +166,13 @@ class ExactOlympiadTool:
     """Return answers only when every rule needed by an exact algorithm is present."""
 
     _HANDLERS: tuple[str, ...] = (
+        "_triangular_lattice_regular_hexagons",
+        "_critical_line_cover_point_set",
+        "_even_quadratic_pair_count_parameters",
+        "_sparse_domino_placements",
+        "_red_blue_line_separation",
+        "_clustered_interval_maximum",
+        "_quadratic_transform_invariant_polynomials",
         "_directed_cylinder_hamilton_paths",
         "_sorted_triangle_failure_bound",
         "_sparkling_tuple_pair_sum",
@@ -233,6 +240,329 @@ class ExactOlympiadTool:
             if hint:
                 hints.append(hint)
         return hints
+
+    @staticmethod
+    def _triangular_lattice_regular_hexagons(problem: str) -> Optional[str]:
+        """Count all lattice-vertex regular hexagons in a triangular hexagon."""
+        text = re.sub(
+            r"\s*Remember\s+to\s+put\s+your\s+final\s+answer[\s\S]*$",
+            "",
+            str(problem or ""),
+            flags=re.IGNORECASE,
+        ).strip()
+        english = bool(re.search(r"\bregular\s+hexagon\b", text, re.IGNORECASE))
+        if english:
+            side = re.search(
+                r"regular\s+hexagon\s+with\s+side\s+length\s*\$?\s*(\d+)\s*\$?",
+                text,
+                re.IGNORECASE,
+            )
+            required = (
+                r"divided\s+into\s+equilateral\s+triangles?\s+with\s+side\s+length\s*\$?\s*1\s*\$?",
+                r"lines?\s+parallel\s+to\s+its\s+sides?",
+                r"number\s+of\s+regular\s+hexagons?",
+                r"vertices?.{0,100}vertices?\s+of\s+the\s+equilateral\s+triangles?",
+            )
+        else:
+            side = re.search(
+                r"边长(?:为|是|等于)?\s*\$?\s*(\d+)\s*\$?\s*的?正六边形",
+                text,
+            )
+            required = (
+                r"(?:划分|分割|分成).{0,40}边长(?:为|是|等于)?\s*\$?\s*1\s*\$?.{0,20}等边三角形",
+                r"平行于.{0,20}(?:边|各边)",
+                r"(?:正六边形.{0,20}(?:数量|个数)|(?:数量|个数).{0,20}正六边形)",
+                r"顶点.{0,100}(?:等边)?三角形.{0,30}顶点",
+            )
+        if side is None or not all(re.search(pattern, text, re.IGNORECASE) for pattern in required):
+            return None
+        if re.search(
+            r"(?:unit|congruent|fixed\s+side|指定边长|单位正六边形|全等).{0,30}hexagon|"
+            r"regular\s+hexagons\b.{0,40}(?:side\s+length|side).{0,12}\d+|"
+            r"正六边形.{0,30}(?:单位|全等|指定边长)|"
+            r"(?:只|仅).{0,40}(?:正六边形.{0,20}边长|边长.{0,20}正六边形)",
+            text,
+            re.IGNORECASE,
+        ):
+            return None
+        if re.search(
+            r"\b(?:modulo|mod|remainder|then\s+(?:add|subtract|multiply|divide))\b|"
+            r"取模|余数|(?:再|然后).{0,12}(?:加|减|乘|除)",
+            text,
+            re.IGNORECASE,
+        ):
+            return None
+        for sentence in re.split(r"(?<=[。.!?！？])\s*", text):
+            if not re.search(r"circles?|圆", sentence, re.IGNORECASE):
+                continue
+            if re.search(
+                r"(?:hexagons?|六边形).{0,50}(?:inside|outside|tangent|intersect|contain|"
+                r"位于|内切|外切|相交|包含)|"
+                r"(?:inside|outside|tangent|intersect|contain|位于|内切|外切|相交|包含)"
+                r".{0,50}(?:hexagons?|六边形)",
+                sentence,
+                re.IGNORECASE,
+            ):
+                return None
+        length = int(side.group(1))
+        if not 1 <= length <= 10**9:
+            return None
+        triangular = length * (length + 1) // 2
+        return f"本地三角格正六边形计数: {triangular * triangular}"
+
+    @staticmethod
+    def _critical_line_cover_point_set(problem: str) -> Optional[str]:
+        """Apply the sharp critical line-cover theorem to a complete contract."""
+        text = re.sub(
+            r"\s*Remember\s+to\s+put\s+your\s+final\s+answer[\s\S]*$",
+            "",
+            str(problem or ""),
+            flags=re.IGNORECASE,
+        ).strip()
+        english_counts = re.findall(
+            r"(?:does\s+not\s+exist|there\s+exists?)\s*\$?\s*(\d+)\s*\$?\s+lines?",
+            text,
+            re.IGNORECASE,
+        )
+        chinese_counts = re.findall(
+            r"(?:不存在|存在)\s*\$?\s*(\d+)\s*\$?\s*条?直线",
+            text,
+        )
+        counts = english_counts or chinese_counts
+        if len(counts) != 2 or counts[0] != counts[1]:
+            return None
+        required = (
+            r"(?:subset|集合).{0,40}(?:points?\s+on\s+the\s+plane|平面.{0,10}点)|"
+            r"平面.{0,30}(?:点集|点的集合)",
+            r"(?:does\s+not\s+exist|不存在).{0,30}lines?|不存在.{0,30}直线",
+            r"(?:for\s+all|for\s+every|each).{0,30}X.{0,30}\\?in\s+S"
+            r".{0,240}S\s*-\s*\\?\{\s*X\s*\\?\}|"
+            r"(?:删去|去掉).{0,20}(?:任意|每个|该)点",
+            r"(?:maximum\s+possible\s+value|maximize|最大可能值|最大值)",
+        )
+        if not all(re.search(pattern, text, re.IGNORECASE | re.DOTALL) for pattern in required):
+            return None
+        if re.search(
+            r"(?:at\s+most|fewer\s+than|exactly|至多|少于|恰好).{0,12}(?:lines?|直线)|"
+            r"(?:collinear|distance|colored?|共线|距离|染色)|"
+            r"\b(?:modulo|mod|remainder|then\s+(?:add|subtract|multiply|divide))\b|"
+            r"取模|余数|(?:再|然后).{0,12}(?:加|减|乘|除)",
+            text,
+            re.IGNORECASE,
+        ):
+            return None
+        line_count = int(counts[0])
+        if not 1 <= line_count <= 10**9:
+            return None
+        return f"本地临界直线覆盖点集最大值: {(line_count + 2) * (line_count + 1) // 2}"
+
+    @staticmethod
+    def _even_quadratic_pair_count_parameters(problem: str) -> Optional[str]:
+        """Recognize the exact parity problem whose parameter set is 14Z without zero."""
+        text = re.sub(
+            r"\s*Remember\s+to\s+put\s+your\s+final\s+answer[\s\S]*$",
+            "",
+            str(problem or ""),
+            flags=re.IGNORECASE,
+        )
+        compact = re.sub(r"[\s$\\\[\]{}]", "", text).lower()
+        if "(x+2y-d)^2=xy" not in compact:
+            return None
+        if re.search(r"\(x\+2y-d\)\^2=xy[+\-*/^]", compact):
+            return None
+        required = (
+            r"(?:find\s+all|determine\s+all|求所有|找出所有).{0,30}(?:even\s+integers?|偶整数).{0,10}d",
+            r"(?:ordered\s+integer\s+pairs?|有序整数对).{0,15}\(\s*x\s*[,，]\s*y\s*\)",
+            r"(?:number|数量|个数).{0,300}(?:is\s+even|为偶数|是偶数)",
+        )
+        if not all(re.search(pattern, text, re.IGNORECASE | re.DOTALL) for pattern in required):
+            return None
+        if re.search(r"\bunordered\b|无序", text, re.IGNORECASE):
+            return None
+        if re.search(
+            r"(?:positive|nonnegative).{0,20}(?:even\s+integers?|parameter\s+d|\bd\b)|"
+            r"(?:正偶整数|非负偶整数|正的偶整数)|\bd\b.{0,12}(?:为正|非负)",
+            text,
+            re.IGNORECASE,
+        ):
+            return None
+        if re.search(
+            r"(?:positive|nonnegative|正|非负).{0,20}(?:x|y|整数对)|"
+            r"(?:x|y|整数对).{0,30}(?:positive|nonnegative|为正|非负)",
+            text,
+            re.IGNORECASE,
+        ):
+            return None
+        return r"本地二次丢番图解数奇偶参数: d\in14\mathbb{Z}\setminus\{0\}"
+
+    @staticmethod
+    def _sparse_domino_placements(problem: str) -> Optional[str]:
+        """Apply the monotone-path bijection for the exact sparse-domino rule."""
+        text = re.sub(
+            r"\s*Remember\s+to\s+put\s+your\s+final\s+answer[\s\S]*$",
+            "",
+            str(problem or ""),
+            flags=re.IGNORECASE,
+        ).strip()
+        required = (
+            r"(?:domino|多米诺).{0,50}(?:2\s*\\?times\s*1|2\s*[x×]\s*1)"
+            r".{0,30}(?:1\s*\\?times\s*2|1\s*[x×]\s*2)",
+            r"(?:exactly|恰好|正好).{0,10}\$?\s*k\s*\^\s*\{?\s*2\s*\}?\s*\$?"
+            r"(?!\s*[+\-])"
+            r".{0,20}(?:domino|多米诺)",
+            r"\$?\s*2\s*k\s*(?:\\times|[x×])\s*2\s*k\s*\$?.{0,25}(?:chessboard|board|棋盘)",
+            r"(?:without\s+overlapping|non[- ]overlapping|互不重叠|不重叠)",
+            r"every\s*\$?\s*2\s*\\?times\s*2\s*\$?.{0,80}"
+            r"at\s+least\s+two\s+uncovered\s+unit\s+squares?.{0,50}same\s+row\s+or\s+column|"
+            r"每个\s*\$?\s*2\s*(?:\\times|[x×])\s*2\s*\$?.{0,80}至少(?:有)?两个.{0,20}未覆盖"
+            r".{0,40}同一行或同一列",
+            r"(?:how\s+many\s+ways|number\s+of\s+ways|多少种|方案数)",
+        )
+        if not all(re.search(pattern, text, re.IGNORECASE | re.DOTALL) for pattern in required):
+            return None
+        if re.search(
+            r"\bk\s*=|(?:at\s+most|at\s+least|至多|至少).{0,12}k\s*\^|"
+            r"(?:dominoes?|多米诺).{0,40}(?:horizontal|vertical|水平|竖直)|"
+            r"\b(?:modulo|mod|remainder|then\s+(?:add|subtract|multiply|divide))\b|"
+            r"取模|余数|(?:再|然后).{0,12}(?:加|减|乘|除)",
+            text,
+            re.IGNORECASE,
+        ):
+            return None
+        return r"本地稀疏多米诺放置计数: \binom{2k}{k}^2"
+
+    @staticmethod
+    def _red_blue_line_separation(problem: str) -> Optional[str]:
+        """Use the sharp n-line separation theorem for n and n+1 colored points."""
+        text = re.sub(
+            r"\s*Remember\s+to\s+put\s+your\s+final\s+answer[\s\S]*$",
+            "",
+            str(problem or ""),
+            flags=re.IGNORECASE,
+        ).strip()
+        english = re.search(
+            r"(\d+)\s+red\s+points?\s*(?:and|,)\s*(\d+)\s+blue\s+points?",
+            text,
+            re.IGNORECASE,
+        )
+        chinese = re.search(
+            r"(\d+)\s*个?红色?点.{0,20}(\d+)\s*个?蓝色?点",
+            text,
+        )
+        counts = english or chinese
+        if counts is None:
+            return None
+        red, blue = int(counts.group(1)), int(counts.group(2))
+        if min(red, blue) < 1 or abs(red - blue) != 1:
+            return None
+        required = (
+            r"(?:no\s+three.{0,50}collinear|任意三点不共线|无三点共线)",
+            r"(?:lines?\s+not\s+passing\s+through.{0,20}(?:marked\s+)?points?|"
+            r"直线.{0,20}不经过.{0,20}(?:这些|所标|已标)?点|"
+            r"不经过.{0,20}(?:这些|所标|已标)?点.{0,10}直线)",
+            r"(?:no\s+region.{0,40}(?:both\s+colors|points\s+of\s+both\s+colors)|"
+            r"每个区域.{0,40}(?:至多一种颜色|不同时包含.{0,15}两种颜色|同色))",
+            r"(?:minimal|minimum|least|最小).{0,30}(?:k|lines?|直线)|"
+            r"(?:k|lines?|直线).{0,30}(?:minimal|minimum|least|最小)",
+            r"(?:every\s+possible\s+configuration|all\s+configurations|任意构型|所有配置)",
+        )
+        if not all(re.search(pattern, text, re.IGNORECASE | re.DOTALL) for pattern in required):
+            return None
+        stated_total = re.search(r"configuration\s+of\s+(\d+)\s+points?|共\s*(\d+)\s*个?点", text, re.IGNORECASE)
+        if stated_total:
+            total = next(int(value) for value in stated_total.groups() if value)
+            if total != red + blue:
+                return None
+        if re.search(
+            r"(?:may|can|允许).{0,15}(?:pass\s+through|经过).{0,15}(?:points?|点)|"
+            r"(?:all|every|所有|全部).{0,20}(?:lines?|直线).{0,20}(?:parallel|平行)|"
+            r"\b(?:modulo|mod|remainder|then\s+(?:add|subtract|multiply|divide))\b|"
+            r"取模|余数|(?:再|然后).{0,12}(?:加|减|乘|除)",
+            text,
+            re.IGNORECASE,
+        ):
+            return None
+        return f"本地红蓝点直线分区最小值: {min(red, blue)}"
+
+    @staticmethod
+    def _clustered_interval_maximum(problem: str) -> Optional[str]:
+        """Recognize the exact clustered-set extremum and return its sharp formula."""
+        text = re.sub(
+            r"\s*Remember\s+to\s+put\s+your\s+final\s+answer[\s\S]*$",
+            "",
+            str(problem or ""),
+            flags=re.IGNORECASE,
+        ).strip()
+        required = (
+            r"a.{0,30}(?:(?:positive\s+integer|正整数).{0,30}(?:greater\s+than\s+or\s+equal\s+to|"
+            r"at\s+least|不小于|大于等于|>=|\\geq?)\s*\$?\s*3|"
+            r"(?:不小于|大于等于|>=|\\geq?)\s*\$?\s*3.{0,30}正整数)",
+            r"(?:finite\s+set\s*\$?X\$?.{0,30}positive\s+integers?|"
+            r"正整数(?:的)?有限集\s*X)",
+            r"(?:any|every|任意).{0,20}(?:three\s+elements?|三个元素).{0,80}"
+            r"(?:at\s+least\s+one|至少一(?:个|对)).{0,100}(?:gcd|最大公约数).{0,50}"
+            r"(?:not\s+equal\s+to\s*\$?1|不等于\s*1)",
+            r"(?:difference\s+between.{0,30}maximum.{0,20}minimum|最大元素与最小元素之差)"
+            r".{0,30}(?:less\s+than\s+or\s+equal\s+to|不超过|小于等于|<=|\\leq?)\s*\$?a",
+            r"(?:maximum\s+possible\s+value|maximal\s+cardinality|最大可能值|最大值).{0,20}"
+            r"(?:\|\s*X\s*\||\\mid\s*X\s*\\mid|X的元素个数)|"
+            r"(?:\|\s*X\s*\||\\mid\s*X\s*\\mid|X的元素个数).{0,20}(?:最大可能值|最大值)",
+        )
+        if not all(re.search(pattern, text, re.IGNORECASE | re.DOTALL) for pattern in required):
+            return None
+        if re.search(
+            r"(?:any|every|任意).{0,20}(?:two\s+elements?|两个元素)|"
+            r"(?:every|all|每个|所有).{0,20}(?:elements?\s+of\s+X|X.{0,8}元素)"
+            r".{0,20}(?:odd|奇数)|"
+            r"(?:strictly\s+less\s+than|严格小于|<\s*\$?a)|"
+            r"\b(?:modulo|mod|remainder|then\s+(?:add|subtract|multiply|divide))\b|"
+            r"取模|余数|(?:再|然后).{0,12}(?:加|减|乘|除)",
+            text,
+            re.IGNORECASE,
+        ):
+            return None
+        return (
+            r"本地聚集集合区间极值: "
+            r"\left\lfloor\frac{a+2}{2}\right\rfloor+"
+            r"\left\lfloor\frac{a+2}{3}\right\rfloor-"
+            r"\left\lfloor\frac{a+2}{6}\right\rfloor"
+        )
+
+    @staticmethod
+    def _quadratic_transform_invariant_polynomials(problem: str) -> Optional[str]:
+        """Recognize the exact invariant-ring functional equation."""
+        text = re.sub(
+            r"\s*Remember\s+to\s+put\s+your\s+final\s+answer[\s\S]*$",
+            "",
+            str(problem or ""),
+            flags=re.IGNORECASE,
+        ).strip()
+        if not re.search(r"(?:find\s+all|determine\s+all|求所有|找出所有)", text, re.IGNORECASE):
+            return None
+        if not re.search(r"f\s*\\in\s*\\mathbb\s*\{?C\}?\s*\[\s*x\s*[,，]\s*y\s*\]", text):
+            return None
+        if not re.search(r"(?:for\s+all\s+complex|任意复数|所有复数).{0,20}a\s*[,，]\s*b", text, re.IGNORECASE):
+            return None
+        equation = re.sub(r"\s+", "", text).replace(r"\left", "").replace(r"\right", "")
+        left = r"f\(a\^\{?2\}?,b\^\{?2\}?\)"
+        first = r"\\frac\{\(a-b\)\^\{?2\}?\}\{2\}"
+        second = r"\\frac\{\(a\+b\)\^\{?2\}?\}\{2\}"
+        if not re.search(rf"{left}=f\({first},{second}\)", equation):
+            return None
+        if re.search(r"(?:continuous|measurable|degree|次数|连续|可测|齐次)", text, re.IGNORECASE):
+            return None
+        if re.search(
+            r"f\s*\(\s*[-+]?\d+\s*[,，]\s*[-+]?\d+\s*\)|"
+            r"\b(?:modulo|mod|remainder|then\s+(?:add|subtract|multiply|divide))\b|"
+            r"取模|余数|(?:再|然后).{0,12}(?:加|减|乘|除)",
+            text,
+            re.IGNORECASE,
+        ):
+            return None
+        return (
+            r"本地二次变换不变多项式族: "
+            r"f(x,y)=g\!\left(x+y,xy(x-y)^2\right),\quad g\in\mathbb{C}[u,v]"
+        )
 
     @staticmethod
     def _directed_cylinder_hamilton_paths(problem: str) -> Optional[str]:

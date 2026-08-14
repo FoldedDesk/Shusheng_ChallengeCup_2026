@@ -5,6 +5,7 @@ import pytest
 
 from classifier.problem_spec import build_problem_spec
 from reasoning.candidate_selector import assess_candidate, choose_candidate
+from reasoning.math_equivalence import equivalent_answers
 
 
 DATASET = Path(__file__).parents[1] / "sample_data" / "judge1_style_112_hard_v1.jsonl"
@@ -109,6 +110,21 @@ def test_operator_norm_requirement_rejects_boundedness_without_norm_value():
     assert "missing_required_goal" in assessment.rejected_reasons
 
 
+def test_point_value_absolute_bar_does_not_supply_operator_norm_value():
+    spec = build_problem_spec(
+        "在C[0,1]配备一致范数，证明评价泛函L(f)=f(1/2)有界并求其算子范数。"
+    )
+    assessment = assess_candidate(
+        "取f使得|L(f)|=1，因此L有界。",
+        "point_value_only",
+        spec,
+        (),
+    )
+
+    assert not assessment.complete_goals
+    assert "missing_required_goal" in assessment.rejected_reasons
+
+
 def test_subscripted_operator_norm_does_not_lose_to_a_wrong_complete_value():
     spec = build_problem_spec("计算算子L的1-范数。")
     correct = assess_candidate(r"\lVert L\rVert_1=1", "solve", spec, ())
@@ -119,3 +135,8 @@ def test_subscripted_operator_norm_does_not_lose_to_a_wrong_complete_value():
     selected = choose_candidate([correct, corroboration, wrong])
     assert selected in {correct, corroboration}
     assert selected is not wrong
+
+
+def test_norm_notation_is_not_equivalent_to_absolute_value():
+    assert equivalent_answers(r"\lVert A\rVert=2", r"||A||=2")
+    assert not equivalent_answers(r"\lVert A\rVert=2", r"|A|=2")

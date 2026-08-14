@@ -9,6 +9,7 @@ from time import monotonic
 
 from classifier.problem_spec import ProblemSpec, build_problem_spec
 from core.model_response import coerce_model_response
+from core.runtime_failure import is_recoverable_runtime_failure
 from core.stage_budget import StageBudget, plan_stage_budget
 from rag.card_retriever import CardRetriever, RetrievalBundle
 from reasoning.candidate_selector import (
@@ -25,6 +26,7 @@ from tools.tool_contract import ToolResult, result_from_legacy_hint
 
 
 SUBMISSION_SOFT_BUDGET_SECONDS = 270
+OPTIONAL_CALL_MIN_REMAINING_SECONDS = 135
 
 
 class SubmissionAgent:
@@ -95,7 +97,14 @@ class SubmissionAgent:
         })
         second = ""
         second_truncated = False
-        if review_mode and self._can_call(trace, budget):
+        second_call_minimum = (
+            0
+            if review_mode in {"continue", "rescue"}
+            else OPTIONAL_CALL_MIN_REMAINING_SECONDS
+        )
+        if review_mode and self._can_call(
+            trace, budget, started_at, second_call_minimum
+        ):
             independent = review_mode == "verify" or (
                 review_mode == "rescue" and budget.require_independent_review
             )
@@ -165,7 +174,12 @@ class SubmissionAgent:
             repair_mode
             and budget.allow_repair
             and optional_arbitration_allowed
-            and self._can_call(trace, budget)
+            and self._can_call(
+                trace,
+                budget,
+                started_at,
+                0 if selected_before_repair is None else OPTIONAL_CALL_MIN_REMAINING_SECONDS,
+            )
         ):
             continuing_verifier = repair_mode == "continue_verify"
             targeted_auditor = repair_mode in {"verify_recovered", "retry_verify"}
@@ -246,14 +260,10 @@ class SubmissionAgent:
             if (
                 targeted_auditor
                 and arbitration.strip()
-                and (
-                    not usable_third
-                    or (
-                        correction_changes_complete_candidate
-                        and not decisive_single_correction
-                    )
+                and not usable_third
+                and self._can_call(
+                    trace, budget, started_at, OPTIONAL_CALL_MIN_REMAINING_SECONDS
                 )
-                and self._can_call(trace, budget)
             ):
                 retry_request = (
                     self._correction_confirmation_request(
@@ -330,6 +340,7 @@ class SubmissionAgent:
             candidates,
             selected_before_repair,
             tuple(deterministically_certified_corrections),
+            spec,
         )
         selected = arbitration_selection or self._select(selection_candidates)
         verified_recovery = None
@@ -496,12 +507,21 @@ class SubmissionAgent:
                 },
             })
             return value, bool(result.provider_truncated or structural_truncation)
-        except Exception as exc:  # The platform client owns retries and limits.
+        except BaseException as exc:  # The platform client owns retries and limits.
+            if not is_recoverable_runtime_failure(exc):
+                raise
             trace.append({
                 "step": f"model_call_{stage}",
                 "content": {
                     "status": "failed",
                     "type": type(exc).__name__,
+                    "failure_kind": (
+                        "provider_timeout"
+                        if "FunctionTimedOut" in {
+                            base.__name__ for base in type(exc).__mro__
+                        }
+                        else "recoverable_client_error"
+                    ),
                     "elapsed_ms": int((monotonic() - stage_started) * 1000),
                     "remaining_budget_ms": self._remaining_ms(started_at),
                 },
@@ -1575,6 +1595,8 @@ class SubmissionAgent:
             if provider_truncated and first_response.strip():
                 return "continue", "truncated_without_complete_result"
             return "rescue", "missing_complete_result"
+        if self._remaining_ms(started_at) < OPTIONAL_CALL_MIN_REMAINING_SECONDS * 1000:
+            return "", "insufficient_optional_review_time"
         if (
             not budget.require_independent_review
             and self._remaining_ms(started_at) < budget.review_min_remaining_seconds * 1000
@@ -1605,8 +1627,20 @@ class SubmissionAgent:
         )
 
     @staticmethod
-    def _can_call(trace: list[dict], budget: StageBudget) -> bool:
-        return SubmissionAgent._model_call_count(trace) < budget.max_calls
+    def _can_call(
+        trace: list[dict],
+        budget: StageBudget,
+        started_at: float | None = None,
+        min_remaining_seconds: int = 0,
+    ) -> bool:
+        if SubmissionAgent._model_call_count(trace) >= budget.max_calls:
+            return False
+        if started_at is None:
+            return min_remaining_seconds <= 0
+        return (
+            SubmissionAgent._remaining_ms(started_at)
+            >= max(0, min_remaining_seconds) * 1000
+        )
 
     @staticmethod
     def _response_near_budget(response: str, max_tokens: int) -> bool:
@@ -1854,10 +1888,30 @@ class SubmissionAgent:
         candidates: list[CandidateAssessment],
         baseline: CandidateAssessment | None,
         deterministically_certified: tuple[CandidateAssessment, ...] = (),
+        spec: ProblemSpec | None = None,
     ) -> list[CandidateAssessment]:
-        """Keep a complete baseline unless a changed audit result is corroborated."""
-        if baseline is None or baseline.validation_tier != "complete":
+        """Keep a usable baseline unless a changed audit result is corroborated."""
+        if (
+            baseline is None
+            or baseline.validation_tier not in {"complete", "degraded"}
+            or not baseline.answer
+            or not baseline.shape_valid
+            or not baseline.formatting_valid
+        ):
             return candidates
+        if baseline.validation_tier == "degraded" and spec is not None:
+            missing_results = {
+                requirement.name
+                for goal in spec.goals
+                for requirement in goal.result_requirements
+                if not requirement.matches(baseline.answer)
+            }
+            # A concrete missing dependency, unit, or requested component is
+            # mechanically checkable.  A corrected audit may repair it in one
+            # pass.  Exhaustiveness is semantic: merely saying "all" is not
+            # enough evidence to replace a usable singleton or finite set.
+            if missing_results and missing_results != {"exhaustive_result"}:
+                return candidates
         audit_sources = {
             "verify_recovered", "continue_verify", "retry_verify", "audit_retry"
         }

@@ -265,6 +265,64 @@ class SympyTool:
     def _certificate_checks_for_hint(hint: str) -> tuple[str, ...]:
         label = str(hint or "").partition(": ")[0]
         exact_count_checks = {
+            "本地三角格正六边形计数": (
+                "regular_hexagonal_triangular_lattice",
+                "unit_triangle_subdivision",
+                "all_lattice_vertex_regular_hexagons",
+                "orientation_size_position_sum",
+                "small_side_enumeration_crosscheck",
+            ),
+            "本地临界直线覆盖点集最大值": (
+                "finite_planar_point_set",
+                "not_coverable_by_m_lines",
+                "every_single_deletion_coverable_by_m_lines",
+                "maximum_requested",
+                "critical_cover_upper_bound",
+                "general_position_line_intersection_construction",
+            ),
+            "本地二次丢番图解数奇偶参数": (
+                "even_integer_parameter",
+                "ordered_integer_pair_domain",
+                "exact_quadratic_equation",
+                "finite_solution_parity_requested",
+                "zero_parameter_excluded",
+                "residue_classes_exhausted",
+            ),
+            "本地稀疏多米诺放置计数": (
+                "two_by_one_dominoes",
+                "two_k_square_board",
+                "exactly_k_squared_dominoes",
+                "nonoverlapping_placement",
+                "every_two_square_has_aligned_uncovered_pair",
+                "two_monotone_path_bijection",
+                "independent_path_binomial_counts",
+            ),
+            "本地红蓝点直线分区最小值": (
+                "two_color_planar_points",
+                "color_counts_differ_by_one",
+                "no_three_collinear",
+                "separating_lines_avoid_points",
+                "monochromatic_regions",
+                "all_configurations_required",
+                "alternating_configuration_lower_bound",
+                "convex_hull_induction_upper_bound",
+            ),
+            "本地聚集集合区间极值": (
+                "positive_integer_parameter_at_least_three",
+                "finite_positive_integer_set",
+                "every_triple_has_nontrivial_gcd_pair",
+                "diameter_at_most_parameter",
+                "maximum_cardinality_requested",
+                "modulo_thirty_block_upper_bound",
+                "multiples_of_two_or_three_construction",
+            ),
+            "本地二次变换不变多项式族": (
+                "complex_bivariate_polynomial",
+                "universal_complex_parameters",
+                "exact_quadratic_transform_identity",
+                "all_polynomials_requested",
+                "invariant_generators_algebraically_independent",
+            ),
             "本地偶基数子集计数": (
                 "finite_set_with_positive_size",
                 "all_subsets_requested",
@@ -366,6 +424,11 @@ class SympyTool:
         if label in exact_count_checks:
             return exact_count_checks[label]
         textbook_checks = {
+            "本地正态分布参数选择答案": (
+                "normal_distribution_parameter_question",
+                "all_options_recognized",
+                "mean_standard_deviation_convention",
+            ),
             "本地二面体群选择答案": (
                 "square_d8_order_convention", "all_options_recognized", "positive_question_polarity",
             ),

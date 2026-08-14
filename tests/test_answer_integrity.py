@@ -499,6 +499,9 @@ class AnswerIntegrityTest(unittest.TestCase):
         self.assertTrue(requirement.matches(r"逐点极限为 f(x)=1。"))
         self.assertTrue(requirement.matches(r"f_n converges pointwise to 0."))
         self.assertTrue(requirement.matches(r"f_n逐点收敛于0。"))
+        self.assertTrue(requirement.matches(r"逐点极限为零函数。"))
+        self.assertTrue(requirement.matches(r"逐点收敛到恒零函数。"))
+        self.assertTrue(requirement.matches(r"The pointwise limit is the zero function."))
         self.assertFalse(requirement.matches(r"它逐点收敛。"))
 
     def test_common_pointwise_wording_does_not_lose_to_a_wrong_complete_candidate(self):

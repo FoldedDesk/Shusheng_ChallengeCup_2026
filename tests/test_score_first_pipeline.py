@@ -2,6 +2,7 @@ from dataclasses import replace
 from pathlib import Path
 import sys
 import unittest
+from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
@@ -76,6 +77,25 @@ class ScoreFirstPipelineTest(unittest.TestCase):
             for reason in item["rejected_reasons"]
         ]
         self.assertIn("provider_truncated_ambiguous_box", rejected)
+
+    @patch.object(SubmissionAgent, "_remaining_ms", return_value=134_000)
+    def test_required_continuation_runs_below_optional_review_threshold(self, _remaining):
+        client = StructuredRecordingClient([
+            ModelCallResult("unfinished derivation", finish_reason="length"),
+            ModelCallResult(r"FINAL: \boxed{42}"),
+        ])
+
+        result = ReasoningAgent(client).solve(
+            r"Find the value. Remember to put your final answer within \boxed{}.",
+            {},
+        )
+
+        self.assertEqual(result["final_response"], r"\boxed{42}")
+        self.assertEqual(len(client.calls), 2)
+        self.assertEqual(
+            self._step(result, "review_admission")["content"]["mode"],
+            "continue",
+        )
 
     def test_truncated_correction_invalidates_an_earlier_labelled_answer(self):
         client = StructuredRecordingClient([
@@ -488,7 +508,30 @@ class ScoreFirstPipelineTest(unittest.TestCase):
             self._step(result, "selection")["content"]["source"], "audit_retry"
         )
 
-    def test_value_changing_correction_requires_and_accepts_fresh_confirmation(self):
+    def test_uncorroborated_audit_cannot_override_usable_degraded_baseline(self):
+        client = StructuredRecordingClient([
+            ModelCallResult("unfinished derivation", finish_reason="length"),
+            ModelCallResult(r"FINAL: \boxed{0}"),
+            ModelCallResult(
+                "CHECK: A direct Sturm count gives N=2, so these are all possible values.\n"
+                "VERDICT: CORRECTED\n"
+                "FINAL: \\boxed{2}"
+            ),
+        ])
+
+        result = ReasoningAgent(client).solve(
+            "Find all possible values for the number of distinct real roots of the equation. "
+            r"Remember to put your final answer within \boxed{}.",
+            {},
+        )
+
+        self.assertEqual(result["final_response"], r"\boxed{0}")
+        self.assertEqual(len(client.calls), 3)
+        selection = self._step(result, "selection")["content"]
+        self.assertEqual(selection["source"], "continue")
+        self.assertFalse(selection["changed_correction_corroborated"])
+
+    def test_value_changing_audit_does_not_trigger_disagreement_only_fourth_call(self):
         client = StructuredRecordingClient([
             ModelCallResult("Deep analysis: unfinished", finish_reason="length"),
             ModelCallResult(r"FINAL: \boxed{25}"),
@@ -508,11 +551,11 @@ class ScoreFirstPipelineTest(unittest.TestCase):
             {},
         )
 
-        self.assertEqual(result["final_response"], r"\boxed{40}")
-        self.assertEqual(len(client.calls), 4)
+        self.assertEqual(result["final_response"], r"\boxed{25}")
+        self.assertEqual(len(client.calls), 3)
         selection = self._step(result, "selection")["content"]
-        self.assertIn(selection["source"], {"verify_recovered", "audit_retry"})
-        self.assertTrue(selection["changed_correction_corroborated"])
+        self.assertEqual(selection["source"], "continue")
+        self.assertFalse(selection["changed_correction_corroborated"])
 
     def test_rejected_second_audit_does_not_corroborate_changed_answer(self):
         spec = build_problem_spec("Find the value.")

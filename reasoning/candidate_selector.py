@@ -1128,9 +1128,27 @@ def _last_concluding_box(answer: str) -> str:
         r"[\s$\\\[\].。!！]*", text[closing:]
     ):
         return ""
-    context = text[max(0, position - 320):position]
+    prefix = text[:position]
+    # Only the immediately governing clause can turn a later box into a
+    # correction.  A generic mention several sentences earlier commonly
+    # introduces an intermediate/check value instead.
+    clauses = []
+    for clause in re.split(r"[\n。！？!?；;]", prefix):
+        cleaned_clause = clause.strip()
+        if not cleaned_clause or re.fullmatch(r"[\s$\\\[\]()]*", cleaned_clause):
+            continue
+        clauses.append(cleaned_clause)
+    context = clauses[-1][-180:] if clauses else ""
+    if re.search(
+        r"(?:中间(?:量|结果|步骤)?|校验量|检验量|辅助量|上界|下界|"
+        r"\b(?:intermediate|check\s+value|auxiliary\s+value|upper\s+bound|lower\s+bound)\b)",
+        context,
+        re.IGNORECASE,
+    ):
+        return ""
     correction_marker = re.search(
-        r"(?:修正(?:后|答案|结论)?|更正(?:后|答案|结论)?|正确(?:答案|结论)|"
+        r"(?:修正(?:后|答案|结论)?|更正(?:后|答案|结论)?|"
+        r"正确(?:答案|结论)\s*(?:为|是|=|[:：])|"
         r"重算(?:后|得)|复算(?:后|得)|重新(?:计算|核验)后|核验发现[^。\n]{0,40}错误|"
         r"\b(?:corrected\s+answer|correction|rechecking\s+(?:shows|gives|finds)|"
         r"after\s+recomput(?:ing|ation))\b)",

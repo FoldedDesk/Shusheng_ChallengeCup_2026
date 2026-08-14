@@ -229,11 +229,23 @@ _CONDITION_NUMBER_MEANINGS = {
     ),
 }
 
+_NORMAL_PARAMETER_MEANINGS = {
+    "mean_variance": _canonical_set("均值和方差", "mean and variance"),
+    "mean_standard_deviation": _canonical_set(
+        "均值和标准差", "mean and standard deviation"
+    ),
+    "median_variance": _canonical_set("中位数和方差", "median and variance"),
+    "median_standard_deviation": _canonical_set(
+        "中位数和标准差", "median and standard deviation"
+    ),
+}
+
 
 class ExactTextbookTool:
     """Generate deterministic hints only for fully recognized textbook prompts."""
 
     _HANDLERS: tuple[str, ...] = (
+        "_normal_distribution_parameters",
         "_square_dihedral_facts",
         "_lebesgue_integrability_facts",
         "_compact_real_facts",
@@ -263,6 +275,20 @@ class ExactTextbookTool:
             if hint:
                 hints.append(hint)
         return hints
+
+    @staticmethod
+    def _normal_distribution_parameters(problem: str) -> Optional[str]:
+        return _closed_choice_hint(
+            problem,
+            prefixes=_canonical_set(
+                "正态分布的两个参数分别是（）",
+                "正态分布的两个参数分别是",
+                "The two parameters of a normal distribution are",
+            ),
+            meanings=_NORMAL_PARAMETER_MEANINGS,
+            selected_meanings=frozenset({"mean_standard_deviation"}),
+            label="本地正态分布参数选择答案",
+        )
 
     @staticmethod
     def _square_dihedral_facts(problem: str) -> Optional[str]:

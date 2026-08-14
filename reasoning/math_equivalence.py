@@ -255,8 +255,19 @@ def _is_numeric_answer(value: str) -> bool:
 
 
 def _compact(value: str) -> str:
+    # Preserve norm delimiters before normalize_latex canonicalizes both
+    # single and double vertical bars to ``|``.  Norm notations remain
+    # mutually equivalent without becoming equal to absolute value.
+    source = str(value or "")
+    source = (
+        source.replace(r"\lVert", "__norm__")
+        .replace(r"\rVert", "__norm__")
+        .replace(r"\Vert", "__norm__")
+        .replace(r"\|", "__norm__")
+        .replace("||", "__norm__")
+    )
     text = _normalize_fraction_commands(
-        normalize_latex(str(value or ""))
+        normalize_latex(source)
     ).lower().replace("−", "-")
     text = (
         text.replace(r"\lvert", "|")
@@ -264,7 +275,6 @@ def _compact(value: str) -> str:
         .replace(r"\vert", "|")
         .replace(r"\|", "|")
     )
-    text = re.sub(r"\|{2}", "|", text)
     for _ in range(3):
         flattened = re.sub(
             r"\\(?:text|mathrm)\s*\{([^{}]*)\}",

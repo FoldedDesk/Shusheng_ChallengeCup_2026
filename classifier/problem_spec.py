@@ -209,15 +209,26 @@ class Requirement:
                 re.IGNORECASE,
             ))
         if self.name == "operator_norm":
-            return bool(re.search(
-                r"(?:\\lVert|\\Vert|\\?\|{1,2}).{1,120}?"
-                r"(?:\\rVert|\\Vert|\\?\|{1,2})"
+            explicit_norm = bool(re.search(
+                r"(?:\\lVert|\\Vert|\\\||\|\|).{1,120}?"
+                r"(?:\\rVert|\\Vert|\\\||\|\|)"
                 r"(?:\s*_\s*\{?\s*[A-Za-z0-9]+\s*\}?)?\s*=\s*"
                 r"(?:[-+]?\d|\\(?:frac|sqrt)|[A-Za-z])|"
                 r"(?:算子)?范数\s*(?:为|是|=)|\boperator\s+norm\s*(?:is|=)",
                 raw_answer,
                 re.IGNORECASE,
-            )) or _is_bare_math_expression(raw_answer)
+            ))
+            # A bare scalar can be the requested norm value.  An equality such
+            # as |L(f)|=1 is only a pointwise bound and must not satisfy the
+            # operator-norm obligation.
+            bare_value = (
+                _is_bare_math_expression(raw_answer)
+                and not re.search(
+                    r"[=|]|\\(?:lvert|rvert|vert|lVert|rVert|Vert)",
+                    raw_answer,
+                )
+            )
+            return explicit_norm or bare_value
         if self.name == "galois_verdict":
             return bool(re.search(r"是|否|\b(?:yes|no|true|false)\b", raw_answer, re.IGNORECASE))
         if self.name == "two_items":
@@ -328,12 +339,12 @@ class Requirement:
                 r"(?:逐点(?:极限|收敛)?|pointwise(?:\s+(?:limit|convergence))?)"
                 r"[^;；。.!?\n]{0,80}(?:为|是|于|到|=|\bis\b|\bto\b|"
                 r"\btowards?\b|\\to|→)\s*"
-                r"(?:[-+]?\d|[A-Za-z]|\\[A-Za-z]+)",
+                r"(?:恒?零函数|零|zero\s+function|[-+]?\d|[A-Za-z]|\\[A-Za-z]+)",
                 raw_answer,
                 re.IGNORECASE,
             )) or bool(re.search(
                 r"[A-Za-z]\s*_?\s*\{?n\}?\s*(?:\([^)]*\))?\s*(?:\\to|→)\s*"
-                r"(?:[-+]?\d|[A-Za-z]|\\[A-Za-z]+)",
+                r"(?:恒?零函数|零|zero\s+function|[-+]?\d|[A-Za-z]|\\[A-Za-z]+)",
                 raw_answer,
                 re.IGNORECASE,
             ))

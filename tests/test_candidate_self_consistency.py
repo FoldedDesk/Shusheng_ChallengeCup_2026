@@ -197,6 +197,25 @@ def test_concluding_intermediate_check_box_does_not_replace_final():
     )
 
 
+def test_generic_correct_answer_mention_does_not_promote_later_check_box():
+    candidate = (
+        r"FINAL: \boxed{42}" "\n"
+        r"检验正确答案时，先计算中间量 \boxed{6}"
+    )
+
+    assert "final_conclusion_conflict" not in candidate_consistency_reasons(
+        candidate, SIMPLE_SPEC
+    )
+
+
+def test_immediate_explicit_correction_promotes_terminal_box():
+    candidate = r"FINAL: \boxed{42}" "\n" r"更正后答案为 \boxed{6}"
+
+    assert "final_conclusion_conflict" in candidate_consistency_reasons(
+        candidate, SIMPLE_SPEC
+    )
+
+
 def test_unboxed_early_final_conflicting_with_explicit_terminal_correction_is_rejected():
     candidate = (
         r"FINAL: 5" "\n"
