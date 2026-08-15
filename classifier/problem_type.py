@@ -15,6 +15,7 @@ _RESULT_COMMAND = re.compile(
 
 _CONTEXTUAL_RESULT_COMMAND = re.compile(
     r"判断|验证|比较|化简|列出|写出|确定|求(?:决定|判定)系数|"
+    r"(?:用|采用|利用|根据|按照?|借助)[^。！？!?\n]{0,160}(?:求(?!证)|计算|确定)|"
     r"说明[^。！？!?\n]{0,100}是否|"
     r"\b(?:find|determine|solve|calculate|compute|evaluate|verify|compare|simplify|classify|list|"
     r"what\s+(?:is|are)|how\s+many)\b",

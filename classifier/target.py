@@ -24,6 +24,18 @@ _PRIMARY_TARGET_COMMAND = re.compile(
     re.IGNORECASE,
 )
 
+_SUPPORT_ONLY_SEGMENT = re.compile(
+    r"^\s*(?:(?:完整|严格|严谨)(?:证明|论证|推导|计算|归一化)|"
+    r"(?:证明|论证|推导|计算|归一化))(?:须|必须|应当|要求)|"
+    r"^\s*(?:a|the)?\s*(?:complete|rigorous)\s+"
+    r"(?:proof|derivation|argument|calculation|normalization)|"
+    r"^\s*(?:the\s+)?(?:proof|derivation|argument|calculation|normalization)\s+"
+    r"(?:must|should|is required)|"
+    r"^\s*(?:要求|必须|须|需|应当)(?:严格|分别|逐项|完整地?)?"
+    r"(?:使用|用|从|通过|由|以|作|解|识别|构造|给出|推导|验证|核对|检查|说明|证明|计算|归一化)",
+    re.IGNORECASE,
+)
+
 
 def extract_target_clause(problem: str) -> str:
     """Return the last sentence-like segment containing an explicit ask."""
@@ -38,15 +50,19 @@ def extract_target_clause(problem: str) -> str:
         flags=re.MULTILINE,
     )
     segments = [segment.strip() for segment in re.split(
-        r"\n+|(?<=[。？！?!])\s+|(?<=\.)\$\s+(?=[A-Z\u4e00-\u9fff])|"
+        r"\n+|(?<=[。？！])\s*|(?<=[!?])\s+|(?<=\.)\$\s+(?=[A-Z\u4e00-\u9fff])|"
         r"(?<=\.)\s+(?=[A-Z\u4e00-\u9fff])",
         protected,
     ) if segment.strip()]
     segments = [segment.replace(enumeration_marker, ".") for segment in segments]
-    candidate_indices = [
+    all_candidate_indices = [
         index for index, segment in enumerate(segments)
         if _TARGET_COMMAND.search(segment)
     ]
+    candidate_indices = [
+        index for index in all_candidate_indices
+        if not _SUPPORT_ONLY_SEGMENT.search(segments[index])
+    ] or all_candidate_indices
     if candidate_indices:
         candidate_index = candidate_indices[-1]
         candidate = segments[candidate_index].strip(" \t\r\n。.!?？")

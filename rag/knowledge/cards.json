@@ -1,0 +1,236 @@
+{
+  "version": 1,
+  "cards": [
+    {
+      "id": "method.discrete.counting",
+      "kind": "method",
+      "domains": ["离散数学"],
+      "topics": ["combinatorics"],
+      "keywords": ["计数", "排列", "组合", "counting", "permutation", "combination"],
+      "text_zh": "先精确定义计数对象及有序性、重复和对称；再选择分类、递推、双计数、容斥或生成函数，并用最小规模实例核对。",
+      "text_en": "Define the counted objects, order, repetition, and symmetry before choosing cases, recurrence, double counting, inclusion-exclusion, or generating functions; check the smallest legal instances.",
+      "provenance": "standard combinatorial method"
+    },
+    {
+      "id": "method.graph.structure",
+      "kind": "method",
+      "domains": ["离散数学"],
+      "topics": ["graph"],
+      "keywords": ["图", "顶点", "边", "生成树", "graph", "vertex", "edge", "spanning tree"],
+      "text_zh": "图论题先确认简单性、方向、连通性和计数对象；区分路径与游走，使用度数和、树结构、矩阵树定理或平面图公式时逐项核对前提。",
+      "text_en": "Check simplicity, orientation, connectivity, and the counted object; distinguish paths from walks and verify every hypothesis of degree, tree, matrix-tree, or planar formulas.",
+      "provenance": "standard graph theory method"
+    },
+    {
+      "id": "method.numerical.residual",
+      "kind": "method",
+      "domains": ["数值分析"],
+      "topics": ["numerical_method"],
+      "keywords": ["迭代", "误差", "数值", "iteration", "error", "numerical"],
+      "text_zh": "数值方法题必须写出题目指定的公式、代入给定初值并保留精度；用残差、误差阶、区间包含或稳定性条件独立核验，而不能只给最终根。",
+      "text_en": "State the requested numerical formula, substitute the supplied initial data, and respect precision; verify with a residual, error order, enclosing interval, or stability condition rather than reporting only a root.",
+      "provenance": "standard numerical analysis checklist"
+    },
+    {
+      "id": "theorem.measure.convergence",
+      "kind": "theorem",
+      "domains": ["测度积分"],
+      "topics": [],
+      "keywords": ["支配收敛", "单调收敛", "Fatou", "dominated convergence", "monotone convergence", "fatou"],
+      "theorem_name": "convergence theorems",
+      "text_zh": "交换极限与积分前应明确使用单调收敛、Fatou 引理或支配收敛，并逐一核对非负性、单调性、几乎处处收敛和可积支配函数等对应前提。",
+      "text_en": "Before interchanging limits and integrals, name the monotone, Fatou, or dominated convergence result and verify its corresponding nonnegativity, monotonicity, almost-everywhere convergence, and integrable domination hypotheses.",
+      "provenance": "standard measure convergence theorems"
+    },
+    {
+      "id": "method.geometry.invariants",
+      "kind": "method",
+      "domains": ["微分几何"],
+      "topics": [],
+      "keywords": ["曲率", "基本形式", "测地线", "curvature", "fundamental form", "geodesic"],
+      "text_zh": "先检查参数正则性、维数和法向取向，再由基本形式或协变导数计算几何量；最后检查结果在允许的重新参数化或取向变化下应如何变换。",
+      "text_en": "Check regularity, dimension, and orientation before computing from fundamental forms or covariant derivatives; then verify the expected behavior under reparametrization or orientation reversal.",
+      "provenance": "standard differential geometry method"
+    },
+    {
+      "id": "method.probability.conditioning",
+      "kind": "method",
+      "domains": ["概率论"],
+      "topics": ["probability"],
+      "keywords": ["概率", "条件", "独立", "期望", "probability", "conditional", "independent", "expectation"],
+      "text_zh": "明确样本空间与是否等可能，区分独立和互斥；优先使用条件化、全概率或指示变量，并检查概率在 [0,1]、总质量为 1。",
+      "text_en": "Specify the sample space and whether outcomes are equiprobable, distinguish independence from disjointness, use conditioning or indicators, and check total mass and the range [0,1].",
+      "provenance": "standard probability method"
+    },
+    {
+      "id": "method.algebra.structure",
+      "kind": "method",
+      "domains": ["抽象代数"],
+      "topics": [],
+      "keywords": ["群", "环", "域", "理想", "扩张", "group", "ring", "field", "ideal", "extension"],
+      "text_zh": "从定义、同态核像、阶数和商结构出发；使用同构定理、域塔或多项式不可约性时必须明确对象、基域和每个假设。",
+      "text_en": "Start from definitions, kernels, images, orders, and quotients; state the objects, base field, and every hypothesis when using isomorphism theorems, field towers, or irreducibility.",
+      "provenance": "standard abstract algebra method"
+    },
+    {
+      "id": "method.stochastic.states",
+      "kind": "method",
+      "domains": ["随机过程"],
+      "topics": [],
+      "keywords": ["马尔可夫", "布朗", "泊松", "鞅", "markov", "brownian", "poisson", "martingale"],
+      "text_zh": "写清状态、时间方向、过滤与条件信息；利用 Markov 性、独立增量、停时或鞅性质后，检查初值、归一化和极限条件。",
+      "text_en": "State the state, time direction, filtration, and conditioning information; after using Markov, independent-increment, stopping-time, or martingale properties, check initial values, normalization, and limit conditions.",
+      "provenance": "standard stochastic process method"
+    },
+    {
+      "id": "method.complex.local-global",
+      "kind": "method",
+      "domains": ["复分析"],
+      "topics": [],
+      "keywords": ["留数", "全纯", "Laurent", "解析延拓", "residue", "holomorphic", "laurent", "analytic continuation"],
+      "text_zh": "先定位奇点、零点、区域和围道方向，再选择局部展开、留数、最大模、辐角原理或解析延拓；检查边界与定理作用域。",
+      "text_en": "Locate singularities, zeros, the domain, and contour orientation before choosing local expansions, residues, maximum modulus, argument principle, or analytic continuation; check theorem scope and boundaries.",
+      "provenance": "standard complex analysis method"
+    },
+    {
+      "id": "method.ode.substitution",
+      "kind": "method",
+      "domains": ["常微分方程"],
+      "topics": [],
+      "keywords": ["微分方程", "初值", "边值", "differential equation", "initial value", "boundary value"],
+      "text_zh": "先识别方程类型并求通解，再施加初值或边值；最终通过求导代回原方程并检查最大存在区间。",
+      "text_en": "Identify the equation class and obtain the general solution before imposing initial or boundary data; differentiate and substitute into the original equation and check the maximal interval.",
+      "provenance": "standard ODE method"
+    },
+    {
+      "id": "method.inference.likelihood",
+      "kind": "method",
+      "domains": ["统计推断"],
+      "topics": [],
+      "keywords": ["估计", "似然", "置信区间", "检验", "estimator", "likelihood", "confidence interval", "test"],
+      "text_zh": "写出抽样模型、参数空间和统计量分布；估计与检验分别核对偏差、方差、枢轴量、显著性水平及备择方向。",
+      "text_en": "State the sampling model, parameter space, and statistic distribution; check bias, variance, pivots, significance level, and alternative direction for estimation and testing.",
+      "provenance": "standard statistical inference method"
+    },
+    {
+      "id": "method.functional.hypotheses",
+      "kind": "method",
+      "domains": ["泛函分析"],
+      "topics": [],
+      "keywords": ["Banach", "Hilbert", "算子", "弱收敛", "operator", "weak convergence"],
+      "text_zh": "区分范数、弱与弱星拓扑；使用开映射、闭图像、一致有界或 Riesz 表示前，逐项核对完备性、线性和有界性。",
+      "text_en": "Distinguish norm, weak, and weak-star topologies; verify completeness, linearity, and boundedness before using open mapping, closed graph, uniform boundedness, or Riesz representation.",
+      "provenance": "standard functional analysis method"
+    },
+    {
+      "id": "method.regression.model",
+      "kind": "method",
+      "domains": ["线性回归"],
+      "topics": [],
+      "keywords": ["回归", "最小二乘", "残差", "异方差", "regression", "least squares", "residual", "heteroscedastic"],
+      "text_zh": "先写设计矩阵、误差假设和目标参数；区分系数无偏性、效率、标准误与检验有效性，并按协方差结构选择 OLS、GLS 或稳健方差。",
+      "text_en": "State the design matrix, error assumptions, and target parameter; distinguish coefficient bias, efficiency, standard errors, and test validity, choosing OLS, GLS, or robust covariance as warranted.",
+      "provenance": "standard regression method"
+    },
+    {
+      "id": "method.pde.boundary",
+      "kind": "method",
+      "domains": ["偏微分方程"],
+      "topics": [],
+      "keywords": ["偏微分", "边界", "初值", "弱解", "partial differential", "boundary", "initial", "weak solution"],
+      "text_zh": "先确认 PDE 类型、区域、初边值和解的正则性，再选择分离变量、特征线、能量法、最大值原理或弱形式；最后代回并检查边界。",
+      "text_en": "Identify PDE type, domain, initial-boundary data, and solution regularity before choosing separation, characteristics, energy, maximum principles, or weak forms; substitute back and check the boundary.",
+      "provenance": "standard PDE method"
+    },
+    {
+      "id": "method.linear-algebra.invariants",
+      "kind": "method",
+      "domains": ["高等代数"],
+      "topics": ["linear_algebra"],
+      "keywords": ["矩阵", "行列式", "特征值", "秩", "matrix", "determinant", "eigenvalue", "rank"],
+      "text_zh": "按目标选择消元、行列式、特征多项式或标准形；用迹、行列式、秩和维数关系交叉核对重数与维数。",
+      "text_en": "Choose elimination, determinants, characteristic polynomials, or normal forms according to the target; cross-check multiplicities and dimensions with trace, determinant, rank, and dimension identities.",
+      "provenance": "standard linear algebra method"
+    },
+    {
+      "id": "method.optimization.certificates",
+      "kind": "method",
+      "domains": ["运筹学"],
+      "topics": ["optimization"],
+      "keywords": ["最优", "线性规划", "对偶", "KKT", "optimal", "linear programming", "dual"],
+      "text_zh": "先写可行域和目标，再给出最优性证书：凸性与 KKT、原对偶可行解、交换论证或动态规划；同时验证可达性。",
+      "text_en": "State the feasible set and objective, then provide an optimality certificate through convexity and KKT, primal-dual feasible solutions, an exchange argument, or dynamic programming; verify attainability.",
+      "provenance": "standard optimization method"
+    },
+    {
+      "id": "method.analysis.quantifiers",
+      "kind": "method",
+      "domains": ["数学分析"],
+      "topics": ["calculus"],
+      "keywords": ["极限", "连续", "收敛", "limit", "continuous", "convergence"],
+      "text_zh": "明确点态、一致、几乎处处或范数收敛以及量词顺序；交换极限、积分和导数前必须给出适用条件，并检查端点。",
+      "text_en": "Specify pointwise, uniform, almost-everywhere, or norm convergence and the quantifier order; justify interchanging limits, integrals, and derivatives and check endpoints.",
+      "provenance": "standard real analysis method"
+    },
+    {
+      "id": "method.topology.definitions",
+      "kind": "method",
+      "domains": ["拓扑学"],
+      "topics": [],
+      "keywords": ["拓扑", "紧致", "连通", "同胚", "topology", "compact", "connected", "homeomorphism"],
+      "text_zh": "先按当前空间定义开集、闭包、紧致或连通；只在附加条件成立时使用度量空间、Hausdorff 或欧氏空间中的等价刻画。",
+      "text_en": "Use the definitions of openness, closure, compactness, or connectedness in the stated space; use metric, Hausdorff, or Euclidean equivalences only under their extra hypotheses.",
+      "provenance": "standard topology method"
+    },
+    {
+      "id": "method.number-theory.local-global",
+      "kind": "method",
+      "domains": ["数论", "进阶数学"],
+      "topics": ["equation"],
+      "keywords": ["整除", "同余", "素数", "整数解", "divisibility", "congruence", "prime", "integer solution"],
+      "text_zh": "先分解并按素因子或赋值分析必要条件，再用构造、下降或同余证明充分性；所有整数候选必须代回且证明穷尽。",
+      "text_en": "Factor and derive local prime or valuation conditions, then prove sufficiency by construction, descent, or congruences; substitute every integer candidate and prove exhaustiveness.",
+      "provenance": "standard number theory method"
+    },
+    {
+      "id": "check.boundary",
+      "kind": "check",
+      "domains": ["进阶数学"],
+      "topics": [],
+      "keywords": ["最小", "最大", "所有", "边界", "minimum", "maximum", "all", "boundary"],
+      "text_zh": "主动检查最小合法实例、端点、退化情形、等号情形以及题目排除的值。",
+      "text_en": "Test the smallest legal instance, endpoints, degeneracies, equality cases, and every excluded value.",
+      "provenance": "general verification checklist"
+    },
+    {
+      "id": "check.proof.counterexample",
+      "kind": "check",
+      "domains": ["进阶数学"],
+      "topics": ["proof"],
+      "keywords": ["证明", "所有", "当且仅当", "prove", "every", "if and only if"],
+      "text_zh": "核对关键引理的全部前提，并尝试用边界例、反例或逆命题否证结论；区分必要条件和充分条件。",
+      "text_en": "Check every hypothesis of the decisive lemma and try to falsify the claim with boundary cases, counterexamples, or the converse; distinguish necessity from sufficiency.",
+      "provenance": "general proof audit"
+    },
+    {
+      "id": "check.choice.polarity",
+      "kind": "check",
+      "domains": ["进阶数学"],
+      "topics": ["choice"],
+      "keywords": ["选项", "正确", "错误", "choice", "correct", "incorrect"],
+      "text_zh": "逐项判断每个选项的真伪，最后重新核对题目问的是正确项还是错误项，以及单选或多选。",
+      "text_en": "Evaluate every option, then recheck whether the question asks for true or false options and whether one or several labels are required.",
+      "provenance": "general multiple-choice audit"
+    },
+    {
+      "id": "check.output.contract",
+      "kind": "check",
+      "domains": ["进阶数学"],
+      "topics": [],
+      "keywords": ["公式", "单位", "近似", "全部", "formula", "unit", "approximate", "all"],
+      "text_zh": "提交前逐项核对所求公式、数值、全部对象、单位、定义域、精度和必要论证是否均已出现。",
+      "text_en": "Before submission, check that every requested formula, value, object, unit, domain, precision requirement, and necessary justification is present.",
+      "provenance": "general answer-contract audit"
+    }
+  ]
+}

@@ -1,5 +1,0 @@
-{"idx":4040,"problem":"若f≥0可测且∫f dμ=0，证明对任意ε>0集合{f≥ε}为零测集，并写出结论。","answer":"f=0 几乎处处","subject":"测度积分","source":"full_solution_output_regression_23"}
-{"idx":4070,"problem":"设域F上的多项式f次数为5，若f在F中有6个不同根，证明f为零多项式。","answer":"f=0","subject":"抽象代数","source":"full_solution_output_regression_23"}
-{"idx":4078,"problem":"设平稳过程X_t均值为m，证明其协方差函数只依赖于时间差，并写出Cov(X_t,X_{t+h})。","answer":"只依赖h","subject":"随机过程","source":"full_solution_output_regression_23"}
-{"idx":4102,"problem":"已知相关系数r=-0.8，在线性回归含截距情形求决定系数R^2并解释其含义。","answer":"0.64","subject":"线性回归","source":"full_solution_output_regression_23"}
-{"idx":4111,"problem":"证明紧致空间的闭子集仍紧致，并说明开覆盖限制到闭子集的步骤。","answer":"紧致空间的闭子集紧致","subject":"拓扑学","source":"full_solution_output_regression_23"}

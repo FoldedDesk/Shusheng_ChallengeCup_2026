@@ -1,3 +1,0 @@
-{"idx":4021,"problem":"求所有满足a+b+c=15、a≤b≤c且a,b,c为正整数的三元组个数，需要按a分类讨论。","answer":"19","subject":"离散数学","source":"official_distribution_112_hard"}
-{"idx":4032,"problem":"求f(x)=ln(1+x)在x=0处三阶泰勒多项式，并写出截断到x^3的结果。","answer":"x-x^2/2+x^3/3","subject":"数值分析","source":"official_distribution_112_hard"}
-{"idx":4073,"problem":"简单对称随机游走S_n从0出发，求E[S_5]与Var(S_5)，利用独立增量性质。","answer":"E[S_5]=0，Var(S_5)=5","subject":"随机过程","source":"official_distribution_112_hard"}

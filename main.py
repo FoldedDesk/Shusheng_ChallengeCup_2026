@@ -111,7 +111,7 @@ async def process_item(
             record = {
                 "idx": item["idx"],
                 "status": "error",
-                "final_response": ReasoningAgent._safe_fallback(item.get("problem", "")),
+                "final_response": FAILED_ANSWER,
                 "error": {
                     "type": type(exc).__name__,
                     "message": str(exc),

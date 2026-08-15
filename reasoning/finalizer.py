@@ -46,6 +46,8 @@ class Finalizer:
         r"(?im:^\s*first\s+line\s*[:：])|\bthen\s+(?:the\s+)?(?:proof|argument|explanation)\b|"
         r"\bi\s+(?:will|'ll)\s+formulate\b|"
         r"让我(?:验证|确认|组织)|我(?:需要|应该)|输出时|"
+        r"但再核对一次|或许题目(?:中|的)|也许题目(?:中|的)|重新审视题目|"
+        r"我(?:再|来)?核对|\blet me (?:recheck|check again)\b|\bperhaps the problem\b|"
         r"(?:现在|下面)?(?:组装|组织)(?:最终)?(?:文本|答案|回复)|第一行\s*[:：]|然后写(?:证明|论证|解释))",
         re.IGNORECASE,
     )
@@ -136,6 +138,7 @@ class Finalizer:
         )
         for match in label_pattern.finditer(text):
             value = re.sub(r"\s*(?:\*{1,3}|_{1,3})\s*$", "", match.group(1)).strip()
+            value = Finalizer._trim_explicit_line(value)
             boxed = Finalizer._last_boxed(value)
             method = "label_boxed" if boxed is not None else "label"
             value = boxed if boxed is not None else value
@@ -144,7 +147,7 @@ class Finalizer:
                 Finalizer._result(value, method, raw_has_meta=has_meta, explicit=True),
             ))
         for match in Finalizer._BRACKET_LABEL.finditer(text):
-            value = match.group(1).strip().strip("` ")
+            value = Finalizer._trim_explicit_line(match.group(1).strip().strip("` "))
             boxed = Finalizer._last_boxed(value)
             value = boxed if boxed is not None else value
             fragments.append((
@@ -173,6 +176,21 @@ class Finalizer:
     @staticmethod
     def contains_meta(value: str) -> bool:
         return bool(Finalizer._META.search(str(value or "")))
+
+    @staticmethod
+    def _trim_explicit_line(value: str) -> str:
+        """Keep a labelled conclusion before an inline proof or self-check marker."""
+        text = str(value or "").strip()
+        marker = re.search(
+            r"\s+(?:\*{0,2})?(?:证明|论证|推导|论证过程|推导过程|严格论证|"
+            r"但再核对一次|不过再核对一次|"
+            r"proof|derivation|justification|verification)\s*[:：]",
+            text,
+            re.IGNORECASE,
+        )
+        if marker and text[:marker.start()].strip():
+            return text[:marker.start()].strip().rstrip("。.;；")
+        return text
 
     @staticmethod
     def has_unresolved_self_retraction(value: str) -> bool:
@@ -281,7 +299,8 @@ class Finalizer:
             r"i\s+(?:need|will|should|can|must)\b|i['’]ll\s+(?:write|provide|output|include)\b|check\b|one\s+(?:detail|more|adjustment)\b|"
             r"final\s+(?:check|plan|polish)\b|double\s+check\b|revised\s+(?:body|draft|proof)\b|plan\s*:|"
             r"count\s+lines?\s*:|check\s+(?:the\s+)?line\s+count\b|line\s+\d+\s*:|draft(?:\s+\d+)?\s*:|"
-            r"refin(?:e|ing)\b|need\s+to\b|the\s+prompt\b|(?:this\s+)?looks?\s+(?:compliant|solid)\b|"
+            r"refin(?:e|ing)\b|need\s+to\b|the\s+prompt\b|(?:this\s+)?looks?\s+(?:compliant|solid|concise|complete)\b|"
+            r"covers?\s+all\s+(?:the\s+)?requirements\b|"
             r"is\s+there\s+any\s+risk\b|so\s+it\s+is\s+fine\b|g\d+\s*(?:\[|[:：])|必查字段|"
             r"(?:[（(]\s*)?optional\s+(?:brief\s+)?note\b|"
             r"\[\s*(?:explanation|proof|reasoning|derivation|answer|content)(?:\s+text)?\s*\]|"

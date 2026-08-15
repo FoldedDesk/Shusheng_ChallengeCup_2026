@@ -1,5 +1,0 @@
-{"idx":4200,"problem":"正整数x_1,x_2,x_3满足x_1+x_2+x_3=15，且每个x_i都不超过7。求有序解的个数。","answer":"28","subject":"组合数学","source":"quick_final_order_probe"}
-{"idx":4201,"problem":"一个简单无向图有12个顶点，每个顶点的度数都等于5。求该图的边数。","answer":"30","subject":"离散数学","source":"quick_final_order_probe"}
-{"idx":4202,"problem":"从包括甲、乙在内的10个人中选出4人，要求甲、乙恰有一人入选。求选法数。","answer":"112","subject":"组合数学","source":"quick_final_order_probe"}
-{"idx":4203,"problem":"用复化中点公式将区间[0,2]等分为两段，近似计算积分∫_0^2 x^2 dx，并与精确值比较。","answer":"近似值5/2，精确值8/3","subject":"数值分析","source":"quick_final_order_probe"}
-{"idx":4204,"problem":"盒中有5个红球和4个蓝球，不放回地任取3个，求恰好取到2个红球的概率。","answer":"10/21","subject":"概率论","source":"quick_final_order_probe"}

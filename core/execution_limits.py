@@ -1,4 +1,4 @@
-"""Shared execution limits for the bounded score-first evaluation runner."""
+"""Runtime limits shared by local runner and submission orchestration."""
 
 from __future__ import annotations
 
@@ -7,12 +7,11 @@ from math import ceil
 
 MAX_CONCURRENCY = 3
 REQUEST_TIMEOUT_SECONDS = 120
-# Two independent deep solves may each need one bounded answer completion.
-# Provider retries are owned by the client.
-HARD_REQUEST_WINDOWS = 4
-HARD_MODEL_STAGES = 4
+HARD_REQUEST_WINDOWS = 3
+HARD_MODEL_STAGES = 3
 PER_ITEM_TIMEOUT_SECONDS = 20 * 60
-OVERALL_TIMEOUT_SECONDS = 360 * 60
+SUBMISSION_SOFT_ITEM_SECONDS = 360
+OVERALL_TIMEOUT_SECONDS = 4 * 60 * 60
 
 
 def hard_item_worst_case_seconds() -> int:

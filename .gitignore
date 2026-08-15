@@ -1,10 +1,28 @@
 __pycache__/
 *.py[cod]
-sample_outputs/
-sample_outputs_*/
-outputs/
-validation_outputs/
 judge/
+# Local-only datasets, tests, and evaluation artifacts. These must not be
+# included in the competition submission snapshot.
+/sample_data/
+/tests/
+/test/
+/validation_outputs/
+/outputs/
+/sample_outputs/
+/sample_outputs_*/
+# Local benchmark construction, replay, and answer-key verification helpers.
+/scripts/audit_unseen_hard*.py
+/scripts/build_judge1_style_hard112.py
+/scripts/evaluate_answer_integrity.py
+/scripts/evaluate_judge_replay.py
+/scripts/verify_unseen_hard*.py
+# Development notes and local benchmark reports are not runtime dependencies.
+/changelogs/
+/pr/
+/docs/superpowers/
+/UNSEEN_HARD_BENCHMARK*.md
+/FinalGoal.md
+/环境迁移指南.md
 *.tmp
 .DS_Store
 prompt.txt

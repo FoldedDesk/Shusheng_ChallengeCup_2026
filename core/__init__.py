@@ -1,5 +1,5 @@
-"""Lightweight runtime primitives for the competition agent."""
+"""Bounded runtime components for the competition entry point."""
 
-from core.state import MathState
+from core.submission_agent import SubmissionAgent
 
-__all__ = ["MathState"]
+__all__ = ["SubmissionAgent"]

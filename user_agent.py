@@ -1,14 +1,12 @@
 from __future__ import annotations
 
-import re
-
 from core.runtime_failure import is_recoverable_runtime_failure
 from core.serializer import safe_json
 from core.submission_agent import SubmissionAgent
 
 
 class ReasoningAgent:
-    """Official competition entry point."""
+    """Fixed public entry point used by the official runner."""
 
     def __init__(self, client, *args, **kwargs) -> None:
         del args, kwargs
@@ -17,64 +15,56 @@ class ReasoningAgent:
     def solve(self, problem: str, metadata: dict) -> dict:
         try:
             result = self.agent.solve(problem, metadata)
-            if isinstance(result, dict):
-                raw_answer = result.get("final_response")
-                answer = "" if raw_answer is None else str(raw_answer).strip()
-                if answer:
-                    payload = {"final_response": answer}
-                    if "trace" in result:
-                        payload["trace"] = self._normalize_trace(result["trace"])
-                    return safe_json(payload)
-            return self._degraded_result(problem, "invalid_internal_response")
-        except BaseException as exc:
-            if not is_recoverable_runtime_failure(exc):
+            normalized = self._normalize_result(result)
+            if normalized is not None:
+                return normalized
+        except BaseException as error:
+            if not is_recoverable_runtime_failure(error):
                 raise
-            # The platform invokes solve one item at a time. Never let an
-            # internal parser or tool failure invalidate the entire batch.
-            return self._degraded_result(problem, "failed", type(exc).__name__)
+            primary_failure = type(error).__name__
+        else:
+            primary_failure = "InvalidInternalResponse"
 
-    @staticmethod
-    def _normalize_trace(trace: object) -> list:
-        if not isinstance(trace, list):
-            return [{
-                "step": "entrypoint",
-                "content": {"status": "trace_normalized"},
-            }]
         try:
-            normalized = safe_json(trace)
-        except BaseException as exc:
-            if not is_recoverable_runtime_failure(exc):
+            recovered = self._normalize_result(self.agent.emergency_solve(problem))
+            if recovered is not None:
+                recovered.setdefault("trace", []).append({
+                    "step": "entrypoint",
+                    "content": {
+                        "status": "recovered",
+                        "primary_failure_type": primary_failure,
+                    },
+                })
+                return safe_json(recovered)
+        except BaseException as error:
+            if not is_recoverable_runtime_failure(error):
                 raise
-            return [{
+            recovery_failure = type(error).__name__
+        else:
+            recovery_failure = "InvalidRecoveryResponse"
+
+        # Reached only after both bounded model paths fail to return text.
+        return safe_json({
+            "final_response": "0",
+            "trace": [{
                 "step": "entrypoint",
                 "content": {
-                    "status": "trace_serialization_failed",
-                    "type": type(exc).__name__,
+                    "status": "degraded_after_recovery_failure",
+                    "primary_failure_type": primary_failure,
+                    "recovery_failure_type": recovery_failure,
                 },
-            }]
-        return normalized if isinstance(normalized, list) else []
-
-    @classmethod
-    def _degraded_result(
-        cls,
-        problem: str,
-        status: str,
-        failure_type: str = "",
-    ) -> dict:
-        content = {"status": status, "degraded": True}
-        if failure_type:
-            content["type"] = failure_type
-        result = safe_json({
-            "final_response": cls._safe_fallback(problem),
-            "trace": [{"step": "entrypoint", "content": content}],
+            }],
         })
-        return result
 
     @staticmethod
-    def _safe_fallback(problem: str) -> str:
-        boxed = bool(re.search(
-            r"(?:within|inside)\s+\\boxed\s*\{\s*\}|put.*final answer.*\\boxed|\\boxed\s*\{\s*\}",
-            str(problem or ""),
-            re.IGNORECASE,
-        ))
-        return r"\boxed{0}" if boxed else "0"
+    def _normalize_result(result: object) -> dict | None:
+        if not isinstance(result, dict):
+            return None
+        raw_answer = result.get("final_response")
+        answer = "" if raw_answer is None else str(raw_answer).strip()
+        if not answer:
+            return None
+        trace = result.get("trace", [])
+        if not isinstance(trace, list):
+            trace = [{"step": "entrypoint", "content": {"status": "trace_normalized"}}]
+        return safe_json({"final_response": answer, "trace": trace})

@@ -34,6 +34,7 @@ def equivalent_answers(left: str, right: str) -> bool:
     for matcher in (
         _finite_nested_integer_set_match,
         _finite_roots_of_unity_set_match,
+        _jordan_block_multiset_match,
         _integer_tuple_parameter_family_match,
         _polynomial_family_match,
         _trigonometric_family_match,
@@ -516,6 +517,46 @@ def _replace_indexed_roots(value: str) -> str:
         search_from = start + len(replacement)
 
 
+def _replace_balanced_fractions(value: str) -> str:
+    """Convert nested TeX fractions without relying on a full LaTeX parser."""
+    text = str(value or "")
+
+    def group_at(source: str, start: int) -> tuple[str, int] | None:
+        while start < len(source) and source[start].isspace():
+            start += 1
+        if start >= len(source) or source[start] != "{":
+            return None
+        depth = 0
+        for index in range(start, len(source)):
+            if source[index] == "{":
+                depth += 1
+            elif source[index] == "}":
+                depth -= 1
+                if depth == 0:
+                    return source[start + 1:index], index + 1
+        return None
+
+    while True:
+        matches = list(re.finditer(r"\\(?:d?frac|tfrac)", text))
+        replaced = False
+        for match in reversed(matches):
+            numerator = group_at(text, match.end())
+            if numerator is None:
+                continue
+            denominator = group_at(text, numerator[1])
+            if denominator is None:
+                continue
+            replacement = (
+                f"(({_replace_balanced_fractions(numerator[0])})/"
+                f"({_replace_balanced_fractions(denominator[0])}))"
+            )
+            text = text[:match.start()] + replacement + text[denominator[1]:]
+            replaced = True
+            break
+        if not replaced:
+            return text
+
+
 def _decimal_literals_to_rationals(value: str) -> str:
     def replacement(match: re.Match[str]) -> str:
         fraction = Fraction(match.group(0))
@@ -534,12 +575,54 @@ def _parse_scalar_expression(value: str):
         return None
     if _MATRIX_ENVIRONMENT.search(text) or len(_split_top_level_items(text)) > 1:
         return None
-    text = _replace_indexed_roots(_normalize_fraction_commands(text))
+    text = _replace_balanced_fractions(
+        _replace_indexed_roots(_normalize_fraction_commands(text))
+    )
     text = text.replace(r"\lambda", "L").replace(r"\cdot", "*").replace(r"\times", "*")
     try:
         from tools.sympy_tool import SympyTool
 
+        text = re.sub(
+            r"\\(sin|cos|tan|sinh|cosh|exp|log|ln)\s*\{\s*\(([^()]*)\)\s*\}",
+            lambda match: rf"\{match.group(1)}({match.group(2)})",
+            text,
+        )
+        text = re.sub(
+            r"\\(sin|cos|tan|sinh|cosh|exp|log|ln)\s*\{([^{}]+)\}",
+            lambda match: rf"\{match.group(1)}({match.group(2)})",
+            text,
+        )
+        text = re.sub(
+            r"\\(sin|cos|tan|sinh|cosh|exp|log|ln)",
+            r" \1 ",
+            text,
+        )
         prepared = SympyTool._latex_to_sympy(text)
+        prepared = re.sub(
+            r"\b(sin|cos|tan|sinh|cosh|exp|log)\s+([A-Za-z])\b",
+            r"\1(\2)",
+            prepared,
+        )
+        prepared = re.sub(
+            r"\b(sin|cos|tan|sinh|cosh|exp|log)\s*\(",
+            r"\1(",
+            prepared,
+        )
+        # In a scalar mathematical expression, standalone e and i use their
+        # conventional Euler/imaginary meanings. Labelled variables are
+        # handled by the equation/assignment paths before this parser.
+        prepared = re.sub(r"(?<![A-Za-z0-9_])e(?![A-Za-z0-9_])", "E", prepared)
+        prepared = re.sub(r"(?<![A-Za-z0-9_])i(?![A-Za-z0-9_])", "I", prepared)
+        prepared = re.sub(
+            r"(?<=[0-9A-Za-z)])\s+(?=[0-9A-Za-z(])",
+            "*",
+            prepared,
+        )
+        prepared = re.sub(
+            r"(?<![A-Za-z0-9_])([A-Za-z])(?=\()",
+            r"\1*",
+            prepared,
+        )
         prepared = _decimal_literals_to_rationals(prepared)
         if not re.fullmatch(r"[0-9A-Za-z_+\-*/^().,\s]+", prepared):
             return None
@@ -720,6 +803,47 @@ def _integer_tuple_parameter_signature(
         entries,
         integer_domain is not None,
     )
+
+
+def _jordan_block_signature(value: str, *, marker_present: bool) -> tuple[int, ...] | None:
+    text = _unwrap_text_commands(_strip_math_wrappers(value))
+    blocks = re.findall(
+        r"(\d+)\s*个\s*(?:大小|阶数|阶)?\s*(?:为|是)?\s*(\d+)\s*"
+        r"(?:阶)?\s*的?\s*Jordan\s*块|"
+        r"(\d+)\s+Jordan\s+blocks?\s+of\s+size\s+(\d+)",
+        text,
+        re.IGNORECASE,
+    )
+    if blocks:
+        sizes: list[int] = []
+        for chinese_count, chinese_size, english_count, english_size in blocks:
+            count = int(chinese_count or english_count)
+            size = int(chinese_size or english_size)
+            if count < 1 or size < 1 or count * size > 10000:
+                return None
+            sizes.extend([size] * count)
+        return tuple(sorted(sizes, reverse=True))
+    if not marker_present:
+        return None
+    entries = _parse_tuple_vector(text)
+    if entries is None or not entries:
+        return None
+    if any(not re.fullmatch(r"\s*\d+\s*", item) or int(item) < 1 for item in entries):
+        return None
+    return tuple(sorted((int(item) for item in entries), reverse=True))
+
+
+def _jordan_block_multiset_match(left: str, right: str) -> bool | None:
+    marker = re.compile(r"Jordan\s*块|Jordan\s+blocks?", re.IGNORECASE)
+    left_marker = bool(marker.search(left))
+    right_marker = bool(marker.search(right))
+    if not left_marker and not right_marker:
+        return None
+    left_signature = _jordan_block_signature(left, marker_present=right_marker)
+    right_signature = _jordan_block_signature(right, marker_present=left_marker)
+    if left_signature is None or right_signature is None:
+        return False
+    return left_signature == right_signature
 
 
 def _integer_tuple_parameter_family_match(left: str, right: str) -> bool | None:
@@ -1082,7 +1206,8 @@ def _optimization_signature(value: str) -> tuple[tuple[str, ...], str] | None:
         if len(assignments) >= 2 and len({name.lower() for name, _ in assignments}) == len(assignments):
             coordinate_entries = tuple(item.strip() for _, item in assignments)
     value_match = re.search(
-        r"(?:最优值|optimal\s+value|\\max|max(?:imum)?)\s*"
+        r"(?:最优值|最大值|最小值|optimal\s+value|\\max|\\min|"
+        r"max(?:imum)?|min(?:imum)?)\s*"
         r"(?:为|是|is|equals?|=|[:：])?\s*"
         r"(?P<value>[^,，;；。\n]+)",
         text,
@@ -1102,7 +1227,8 @@ def _optimization_signature(value: str) -> tuple[tuple[str, ...], str] | None:
 
 def _optimization_result_match(left: str, right: str) -> bool | None:
     marker = re.compile(
-        r"最优(?:解|值)|optimal\s+(?:solution|value)|optimizer|\\max\s*=|\bmaximum\s*=",
+        r"最优(?:解|值)|最大值|最小值|optimal\s+(?:solution|value)|optimizer|"
+        r"\\(?:max|min)\s*=|\b(?:maximum|minimum)\s*=",
         re.IGNORECASE,
     )
     if not marker.search(left) and not marker.search(right):

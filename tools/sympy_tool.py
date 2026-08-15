@@ -1,21 +1,30 @@
+"""General symbolic compilation and candidate verification with SymPy."""
+
 from __future__ import annotations
 
+from dataclasses import dataclass
 import re
-from collections import Counter
-from fractions import Fraction
-from itertools import combinations, permutations, product
-from math import gcd
-import math
 from typing import Any, Optional
 
-from tools.tool_contract import ToolResult, result_from_legacy_hint
-from tools.exact_olympiad_tool import ExactOlympiadTool
-from tools.exact_statistics_tool import ExactStatisticsTool
-from tools.exact_textbook_tool import ExactTextbookTool
+from tools.tool_contract import ToolResult, make_tool_result
+
+
+@dataclass(frozen=True)
+class ToolCheck:
+    name: str
+    status: str
+    detail: str = ""
+
+    def trace_content(self) -> dict:
+        return {"name": self.name, "status": self.status, "detail": self.detail}
 
 
 class SympyTool:
-    """Optional local symbolic helper. Tool failures never block model solving."""
+    """Compile only complete, generic mathematical requests.
+
+    Natural-language story matching is intentionally absent.  A failed parse
+    yields no tool result and leaves the problem to the model.
+    """
 
     def __init__(self) -> None:
         try:
@@ -23,6 +32,9 @@ class SympyTool:
         except ImportError:
             sympy_module = None
         self.sympy = sympy_module
+
+    def evaluate(self, expression: str) -> Optional[str]:
+        return self._run(lambda _: self._parse(expression))
 
     def derivative(self, expression: str, variable: str = "x") -> Optional[str]:
         return self._run(lambda s: s.diff(self._parse(expression), s.Symbol(variable)))
@@ -37,18 +49,23 @@ class SympyTool:
         lower: str,
         upper: str,
     ) -> Optional[str]:
-        return self._run(
-            lambda s: s.integrate(
-                self._parse(expression),
-                (s.Symbol(variable), self._parse(lower), self._parse(upper)),
-            )
-        )
+        return self._run(lambda s: s.integrate(
+            self._parse(expression),
+            (s.Symbol(variable), self._parse(lower), self._parse(upper)),
+        ))
 
-    def solve_equation(self, expression: str, variable: str = "x") -> Optional[list]:
+    def limit(self, expression: str, variable: str, point: str) -> Optional[str]:
+        return self._run(lambda s: s.limit(
+            self._parse(expression), s.Symbol(variable), self._parse(point)
+        ))
+
+    def solve_equation(self, expression: str, variable: str = "x") -> Optional[list[str]]:
         if not self.sympy:
             return None
         try:
-            return [self._format(item) for item in self.sympy.solve(self._parse(expression), self.sympy.Symbol(variable))]
+            symbol = self.sympy.Symbol(variable)
+            solutions = self.sympy.solve(self._parse(expression), symbol)
+            return [self._format(item) for item in solutions]
         except Exception:
             return None
 
@@ -56,4952 +73,522 @@ class SympyTool:
         if not self.sympy:
             return None
         try:
-            return [[self._format(item) for item in row] for row in self.sympy.Matrix(rows).tolist()]
+            matrix = self.sympy.Matrix([[self._parse(str(cell)) for cell in row] for row in rows])
+            return [[self._format(item) for item in row] for row in matrix.tolist()]
         except Exception:
             return None
-
-    def limit(self, expression: str, variable: str, point: str) -> Optional[str]:
-        return self._run(
-            lambda s: s.limit(self._parse(expression), s.Symbol(variable), self._parse(point))
-        )
-
-    def evaluate(self, expression: str) -> Optional[str]:
-        return self._run(lambda _: self._parse(expression))
-
-    def hints_for(self, problem: str) -> list[str]:
-        """Return safe, deterministic hints for elementary symbolic subproblems.
-
-        This deliberately handles only unambiguous LaTex or plain-text forms.
-        Anything it cannot parse is left to the model solver.
-        """
-        problem = re.sub(
-            r"\s*Remember\s+to\s+\b(?:put|place|write|express)\b.*?final answer.*?\\boxed\s*\{\s*\}\s*[.!。]?\s*$",
-            "",
-            str(problem or ""),
-            flags=re.IGNORECASE | re.DOTALL,
-        ).strip()
-        hints: list[str] = ExactOlympiadTool().hints_for(problem)
-        hints.extend(ExactTextbookTool().hints_for(problem))
-        hints.extend(ExactStatisticsTool().hints_for(problem))
-        for local_hint in (
-            self._complete_multipartite_tree_hint(problem),
-            self._quadratic_congruence_count_hint(problem),
-            self._bounded_self_exponential_divisibility_hint(problem),
-            self._competing_coin_pattern_probability_hint(problem),
-            self._digit_permutation_divisibility_hint(problem),
-            self._recursive_digit_deletion_hint(problem),
-            self._adjacent_surjection_count_hint(problem),
-            self._multiset_no_adjacent_hint(problem),
-            self._binary_run_avoidance_hint(problem),
-            self._bracelet_no_adjacent_hint(problem),
-            self._strip_lattice_path_hint(problem),
-            self._nested_modular_sum_hint(problem),
-            self._quadratic_form_maximum_hint(problem),
-            self._tree_degree_census_hint(problem),
-            self._involution_fixed_point_count_hint(problem),
-            self._composite_trapezoid_hint(problem),
-            self._two_point_gauss_legendre_monomial_hint(problem),
-            self._exponential_l1_sequence_hint(problem),
-            self._propositional_implication_chain_hint(problem),
-            self._minimum_degree_path_hint(problem),
-            self._even_subset_count_hint(problem),
-            self._deleted_edge_bipartite_path_hint(problem),
-            self._positive_composition_lower_bounds_hint(problem),
-            self._binomial_choose_two_positive_root_hint(problem),
-            self._finite_cyclic_subgroup_count_hint(problem),
-            self._linear_nonadjacent_selection_hint(problem),
-            self._nonadjacent_binary_string_count_hint(problem),
-            self._precedence_permutation_count_hint(problem),
-            self._surjection_count_hint(problem),
-            self._planar_euler_face_hint(problem),
-            self._paraboloid_curvature_hint(problem),
-            self._ordered_positive_triple_hint(problem),
-            self._fair_dice_conditional_probability_hint(problem),
-            self._bernoulli_centered_second_moment_hint(problem),
-            self._fair_coin_geometric_tail_hint(problem),
-            self._poisson_process_increment_hint(problem),
-            self._finite_discrete_moments_hint(problem),
-            self._two_sided_z_rejection_hint(problem),
-            self._simple_random_walk_hint(problem),
-            self._complete_graph_cover_time_hint(problem),
-            self._two_venue_capacity_hint(problem),
-            self._circle_laplacian_hint(problem),
-            self._central_difference_hint(problem),
-            self._rational_f2_constraint_hint(problem),
-            self._digit_sum_window_hint(problem),
-            self._number_writing_game_hint(problem),
-            self._path_independent_set_partition_hint(problem),
-            self._spike_sequence_construction_hint(problem),
-            self._dependent_bernoulli_construction_hint(problem),
-            self._lz78_encoding_hint(problem),
-            self._linear_recurrence_hint(problem),
-            self._curve_speed_hint(problem),
-            self._first_fundamental_form_hint(problem),
-            self._graph_gaussian_curvature_hint(problem),
-            self._pde_verification_hint(problem),
-        ):
-            if local_hint:
-                hints.append(local_hint)
-        if not self.sympy:
-            return hints
-        arithmetic = re.search(
-            r"(?:计算|求值|calculate|evaluate)\s*([0-9A-Za-z_+\-*/^().,\s]+?)[。？?]?$",
-            problem,
-            re.IGNORECASE,
-        )
-        if arithmetic and not re.search(r"积分|导数|极限|方程|integral|derivative|limit|equation", problem, re.IGNORECASE):
-            result = self.evaluate(arithmetic.group(1))
-            if result is not None:
-                hints.append(f"SymPy 计算: {result}")
-
-        congruence = self._congruence_hint(problem)
-        if congruence:
-            hints.append(congruence)
-        modular_power = self._modular_power_hint(problem)
-        if modular_power:
-            hints.append(modular_power)
-
-        if re.search(r"导数|求导|微分|derivative|differentiate", problem, re.IGNORECASE):
-            partial = re.search(
-                r"f\s*\(\s*[A-Za-z]\s*,\s*[A-Za-z]\s*\)\s*=\s*(?P<expression>[^，。；;]+?)\s*关于\s*\$?(?P<variable>[A-Za-z])\$?\s*的?(?:偏导|导数)",
-                problem,
-            )
-            match = partial or re.search(
-                r"(?:f\s*\(\s*(?P<variable>[A-Za-z])\s*\)|y)\s*=\s*(?P<expression>[^，。；;]+?)(?=\s*(?:的(?:导数|微分)|[,，。；;]|$))",
-                problem,
-            )
-            if match:
-                variable = match.group("variable") or "x"
-                result = self.derivative(self._latex_to_sympy(match.group("expression")), variable)
-                if result is not None:
-                    label = "偏导数" if partial else "导数"
-                    hints.append(f"SymPy {label}: {result}")
-
-        math_parts = re.findall(r"\$([^$]+)\$", problem)
-        math_parts.extend(self._raw_latex_parts(problem))
-        math_parts.extend(self._plain_equations(problem))
-        if re.search(r"积分|\\int|integral|integrate", problem, re.IGNORECASE):
-            for part in math_parts:
-                definite = re.search(
-                    r"\\int_\{?([^}\s]+)\}?\^\{?([^}\s]+)\}?\s*(.+?)(?:\\,|\s)*d([A-Za-z])\b",
-                    part,
-                )
-                if definite:
-                    result = self.definite_integral(
-                        self._latex_to_sympy(definite.group(3)),
-                        definite.group(4),
-                        self._latex_to_sympy(definite.group(1)),
-                        self._latex_to_sympy(definite.group(2)),
-                    )
-                    if result is not None and self._is_evaluated_result(result):
-                        hints.append(f"SymPy 定积分: {result}")
-                    break
-                match = re.search(r"\\int\s*(.+?)(?:\\,|\s)*d([A-Za-z])\b", part)
-                if match:
-                    result = self.integral(self._latex_to_sympy(match.group(1)), match.group(2))
-                    if result is not None:
-                        hints.append(f"SymPy 不定积分: {result}")
-                    break
-
-        if re.search(r"极限|\\lim|\blimit\b", problem, re.IGNORECASE):
-            for part in math_parts:
-                match = re.search(r"\\lim_\{?\s*([A-Za-z])\s*\\to\s*([^}\s]+)\}?\s*(.+)", part)
-                if match:
-                    result = self.limit(
-                        self._latex_to_sympy(match.group(3)), match.group(1), self._latex_to_sympy(match.group(2))
-                    )
-                    if result is not None:
-                        hints.append(f"SymPy 极限: {result}")
-                    break
-
-        if re.search(r"方程|求解|equation|solve|roots?|zeros?|\bfind\s+[xyz]\b", problem, re.IGNORECASE):
-            for part in math_parts:
-                if "=" not in part or r"\begin" in part:
-                    continue
-                left, right = part.split("=", 1)
-                variable = re.search(r"\b([xyz])\b", left + right)
-                if variable:
-                    expression = f"({self._latex_to_sympy(left)})-({self._latex_to_sympy(right)})"
-                    result = self.solve_equation(expression, variable.group(1))
-                    if result is not None:
-                        if result:
-                            answer = "，".join(f"{variable.group(1)}={item}" for item in result)
-                        else:
-                            answer = "无解"
-                        hints.append(f"SymPy 方程解: {answer}")
-                    break
-
-        if re.search(r"矩阵|\\begin\{[pb]?matrix\}|\bmatrix\b", problem, re.IGNORECASE):
-            for part in math_parts:
-                match = re.search(r"\\begin\{[pb]?matrix\}(.+?)\\end\{[pb]?matrix\}", part, re.DOTALL)
-                if match:
-                    rows = [
-                        [self._latex_to_sympy(cell) for cell in row.split("&")]
-                        for row in re.split(r"\\\\", match.group(1))
-                    ]
-                    result = self.matrix(rows)
-                    if result is not None:
-                        hints.append(f"SymPy 矩阵: {result}")
-                    break
-        return hints
 
     def results_for(self, problem: str) -> list[ToolResult]:
-        """Return structured deterministic evidence while preserving ``hints_for``.
-
-        Callers should prefer this method when deciding whether a tool may
-        answer a complete goal.  Unknown legacy labels remain unverified.
-        """
-
-        # Bind certificates to the same semantic statement used by
-        # ProblemSpec. Formatting-only terminal instructions are intentionally
-        # excluded from both sides of the fingerprint.
+        if not self.sympy:
+            return []
         from classifier.problem_spec import _strip_trailing_answer_instructions
 
-        certificate_problem = _strip_trailing_answer_instructions(problem)
+        text = _strip_trailing_answer_instructions(str(problem or "")).strip()
+        compilers = (
+            self._compile_arithmetic,
+            self._compile_derivative,
+            self._compile_definite_integral,
+            self._compile_limit,
+            self._compile_equation,
+            self._compile_matrix_operation,
+        )
         results: list[ToolResult] = []
-        for hint in self.hints_for(problem):
-            parsed = result_from_legacy_hint(
-                hint,
-                trusted_source=True,
-                extra_checks=self._certificate_checks_for_hint(hint),
-                source_problem=certificate_problem,
-            )
-            if parsed is not None:
-                results.append(parsed)
+        for compiler in compilers:
+            result = compiler(text)
+            if result is not None and result.verified:
+                results.append(result)
         return results
 
-    @staticmethod
-    def _certificate_checks_for_hint(hint: str) -> tuple[str, ...]:
-        label = str(hint or "").partition(": ")[0]
-        exact_count_checks = {
-            "本地三角格正六边形计数": (
-                "regular_hexagonal_triangular_lattice",
-                "unit_triangle_subdivision",
-                "all_lattice_vertex_regular_hexagons",
-                "orientation_size_position_sum",
-                "small_side_enumeration_crosscheck",
-            ),
-            "本地临界直线覆盖点集最大值": (
-                "finite_planar_point_set",
-                "not_coverable_by_m_lines",
-                "every_single_deletion_coverable_by_m_lines",
-                "maximum_requested",
-                "critical_cover_upper_bound",
-                "general_position_line_intersection_construction",
-            ),
-            "本地二次丢番图解数奇偶参数": (
-                "even_integer_parameter",
-                "ordered_integer_pair_domain",
-                "exact_quadratic_equation",
-                "finite_solution_parity_requested",
-                "zero_parameter_excluded",
-                "residue_classes_exhausted",
-            ),
-            "本地稀疏多米诺放置计数": (
-                "two_by_one_dominoes",
-                "two_k_square_board",
-                "exactly_k_squared_dominoes",
-                "nonoverlapping_placement",
-                "every_two_square_has_aligned_uncovered_pair",
-                "two_monotone_path_bijection",
-                "independent_path_binomial_counts",
-            ),
-            "本地红蓝点直线分区最小值": (
-                "two_color_planar_points",
-                "color_counts_differ_by_one",
-                "no_three_collinear",
-                "separating_lines_avoid_points",
-                "monochromatic_regions",
-                "all_configurations_required",
-                "alternating_configuration_lower_bound",
-                "convex_hull_induction_upper_bound",
-            ),
-            "本地聚集集合区间极值": (
-                "positive_integer_parameter_at_least_three",
-                "finite_positive_integer_set",
-                "every_triple_has_nontrivial_gcd_pair",
-                "diameter_at_most_parameter",
-                "maximum_cardinality_requested",
-                "modulo_thirty_block_upper_bound",
-                "multiples_of_two_or_three_construction",
-            ),
-            "本地二次变换不变多项式族": (
-                "complex_bivariate_polynomial",
-                "universal_complex_parameters",
-                "exact_quadratic_transform_identity",
-                "all_polynomials_requested",
-                "invariant_generators_algebraically_independent",
-            ),
-            "本地有限自指数整除解集": (
-                "positive_integer_variable",
-                "explicit_finite_upper_bound",
-                "single_self_exponential_divisibility_condition",
-                "exact_integer_modular_exponentiation",
-                "every_integer_in_range_enumerated",
-                "reported_solutions_rechecked",
-                "omitted_values_certified_to_fail",
-            ),
-            "本地偶基数子集计数": (
-                "finite_set_with_positive_size",
-                "all_subsets_requested",
-                "even_cardinality_constraint",
-                "even_odd_toggle_bijection",
-                "binomial_parity_identity",
-            ),
-            "本地删边完全二部图三步路计数": (
-                "complete_bipartite_graph",
-                "exactly_one_deleted_edge",
-                "missing_edge_endpoints",
-                "length_three_simple_paths",
-                "two_layer_choice_product",
-            ),
-            "本地正整数下界隔板计数": (
-                "explicit_positive_integer_variables",
-                "unit_coefficient_sum_equation",
-                "explicit_per_variable_lower_bounds",
-                "variable_shift_to_nonnegative",
-                "stars_and_bars_recomputed",
-            ),
-            "本地二项式系数正整数解": (
-                "choose_two_equation",
-                "positive_integer_domain",
-                "quadratic_discriminant_checked",
-                "all_quadratic_roots_checked",
-                "positive_integer_roots_exhausted",
-                "nonpositive_root_discarded",
-            ),
-            "本地二项式系数正整数无解": (
-                "choose_two_equation",
-                "positive_integer_domain",
-                "quadratic_discriminant_checked",
-                "all_quadratic_roots_checked",
-                "positive_integer_roots_exhausted",
-                "nonsquare_discriminant_no_integer_root",
-            ),
-            "本地有限循环群子群计数": (
-                "finite_cyclic_group",
-                "explicit_group_order",
-                "all_subgroups_count_requested",
-                "positive_divisor_correspondence",
-                "prime_exponents_recomputed",
-            ),
-            "本地线性区间不相邻选择": (
-                "linear_consecutive_integer_set",
-                "exact_selection_size",
-                "pairwise_nonadjacent_constraint",
-                "position_compression_bijection",
-                "binomial_count_recomputed",
-            ),
-            "本地受限数字整除计数": (
-                "decimal_digit_alphabet_parsed",
-                "bounded_decimal_length",
-                "canonical_positive_representations",
-                "leading_zero_excluded",
-                "domain_zero_convention_resolved",
-                "single_divisibility_condition",
-                "modular_remainder_dynamic_programming",
-                "all_lengths_enumerated",
-                "state_mass_invariant",
-                "zero_padding_bijection_crosscheck",
-            ),
-            "本地素数整商不等式排名": (
-                "prime_parameter",
-                "positive_integer_n_below_p",
-                "exact_floor_inequality",
-                "universal_k_range_zero_to_p_minus_two",
-                "ordinal_rank_parsed",
-                "lower_bound_implies_distinct_rank",
-                "floor_quotient_set_characterization",
-                "distinct_floor_quotients",
-                "small_prime_exhaustive_crosscheck",
-            ),
-            "本地实函数方程三分支全解": (
-                "real_self_map",
-                "universal_two_real_parameters",
-                "exact_functional_equation",
-                "three_candidate_identities_verified",
-                "zero_substitution_case_split",
-                "all_function_branches_exhausted",
-            ),
-            "本地正整数嵌套函数值域": (
-                "positive_integer_self_map",
-                "universal_positive_integer_pair",
-                "exact_nested_composition_inequality",
-                "single_direct_value_target",
-                "all_values_requested",
-                "monotonicity_deduced",
-                "growth_bootstrap_upper_bound",
-                "all_values_have_explicit_constructions",
-            ),
-            "本地开区间二次约束最小维数": (
-                "open_unit_interval_variables",
-                "strict_sum_bound",
-                "even_positive_quadratic_target",
-                "minimum_dimension_requested",
-                "lower_dimensions_excluded",
-                "even_boundary_dimension_excluded",
-                "next_dimension_interior_construction",
-            ),
-            "本地全集子集异或博弈首步": (
-                "all_subsets_of_ten_element_set",
-                "empty_subset_included",
-                "alternating_complete_draft",
-                "one_card_discard",
-                "even_coordinate_parity_target",
-                "hand_xor_ownership_reduction",
-                "affine_pairing_strategy",
-                "all_first_move_orbits_exhausted",
-                "small_dimension_game_tree_crosscheck",
-            ),
-            "本地角平分线三圆共点参数": (
-                "acute_scalene_triangle",
-                "circumcenter_and_internal_bisectors",
-                "common_positive_ray_ratio",
-                "three_tangent_circle_construction",
-                "exactly_two_common_points",
-                "coefficient_vectors_collinear",
-                "parameter_polynomial_factored",
-                "both_parameter_roots_verified",
-            ),
-            "本地奇数部分连续块同余值集": (
-                "odd_part_function",
-                "positive_u_and_existential_positive_v",
-                "complete_consecutive_block",
-                "all_differences_divisible_by_four",
-                "two_adic_cases_exhausted",
-                "witness_v_for_each_value",
-                "all_larger_u_excluded",
-            ),
-            "本地互为频数向量加权值集": (
-                "two_monic_polynomial_root_multisets",
-                "integer_exponents_become_multiplicities",
-                "mutual_histogram_vectors",
-                "histogram_period_at_most_two",
-                "distinct_value_bound_four",
-                "finite_sparse_support_enumerated",
-                "weighted_values_recomputed",
-                "all_values_requested",
-                "small_length_enumeration_crosscheck",
-            ),
-            "本地间隔二符号子序列锐界": (
-                "finite_plus_minus_one_sequence",
-                "universal_input_sequence",
-                "selected_indices_strictly_increasing",
-                "successive_gap_at_most_two",
-                "absolute_selected_sum",
-                "largest_guaranteed_bound_requested",
-                "four_block_lower_bound",
-                "periodic_extremal_word",
-                "small_length_game_crosscheck",
-            ),
-            "本地双单调交易链公共连接阈值": (
-                "square_number_of_linearly_ordered_stalls",
-                "exactly_two_merchants",
-                "strictly_monotone_sale_and_purchase_orders",
-                "reachability_connection_definition",
-                "common_connected_pair_guarantee",
-                "minimum_item_count_requested",
-                "grid_chain_pigeonhole_upper_bound",
-                "matching_extremal_construction",
-            ),
-            "本地缺一色多连方格面积锐界": (
-                "infinite_square_grid",
-                "side_connected_polyominoes",
-                "arbitrary_finite_color_count",
-                "at_most_all_but_one_colors",
-                "greatest_universal_area_requested",
-                "connected_growth_lower_bound",
-                "periodic_coloring_upper_construction",
-            ),
-            "本地Korean序列好分割最小长度": (
-                "strictly_increasing_positive_integer_sequence",
-                "prefix_lcm_suffix_gcd_cut",
-                "exact_good_partition_count",
-                "minimum_length_requested",
-                "three_for_two_cut_spacing_bound",
-                "matching_divisibility_chain_construction",
-            ),
-            "本地循环四次等号三元组计数": (
-                "ordered_real_triple_domain",
-                "exact_two_stage_cyclic_equality",
-                "triple_count_requested",
-                "zero_coordinate_cases_exhausted",
-                "nonzero_equality_cases_exhausted",
-                "all_eight_triples_verified",
-            ),
-            "本地不可扩展完美匹配赛程轮数": (
-                "even_team_set",
-                "each_round_is_perfect_matching",
-                "no_pair_repeats",
-                "one_more_round_must_repeat",
-                "minimum_schedule_length_requested",
-                "matching_extension_lower_bound",
-                "sharp_unextendable_schedule_construction",
-            ),
-            "本地路径多米诺极大极小游戏值": (
-                "one_dimensional_finite_path",
-                "adjacent_two_square_tiles",
-                "alternating_legal_placement_game",
-                "first_player_maximizes_uncovered",
-                "second_player_minimizes_uncovered",
-                "terminal_uncovered_value_requested",
-                "seven_cell_recurrence",
-                "matching_upper_and_lower_strategies",
-                "small_path_game_tree_crosscheck",
-            ),
-            "本地奇阶棋盘黑格L三连方覆盖": (
-                "odd_square_checkerboard_at_least_seven",
-                "all_four_corners_black",
-                "nonoverlapping_l_trominoes",
-                "all_black_squares_must_be_covered",
-                "feasibility_and_minimum_requested",
-                "black_cell_capacity_lower_bound",
-                "explicit_matching_cover_construction",
-            ),
-            "本地二乘二翻转闭包最小初始数": (
-                "even_square_binary_board",
-                "exactly_three_rule_fills_fourth",
-                "exactly_two_rule_flips_block",
-                "arbitrary_initial_configuration",
-                "existential_move_sequence_to_full_board",
-                "minimum_universal_count_requested",
-                "block_invariant_lower_bound",
-                "sharp_closure_construction",
-            ),
-            "本地顺时针转向蚂蚁最迟离场时刻": (
-                "even_square_checkerboard",
-                "ants_start_at_cell_centers",
-                "unit_axis_parallel_speed",
-                "opposite_collision_clockwise_turn",
-                "other_collisions_preserve_directions",
-                "absorbing_boundary",
-                "stationary_spiders_have_no_interaction_rule",
-                "latest_last_exit_requested",
-                "trajectory_token_exchange_upper_bound",
-                "matching_extremal_configuration",
-            ),
-            "本地前缀切分取石生存阈值": (
-                "even_linear_box_count",
-                "arbitrary_initial_pebble_distribution",
-                "adversarial_prefix_suffix_split",
-                "chosen_side_increment_other_side_decrement",
-                "zero_box_is_immediate_loss",
-                "indefinite_survival_requested",
-                "minimum_total_pebbles_requested",
-                "prefix_potential_lower_bound",
-                "balanced_survival_construction",
-            ),
-            "本地九宫增高四点降低博弈值": (
-                "square_board_divisible_by_three",
-                "initial_zero_heights",
-                "closed_king_neighborhood_increment",
-                "four_distinct_positive_decrements",
-                "alternating_gardener_first",
-                "fixed_positive_height_threshold",
-                "eventual_guaranteed_count_requested",
-                "nine_cell_density_lower_strategy",
-                "four_decrement_upper_strategy",
-            ),
-            "本地偶偶极小点递增格路最少数": (
-                "even_square_permutation_grid",
-                "side_adjacency_only",
-                "strictly_increasing_paths",
-                "singleton_paths_included",
-                "start_is_even_even_local_minimum",
-                "all_good_paths_counted",
-                "minimum_over_fillings_requested",
-                "directed_path_recurrence_lower_bound",
-                "sharp_serpentine_filling",
-            ),
-            "本地连续卡牌两堆极大极小游戏值": (
-                "consecutive_card_values",
-                "two_initially_empty_piles",
-                "alternating_deliberate_card_and_pile_choice",
-                "first_player_minimizes_difference",
-                "second_player_maximizes_difference",
-                "perfect_information_play",
-                "absolute_final_pile_difference",
-                "paired_card_upper_strategy",
-                "matching_second_player_lower_strategy",
-                "small_deck_game_tree_crosscheck",
-            ),
-            "本地半面积边界点最少承载边数": (
-                "convex_polygon",
-                "one_half_area_ray_from_each_vertex",
-                "boundary_intersections_are_not_vertices",
-                "distinct_supporting_sides_counted",
-                "minimum_over_polygons_requested",
-                "three_side_topological_lower_bound",
-                "three_side_realizing_construction",
-            ),
-            "本地三极线三角形外接圆轨迹": (
-                "fixed_obtuse_triangle",
-                "orthocenter_centered_vertex_circles",
-                "moving_point_outside_circumcircle",
-                "three_polars_form_triangle_when_defined",
-                "polar_triangle_circumcircle",
-                "self_incidence_locus_requested",
-                "coordinate_circumcircle_identity",
-                "orthocenter_solution_verified",
-                "all_other_points_excluded",
-            ),
-            "本地Bezout-L1局部极大计数平方和": (
-                "coprime_positive_k_greater_l",
-                "bezout_l1_minimum_function",
-                "integer_local_maximum_definition",
-                "odd_parity_count_polynomial",
-                "mixed_parity_count_polynomial",
-                "polynomial_square_sum_requested",
-                "fundamental_lattice_interval_enumerated",
-                "both_parity_cases_counted",
-                "polynomial_identity_simplified",
-            ),
-            "本地倒数均值闭包最大参数和": (
-                "coprime_positive_reciprocal_pair",
-                "arithmetic_and_harmonic_mean_closure",
-                "finite_reachability_of_one",
-                "strict_parameter_sum_bound",
-                "largest_parameter_sum_requested",
-                "dyadic_sum_necessity",
-                "power_of_two_sufficiency_construction",
-                "largest_power_below_bound",
-            ),
-            "本地骑士皇后占格保证值": (
-                "large_board_dimensions_divisible_by_four",
-                "knights_must_be_pairwise_nonattacking",
-                "queen_only_occupies_one_empty_square",
-                "horst_moves_before_queenie",
-                "first_unable_player_ends_game",
-                "universal_queenie_strategy",
-                "maximum_guaranteed_knight_count",
-                "same_color_knight_independence",
-                "color_class_pairing_lower_and_upper_strategies",
-            ),
-            "本地线交线段半角点数上界": (
-                "line_meets_segment_at_interior_point",
-                "points_restricted_to_given_line",
-                "either_angle_is_half_the_other",
-                "maximum_point_count_requested",
-                "quartic_intersection_upper_bound",
-                "four_point_configuration_exists",
-            ),
-            "本地逐面外点可见凸多面体面数上界": (
-                "convex_polyhedron",
-                "one_exterior_viewpoint_per_face",
-                "all_other_faces_visible",
-                "largest_face_count_requested",
-                "supporting_plane_obstruction",
-                "tetrahedron_construction",
-            ),
-            "本地幂差生成富整数集": (
-                "subset_of_all_integers",
-                "all_integer_polynomial_roots_closed",
-                "coefficients_drawn_from_same_set",
-                "all_positive_power_two_differences_contained",
-                "all_rich_sets_requested",
-                "linear_root_quotient_closure",
-                "integer_generation_descent",
-                "whole_integer_set_verified",
-            ),
-            "本地有理数整数值舍入函数全解": (
-                "rational_to_integer_function",
-                "universal_rational_x_integer_a_positive_b",
-                "exact_nested_rounding_equation",
-                "all_functions_requested",
-                "constant_branch_verified",
-                "floor_and_ceiling_branches_verified",
-                "unit_interval_cases_exhausted",
-            ),
-            "本地素数指数方程不等式参数域": (
-                "positive_real_parameter_pair",
-                "universal_prime_and_real_solution",
-                "exact_double_exponential_equation",
-                "exact_three_term_power_mean_inequality",
-                "all_parameter_pairs_requested",
-                "prime_solution_limit_to_one",
-                "log_product_upper_bound",
-                "weighted_am_gm_upper_product_sufficiency",
-            ),
-            "本地三实根三次式对数导数根数": (
-                "real_cubic_with_three_distinct_roots",
-                "exact_polynomial_derivative_equation",
-                "all_possible_distinct_real_root_counts_requested",
-                "root_factorization_log_derivative",
-                "strict_negative_sum_of_inverse_squares",
-                "polynomial_roots_checked_separately",
-            ),
-            "本地方巾等覆盖格数锐界": (
-                "fixed_2011_square_board",
-                "finite_multiset_of_52_square_tiles",
-                "cell_coverage_multiplicity",
-                "same_nonzero_multiplicity_class",
-                "maximum_over_all_tile_configurations",
-                "coverage_layer_upper_bound",
-                "matching_periodic_tile_construction",
-                "quotient_remainder_arithmetic_checked",
-            ),
-            "本地个人相邻禁选博弈最大和局参数": (
-                "positive_integer_path_one_through_n",
-                "alternating_single_choices",
-                "global_nonrepetition",
-                "adjacency_forbidden_only_with_own_choices",
-                "full_board_is_draw_otherwise_no_move_loses",
-                "alice_moves_first",
-                "largest_optimal_draw_parameter_requested",
-                "endpoint_component_reply_strategy",
-                "all_small_draw_cases_verified",
-                "all_larger_parameters_excluded",
-            ),
-            "本地完全赛程住宿总成本最小值": (
-                "exactly_256_players",
-                "every_unordered_pair_plays_once",
-                "exactly_one_match_per_day",
-                "inclusive_first_to_last_day_stay",
-                "unit_cost_per_present_player_day",
-                "minimum_total_cost_requested",
-                "vip_clause_explicitly_cost_neutral",
-                "arrival_departure_order_lower_bound",
-                "complete_schedule_construction",
-                "closed_form_arithmetic_checked",
-            ),
-            "本地Fibonacci差集基最小规模": (
-                "standard_fibonacci_initial_values_and_recurrence",
-                "integer_set_difference_targets",
-                "all_indices_two_through_upper_bound",
-                "minimum_cardinality_requested",
-                "lucas_clause_independent_or_satisfied_by_construction",
-                "cycle_largest_edge_contradiction",
-                "even_index_fibonacci_construction",
-                "odd_and_even_target_indices_covered",
-            ),
-            "本地平移保序双射奇值数极值乘积": (
-                "nonnegative_lattice_to_nonnegative_integer_bijection",
-                "strict_order_preserved_by_both_coordinate_translations",
-                "odd_images_in_100_square",
-                "smallest_and_largest_count_product_requested",
-                "auxiliary_g_function_is_unconstrained_distractor",
-                "quarter_lower_bound",
-                "three_quarter_upper_bound",
-                "both_extremes_constructed",
-            ),
-            "本地绿色邻域稀疏临界值": (
-                "single_initial_green_cell",
-                "seventy_five_square_centered_neighborhood",
-                "exactly_s_new_cells_per_turn",
-                "no_cell_recolored",
-                "uniform_linear_in_grid_side_sparsity",
-                "least_sparse_integer_requested",
-                "convex_corner_threshold_lower_strategy",
-                "boundary_growth_upper_bound",
-                "radius_thirty_seven_formula_checked",
-            ),
-            "本地直角三角形双劈线倍比": (
-                "right_triangle_with_hypotenuse_xz",
-                "angle_x_fifty_degrees",
-                "p_and_q_on_yz",
-                "two_ten_degree_cevians",
-                "twice_yq_over_zp_requested",
-                "sine_form_segment_ratio",
-                "trigonometric_identity_simplified",
-            ),
-            "本地等长对角线凸四边形最大面积": (
-                "convex_quadrilateral",
-                "perimeter_three",
-                "both_diagonals_unit_length",
-                "maximum_area_requested",
-                "half_diagonal_product_upper_bound",
-                "perpendicular_diagonal_configuration_with_required_perimeter",
-            ),
-            "本地幂差数值半群最小缺失正整数": (
-                "integer_parameter_at_least_two",
-                "exact_power_difference_generator_set",
-                "unlimited_generator_repetition",
-                "literal_smallest_positive_nonrepresentable_requested",
-                "all_generators_at_least_two",
-                "one_is_not_representable",
-            ),
-            "本地递推数列逐项共同互素正整数集": (
-                "integer_sequence_with_exact_initial_value",
-                "exact_nonhomogeneous_recurrence",
-                "coprime_to_every_sequence_term",
-                "all_positive_integers_requested",
-                "closed_form_verified",
-                "prime_two_and_three_witnesses",
-                "fermat_witness_for_every_larger_prime",
-                "only_one_survives",
-            ),
-            "本地四次加五分裂域三项答案": (
-                "quartic_x_four_plus_five_over_rationals",
-                "splitting_field_requested",
-                "extension_degree_requested",
-                "galois_verdict_requested",
-                "one_fourth_root_of_negative_five_and_i_generate_all_roots",
-                "irreducible_quartic_then_quadratic_tower",
-                "splitting_field_is_galois",
-            ),
-            "本地洪水屏障临界建墙速度": (
-                "infinite_square_grid",
-                "finite_initial_flood",
-                "connected_noncrossing_barrier",
-                "finite_extra_walls_declared_patternless",
-                "cumulative_gamma_n_wall_budget",
-                "four_neighbor_flood_after_builder_turn",
-                "closed_loop_containment_win",
-                "known_template_critical_boundary_interpretation",
-                "boundary_length_speed_lower_bound",
-                "two_parallel_fronts_upper_strategy",
-            ),
-            "本地递归删位整除最大值": (
-                "positive_integer_decimal_representation",
-                "pairwise_distinct_digits",
-                "single_digit_base_cases",
-                "one_digit_canonical_deletion",
-                "deleted_number_divides_original",
-                "recursive_goodness",
-                "maximum_requested",
-                "complete_finite_state_enumeration",
-                "reverse_insertion_transition_complete",
-                "maximum_witness_chain_verified",
-                "all_ten_decimal_digits_exhausted",
-                "empty_seven_digit_layer",
-                "maximality_by_empty_longer_layers",
-            ),
-            "本地三次根正整数参数解": (
-                "positive_integer_pair_domain",
-                "exact_cubic_root_equation",
-                "quadratic_in_second_variable",
-                "discriminant_square_condition",
-                "square_factorization_descent",
-                "positive_branch_filter",
-                "symbolic_substitution_identity",
-                "parameter_domain_exhausted",
-            ),
-            "本地等量取珠盒子最小值": (
-                "positive_number_of_initial_boxes",
-                "exactly_one_marble_per_initial_box",
-                "two_distinct_nonempty_boxes_selected",
-                "equal_positive_removal_from_each_box",
-                "remainders_stay_in_original_boxes",
-                "new_box_contains_combined_removed_marbles",
-                "finite_sequence_minimum_nonempty_boxes",
-                "total_marble_count_invariant",
-                "odd_common_divisor_reverse_invariant",
-                "power_of_two_single_box_criterion",
-                "two_box_construction_for_non_power_of_two",
-            ),
-            "本地唯一多米诺分割最少标记": (
-                "even_square_board",
-                "complete_domino_partition",
-                "horizontal_vertical_unit_dominoes",
-                "marked_pair_forbidden_per_domino",
-                "existence_and_uniqueness_requested",
-                "minimum_positive_mark_count",
-                "alternating_cycle_lower_bound",
-                "diagonal_marking_construction",
-                "small_board_exhaustive_crosscheck",
-            ),
-        }
-        if label in exact_count_checks:
-            return exact_count_checks[label]
-        textbook_checks = {
-            "本地正态分布参数选择答案": (
-                "normal_distribution_parameter_question",
-                "all_options_recognized",
-                "mean_standard_deviation_convention",
-            ),
-            "本地大型数据集概览图选择答案": (
-                "large_dataset_basic_feature_overview",
-                "all_options_recognized",
-                "histogram_distribution_overview",
-            ),
-            "本地二面体群选择答案": (
-                "square_d8_order_convention", "all_options_recognized", "positive_question_polarity",
-            ),
-            "本地勒贝格可积选择答案": (
-                "finite_closed_interval", "lebesgue_integrability", "all_options_recognized",
-            ),
-            "本地实数紧集选择答案": (
-                "real_line_usual_topology", "all_options_recognized", "positive_question_polarity",
-            ),
-            "本地Cauchy准则选择答案": (
-                "complete_metric_space", "cauchy_definition", "all_options_recognized",
-            ),
-            "本地线性规划对偶选择答案": (
-                "standard_linear_programming_duality", "all_options_recognized", "positive_question_polarity",
-            ),
-            "本地矩阵条件数选择答案": (
-                "matrix_condition_number_question", "one_norm_convention", "all_options_recognized",
-            ),
-            "本地Dirichlet边值离散化方法": (
-                "poisson_equation", "dirichlet_boundary_condition", "discretization_method_requested",
-            ),
-            "本地时间序列构成选择答案": (
-                "time_series_components_question", "all_options_recognized", "positive_question_polarity",
-            ),
-            "本地时间序列季节调整方法": (
-                "seasonal_adjustment_question", "two_method_blanks", "exact_statement_recognized",
-            ),
-            "本地数据分散程度指标": (
-                "descriptive_statistics_context", "dispersion_measure_requested", "exact_statement_recognized",
-            ),
-            "本地回归方法选择答案": (
-                "unknown_functional_form", "listed_methods_exclude_nonparametric", "all_options_recognized",
-            ),
-            "本地逐步回归选择答案": (
-                "stepwise_new_variable_retest", "all_of_above_option", "all_options_recognized",
-            ),
-            "本地非线性回归选择答案": (
-                "generic_nonlinear_regression", "estimation_criterion_not_optimizer", "all_options_recognized",
-            ),
-            "本地总量指标时间数列判断答案": (
-                "two_aggregate_index_series", "ratio_series_requested", "exact_statement_recognized",
-            ),
-            "本地异方差OLS判断答案": (
-                "ols_under_heteroscedasticity", "unqualified_variance_increase_claim", "exact_statement_recognized",
-            ),
-            "本地异方差参数方差后果": (
-                "heteroscedasticity_context", "parameter_estimator_variance_consequence_requested",
-                "exact_statement_recognized",
-            ),
-        }
-        if label in textbook_checks:
-            return textbook_checks[label]
-        if label == "本地树度数普查":
-            return (
-                "finite_tree",
-                "exact_leaf_count",
-                "all_nonleaves_have_two_allowed_degrees",
-                "requested_degree_count",
-                "vertex_degree_census",
-                "tree_handshake_identity",
-                "nonnegative_integer_degree_counts",
-            )
-        if label == "本地对合置换不动点计数":
-            return (
-                "permutation_of_n_elements",
-                "involution_equation_sigma_squared_identity",
-                "exact_fixed_point_count",
-                "remaining_elements_paired",
-                "fixed_points_chosen",
-                "perfect_matching_count",
-                "parity_checked",
-            )
-        if label == "本地复化梯形精确计算":
-            return (
-                "composite_trapezoidal_rule",
-                "finite_closed_interval",
-                "equal_subinterval_count",
-                "explicit_monomial_integrand",
-                "matching_quadrature_and_integral_bounds",
-                "endpoint_and_interior_weight_evaluation",
-                "exact_integral_evaluation",
-                "signed_error_comparison",
-            )
-        if label == "本地二点Gauss-Legendre精确计算":
-            return (
-                "two_point_gauss_legendre_rule",
-                "finite_closed_interval",
-                "explicit_monomial_integrand",
-                "matching_quadrature_and_integral_bounds",
-                "affine_nodes_and_weights_recomputed",
-                "exact_fraction_simplified",
-            )
-        if label == "本地指数函数列L1判定":
-            return (
-                "positive_half_line_domain",
-                "exact_exponential_sequence",
-                "pointwise_limit_recomputed",
-                "l1_norm_substitution_recomputed",
-                "l1_convergence_criterion_applied",
-            )
-        if label == "本地有向圆柱三行Hamilton路径计数":
-            return (
-                "three_rows",
-                "directed_cyclic_horizontal",
-                "vertical_undirected",
-                "all_vertices_permutation",
-                "fixed_endpoint_rows",
-                "index_count_matches_grid",
-                "connectivity_state_recurrence",
-            )
-        if label == "本地排序三角形失效指标上界":
-            return (
-                "nondegenerate_input_triangles",
-                "three_distinct_side_colors",
-                "all_three_color_sequences_descending",
-                "aligned_failure_count",
-                "universal_bound_requested",
-                "sharp_minimum_requested",
-                "sharp_rearrangement_bound",
-            )
-        if label == "本地全排列相邻积锐界":
-            return (
-                "real_m_tuple",
-                "all_permutations_quantifier",
-                "adjacent_product_lower_bound",
-                "complete_pair_sum_target",
-                "parameterized_largest_constant",
-                "permutation_average_and_sharp_limit",
-            )
-        if label == "本地五正数比值间隔锐界":
-            return (
-                "five_distinct_positive_reals",
-                "four_distinct_selection",
-                "normalized_product_gap",
-                "universal_existential_quantifiers",
-                "sharp_minimum_requested",
-                "ordered_ratio_pigeonhole_sharpness",
-            )
-        if label == "本地三重嵌套非负整数数列值集":
-            return (
-                "sequence_on_nonnegative_integers",
-                "triple_self_composition",
-                "successor_plus_one_rhs",
-                "all_nonnegative_indices",
-                "no_additional_sequence_constraints",
-                "all_values_requested",
-                "translation_defect_and_residue_classification",
-            )
-        if label == "本地纯三次域最低次数多项式":
-            return (
-                "real_pure_cubic_field",
-                "noncube_integer_radicand",
-                "same_radicand_in_definition_and_target",
-                "nonzero_integer_reciprocal_scale",
-                "rational_polynomial_coefficients",
-                "all_lowest_degree_polynomials_requested",
-                "target_is_alpha_plus_alpha_squared",
-                "exact_polynomial_identity",
-                "degree_two_minimality",
-                "unique_reduced_representative",
-                "cubic_field_basis_identity_and_minimality",
-            )
-        if label == "本地完全二部图同态下界":
-            return (
-                "positive_n_s_t",
-                "edge_density_lambda",
-                "vertices_may_repeat",
-                "all_st_cross_edges",
-                "minimum_good_tuple_count",
-                "holder_jensen_kst_homomorphism_bound",
-            )
-        if label == "本地全等三角剖分切多边形":
-            return (
-                "convex_m_polygon",
-                "m_greater_than_three",
-                "identical_triangle_triangulation",
-                "noncrossing_diagonals",
-                "circumscribed_polygon_requested",
-                "tangential_triangulation_rigidity",
-            )
-        if label == "本地散度型L2伴随算子":
-            return (
-                "open_domain",
-                "compactly_supported_smooth_domain",
-                "real_smooth_coefficients",
-                "divergence_second_order_term",
-                "first_order_drift_term",
-                "unweighted_l2_adjoint_requested",
-                "no_boundary_term",
-                "compact_support_integration_by_parts",
-            )
-        if label == "本地三维混合进位锐阈值":
-            return (
-                "finite_three_dimensional_integer_grid",
-                "positive_symbolic_bounds",
-                "arbitrary_initial_distribution",
-                "coordinate_decreasing_carry_operations",
-                "origin_piece_target",
-                "universal_sharp_threshold_requested",
-                "mixed_radix_weight_and_carry_induction",
-            )
-        if label == "本地有限离散分布矩":
-            return (
-                "explicit_finite_support",
-                "matching_probability_table",
-                "probabilities_sum_to_one",
-                "expectation_and_variance_requested",
-                "exact_finite_probability_sum",
-            )
-        if label == "本地双侧Z检验拒绝域":
-            return (
-                "two_sided_z_test",
-                "explicit_significance_level",
-                "rejection_region_requested",
-                "critical_value_requested",
-                "standard_normal_quantile",
-            )
-        if label == "本地公平六面骰条件概率":
-            return (
-                "exactly_two_ordered_rolls",
-                "fair_die",
-                "standard_or_explicit_six_sided_die",
-                "condition_is_exact_sum",
-                "first_outcome_target",
-                "nonempty_conditioning_event",
-                "conditional_sample_space_enumerated",
-                "favorable_outcome_counted",
-                "conditional_ratio_reduced",
-                "no_extra_probability_obligation",
-            )
-        if label == "本地Bernoulli中心二阶矩":
-            return (
-                "single_bernoulli_variable",
-                "symbolic_parameter",
-                "center_matches_bernoulli_parameter",
-                "second_power_exact",
-                "support_zero_one",
-                "probabilities_one_minus_p_and_p",
-                "two_point_expansion_checked",
-                "variance_identity_checked",
-                "no_extra_statistical_obligation",
-            )
-        if label == "本地公平硬币几何尾概率":
-            return (
-                "single_fair_coin_sequence",
-                "stop_at_first_head",
-                "geometric_support_starts_at_one",
-                "strict_greater_than_tail_requested",
-                "tail_exponent_recomputed",
-                "exact_reduced_probability",
-                "no_extra_probability_obligation",
-            )
-        if label == "本地竞争硬币模式概率":
-            return (
-                "single_fair_coin_sequence",
-                "exactly_two_distinct_equal_length_patterns",
-                "first_occurrence_probability_requested",
-                "overlap_preserving_prefix_automaton",
-                "all_proper_prefix_states_enumerated",
-                "absorbing_boundary_values_assigned",
-                "exact_rational_linear_system_solved",
-                "initial_state_probability_rechecked",
-                "no_extra_probability_obligation",
-            )
-        if label == "本地泊松过程独立增量":
-            return (
-                "homogeneous_poisson_process",
-                "explicit_rate",
-                "single_forward_increment",
-                "conditioning_is_past_endpoint_count",
-                "independent_increment_applied",
-                "increment_length_recomputed",
-                "conditional_distribution_requested",
-                "no_extra_stochastic_obligation",
-            )
-        if label == "本地Cauchy位置族Fisher信息":
-            return (
-                "iid_sample",
-                "unit_scale_cauchy_location_density",
-                "density_normalization_checked",
-                "location_score_squared_integrated",
-                "per_observation_information_one_half",
-                "iid_information_scaling",
-                "sample_fisher_information_requested",
-                "no_extra_inference_obligation",
-            )
-        if label == "本地一维Wald统计量":
-            return (
-                "explicit_two_parameter_estimate",
-                "explicit_symmetric_covariance_matrix",
-                "single_linear_zero_constraint",
-                "contrast_value_recomputed",
-                "contrast_variance_recomputed",
-                "positive_contrast_variance",
-                "exact_wald_statistic_reduced",
-                "no_extra_inference_obligation",
-            )
-        if label == "本地对角协方差GLS估计":
-            return (
-                "explicit_design_matrix",
-                "explicit_response_vector",
-                "positive_diagonal_covariance_shape",
-                "covariance_scale_cancels",
-                "weighted_normal_matrix_recomputed",
-                "weighted_rhs_recomputed",
-                "normal_matrix_nonsingular",
-                "exact_gls_solution_verified",
-                "no_extra_regression_obligation",
-            )
-        if label == "本地正态总体方差置信区间":
-            return (
-                "normal_population",
-                "unknown_mean_sum_of_squares",
-                "explicit_positive_sample_size",
-                "degrees_of_freedom_recomputed",
-                "two_sided_confidence_level",
-                "matching_chi_square_quantiles",
-                "chi_square_interval_inversion",
-                "closed_interval_endpoints_recomputed",
-                "rounded_endpoints_checked",
-                "no_extra_inference_obligation",
-            )
-        if label == "本地独立事件并概率":
-            return (
-                "exactly_two_independent_events",
-                "both_marginal_probabilities_explicit",
-                "union_probability_requested",
-                "intersection_product_recomputed",
-                "inclusion_exclusion_applied",
-                "exact_reduced_probability",
-                "no_extra_event_obligation",
-            )
-        if label == "本地独立标准正态和":
-            return (
-                "exactly_two_independent_variables",
-                "both_standard_normal",
-                "unweighted_sum_requested",
-                "distribution_and_variance_requested",
-                "means_added",
-                "variances_added",
-                "no_extra_normal_obligation",
-            )
-        if label == "本地布朗运动协方差":
-            return (
-                "standard_brownian_motion",
-                "ordered_nonnegative_times",
-                "two_time_covariance_requested",
-                "independent_increment_decomposition",
-                "minimum_time_selected",
-                "no_extra_brownian_obligation",
-            )
-        if label == "本地样本均值方差":
-            return (
-                "iid_sample",
-                "explicit_population_variance",
-                "explicit_positive_sample_size",
-                "sample_mean_variance_requested",
-                "variance_additivity_applied",
-                "mean_scaling_squared",
-                "no_finite_population_correction",
-                "no_extra_sampling_obligation",
-            )
-        if label == "本地更新过程强大数律":
-            return (
-                "ordinary_renewal_process",
-                "explicit_finite_positive_interarrival_mean",
-                "counting_rate_limit_requested",
-                "strong_law_applied",
-                "reciprocal_mean_recomputed",
-                "no_extra_renewal_obligation",
-            )
-        if label == "本地圆周拉普拉斯":
-            return (
-                "f=x^2+y^2",
-                "circle_constraint",
-                "explicit_ambient_operator",
-                "exact_quadratic_expression",
-                "explicit_circle_constraint",
-                "ambient_operator_selected",
-                "second_derivatives_sum_to_4",
-            )
-        if label == "本地圆周Laplace-Beltrami":
-            return (
-                "f=x^2+y^2",
-                "circle_constraint",
-                "explicit_intrinsic_operator",
-                "exact_quadratic_expression",
-                "explicit_circle_constraint",
-                "intrinsic_operator_selected",
-                "restriction_is_constant",
-            )
-        if label == "本地圆周拉普拉斯歧义核验":
-            return (
-                "f=x^2+y^2",
-                "circle_constraint",
-                "operator_not_disambiguated",
-                "operator_ambiguity",
-                "exact_quadratic_expression",
-                "explicit_circle_constraint",
-                "operator_ambiguity_detected",
-                "both_operator_cases_evaluated",
-            )
-        return ()
+    def hints_for(self, problem: str) -> list[str]:
+        return [item.to_hint() for item in self.results_for(problem)]
 
-    @staticmethod
-    def _is_evaluated_result(result: str) -> bool:
-        """Reject inert SymPy objects that merely restate the requested work."""
-        return not bool(re.search(
-            r"\b(?:Integral|Derivative|Limit|Sum|Product|RootSum|ConditionSet)\s*\(",
-            str(result or ""),
-        ))
-
-    @staticmethod
-    def _complete_multipartite_tree_hint(problem: str) -> Optional[str]:
-        """Count spanning trees of a fully specified complete multipartite graph."""
-        text = str(problem or "")
-        match = re.search(
-            r"complete\s+(?:bi|tri|multi)?partite\s+graph\s+\$?K_?\{?"
-            r"([0-9]+(?:\s*,\s*[0-9]+)+)\}?\$?",
-            text,
-            re.IGNORECASE,
-        )
-        if not match or not re.search(r"spanning\s+trees?", text, re.IGNORECASE):
-            return None
-        parts = tuple(int(item) for item in re.findall(r"\d+", match.group(1)))
-        if len(parts) < 2 or any(item <= 0 for item in parts):
-            return None
-        deletion = bool(re.search(r"\b(?:delet|remov)\w*\b", text, re.IGNORECASE))
-        if deletion:
-            if len(parts) != 2 or not re.search(
-                r"(?:one|a\s+single)\s+edge", text, re.IGNORECASE
-            ):
-                return None
-            left, right = parts
-            result = (
-                left ** (right - 2)
-                * right ** (left - 2)
-                * (left - 1)
-                * (right - 1)
-            )
-        else:
-            total = sum(parts)
-            result = total ** (len(parts) - 2)
-            for part in parts:
-                result *= (total - part) ** (part - 1)
-        return f"本地完全多部图生成树: {result}"
-
-    @staticmethod
-    def _factor_prime_powers(value: int) -> list[tuple[int, int]]:
-        factors = []
-        remaining = value
-        divisor = 2
-        while divisor * divisor <= remaining:
-            exponent = 0
-            while remaining % divisor == 0:
-                remaining //= divisor
-                exponent += 1
-            if exponent:
-                factors.append((divisor, exponent))
-            divisor += 1 if divisor == 2 else 2
-        if remaining > 1:
-            factors.append((remaining, 1))
-        return factors
-
-    @staticmethod
-    def _parse_positive_product(expression: str) -> Optional[int]:
-        value = str(expression or "").replace(r"\cdot", "*").replace(" ", "")
+    def verify_candidate(self, problem: str, answer: str, spec=None) -> tuple[ToolCheck, ...]:
+        """Run conservative post-answer checks; unknown is never a rejection."""
+        checks: list[ToolCheck] = []
+        value = str(answer or "").strip()
         if not value:
-            return None
-        result = 1
-        for piece in value.split("*"):
-            match = re.fullmatch(r"(\d+)(?:\^\{?(\d+)\}?)?", piece)
-            if not match:
-                return None
-            base = int(match.group(1))
-            exponent = int(match.group(2) or 1)
-            if base <= 0 or exponent < 0 or exponent > 10000:
-                return None
-            result *= base**exponent
-        return result
+            return (ToolCheck("non_empty", "fail", "empty candidate"),)
 
-    @staticmethod
-    def _unit_square_roots(modulus: int) -> list[int]:
-        roots = [0]
-        current_modulus = 1
-        for prime, exponent in SympyTool._factor_prime_powers(modulus):
-            prime_power = prime**exponent
-            if prime == 2:
-                if exponent == 1:
-                    local = [1]
-                elif exponent == 2:
-                    local = [1, 3]
-                else:
-                    half = prime_power // 2
-                    local = [1, prime_power - 1, half - 1, half + 1]
-            else:
-                local = [1, prime_power - 1]
-            combined = []
-            inverse = pow(current_modulus, -1, prime_power)
-            for left, right in product(roots, local):
-                offset = ((right - left) * inverse) % prime_power
-                combined.append((left + current_modulus * offset) % (current_modulus * prime_power))
-            roots = combined
-            current_modulus *= prime_power
-        return sorted(set(roots))
+        numeric_status = self._numeric_identity_status(value)
+        if numeric_status:
+            checks.append(ToolCheck("numeric_identities", numeric_status, "literal arithmetic equalities"))
 
-    @staticmethod
-    def _quadratic_congruence_count_hint(problem: str) -> Optional[str]:
-        """Count x^2=1 residue classes, optionally in a stated positive range."""
-        compact = re.sub(r"\s+", "", str(problem or ""))
-        match = re.search(r"x\^2\\equiv1\\pmod\{([^{}]+)\}", compact)
-        if not match or not re.search(r"howmany|numberof|多少", compact, re.IGNORECASE):
-            return None
-        modulus = SympyTool._parse_positive_product(match.group(1))
-        if modulus is None or modulus <= 1 or modulus > 10**12:
-            return None
-        roots = SympyTool._unit_square_roots(modulus)
-        bound_match = re.search(r"1\\le(?:q)?x\\le(?:q)?(10\^\{\d+\}|\d+)", compact)
-        if bound_match:
-            bound = SympyTool._parse_positive_product(bound_match.group(1))
-            if bound is None:
-                return None
-            count = sum(
-                0 if residue > bound else (bound - residue) // modulus + 1
-                for residue in roots
-                if residue > 0
-            )
-            # The zero residue is not a root for modulus > 1, but retaining
-            # this branch keeps the range count correct for future handlers.
-            if 0 in roots:
-                count += bound // modulus
-        else:
-            count = len(roots)
-        return f"本地二次同余计数: {count}"
+        shape = getattr(getattr(spec, "profile", None), "answer_shape", "")
+        if shape == "probability":
+            scalar = self._first_scalar_result(value)
+            if scalar is not None:
+                try:
+                    numeric = float(scalar)
+                except (TypeError, ValueError):
+                    numeric = None
+                if numeric is not None:
+                    checks.append(ToolCheck(
+                        "probability_range",
+                        "pass" if 0.0 <= numeric <= 1.0 else "fail",
+                        "candidate probability must lie in [0,1]",
+                    ))
 
-    @staticmethod
-    def _bounded_self_exponential_divisibility_hint(problem: str) -> Optional[str]:
-        """Exhaust a single bounded condition n | (a^n +/- c) with modular powers."""
+        equation = self._parse_direct_equation(str(problem or ""))
+        if equation and shape == "roots":
+            left, right, variable = equation
+            roots = self._candidate_roots(value, variable)
+            if roots:
+                statuses = []
+                try:
+                    expression = self._parse(left) - self._parse(right)
+                    symbol = self.sympy.Symbol(variable)
+                    for root in roots:
+                        residual = self.sympy.simplify(expression.subs(symbol, self._parse(root)))
+                        statuses.append(residual == 0)
+                except Exception:
+                    statuses = []
+                if statuses:
+                    checks.append(ToolCheck(
+                        "root_substitution",
+                        "pass" if all(statuses) else "fail",
+                        f"substituted {len(statuses)} listed root(s)",
+                    ))
 
-        text = str(problem or "").strip()
-        normalized_latex = text.replace(r"\left", "").replace(r"\right", "")
-        normalized_latex = re.sub(r"\\{1,2}leq?(?![A-Za-z])|≤", "<=", normalized_latex)
-        normalized_latex = re.sub(r"\\{1,2}mid(?![A-Za-z])|∣", " divides ", normalized_latex)
-        math_segments = re.findall(r"\$([^$]+)\$", normalized_latex)
-        normalized = normalized_latex.replace("$", "")
-        normalized = re.sub(r"\s+", " ", normalized).strip()
+        derivative = self._parse_derivative_request(str(problem or ""))
+        if derivative and shape == "expression":
+            expression, variable = derivative
+            candidate_expression = self._explicit_math_value(value)
+            if candidate_expression:
+                try:
+                    expected = self.sympy.diff(self._parse(expression), self.sympy.Symbol(variable))
+                    actual = self._parse(candidate_expression)
+                    equal = self.sympy.simplify(expected - actual) == 0
+                    checks.append(ToolCheck("derivative_equivalence", "pass" if equal else "fail", "symbolic differentiation"))
+                except Exception:
+                    pass
+        return tuple(checks)
 
-        asks_all = bool(re.search(
-            r"\b(?:determine|find|list|classify)\s+all\s+positive\s+integers?\b|"
-            r"(?:求|确定|列出|分类)[^。！？!?\n]{0,24}(?:所有|全部)[^。！？!?\n]{0,16}正整数",
-            normalized,
-            re.IGNORECASE,
-        ))
-        if not asks_all:
-            return None
-
-        bound_match = re.search(r"1\s*<=\s*n\s*<=\s*(\d+)", normalized, re.IGNORECASE)
-        if not bound_match:
-            bound_match = re.search(
-                r"positive\s+integers?\s+n\s*<=\s*(\d+)|正整数\s*n\s*<=\s*(\d+)",
-                normalized,
-                re.IGNORECASE,
-            )
-        if not bound_match:
-            return None
-        bound_text = next((item for item in bound_match.groups() if item), "")
-        bound = int(bound_text)
-        if not 1 <= bound <= 100_000:
-            return None
-
-        condition_pattern = re.compile(
-            r"^\s*n\s*(?:divides|整除)\s*(?P<open>\()?\s*"
-            r"(?P<base>\d+)\s*\^\s*(?:n|\{\s*n\s*\})\s*"
-            r"(?P<sign>[+-])\s*(?P<offset>\d+)\s*(?P<close>\))?\s*$",
-            re.IGNORECASE,
-        )
-        condition = None
-        condition_text = ""
-        candidates = [re.sub(r"\s+", " ", item).strip() for item in math_segments]
-        for clause in re.split(r"[。.!?；;]", normalized):
-            tail = re.split(r"\bsuch\s+that\b|使得|满足", clause, maxsplit=1, flags=re.IGNORECASE)[-1]
-            candidates.append(tail.strip())
-        for candidate in candidates:
-            match = condition_pattern.fullmatch(candidate)
-            if not match or bool(match.group("open")) != bool(match.group("close")):
-                continue
-            condition = match
-            condition_text = candidate
-            break
-        if not condition:
-            return None
-        base = int(condition.group("base"))
-        sign = condition.group("sign")
-        offset = int(condition.group("offset"))
-        if not 1 <= base <= 10**9 or not 0 <= offset <= 10**9:
-            return None
-
-        # This route certifies exactly one divisibility condition on the full
-        # positive range. Added primality, parity, congruence, or coprimality
-        # filters change the requested set and must remain on the model route.
-        if len(re.findall(r"\bdivides\b|整除", normalized, re.IGNORECASE)) != 1:
-            return None
-        residual = re.sub(r"1\s*<=\s*n\s*<=\s*\d+", "", normalized, count=1, flags=re.IGNORECASE)
-        residual = residual.replace(condition_text, "", 1)
-        if re.search(
-            r"\b(?:gcd|coprime|congruent|prime|odd|even|composite|"
-            r"perfect\s+square|square\s+number|not\s+divisible|excluding|except)\b|"
-            r"\\equiv|≡|\bn\s*(?:<=|>=|<|>|=|≤|≥|≠)|"
-            r"\b(?:and|with|where)\s+n\b|\bsubject\s+to\b|"
-            r"(?:且|并且|其中)\s*n|(?:排除|除去|不含)\s*n|"
-            r"n\s*(?:为|是|满足|不被|不能被)[^。！？!?\n]{0,30}",
-            residual,
-            re.IGNORECASE,
-        ):
-            return None
-
-        signed_offset = offset if sign == "+" else -offset
-        solutions = [
-            n for n in range(1, bound + 1)
-            if (pow(base, n, n) + signed_offset) % n == 0
-        ]
-
-        def checked_modular_power(exponent: int, modulus: int) -> int:
-            result = 1 % modulus
-            factor = base % modulus
-            power = exponent
-            while power:
-                if power & 1:
-                    result = result * factor % modulus
-                factor = factor * factor % modulus
-                power //= 2
-            return result
-
-        rechecked = [
-            n for n in range(1, bound + 1)
-            if (checked_modular_power(n, n) + signed_offset) % n == 0
-        ]
-        if rechecked != solutions:
-            return None
-        latex_set = (
-            r"\{" + ",".join(str(value) for value in solutions) + r"\}"
-            if solutions else r"\varnothing"
-        )
-        expression = f"{base}^n{sign}{offset}"
-        if re.search(r"[\u4e00-\u9fff]", text):
-            support = (
-                rf"完整解集为 \({latex_set}\)。对每个 \(1\le n\le {bound}\) "
-                rf"逐一计算整数模幂并检验 \((\operatorname{{pow}}({base},n,n)"
-                rf"{sign}{offset})\bmod n=0\)。该检验不构造巨大整数 \({expression}\)，"
-                "且覆盖给定范围内的每个整数；所列各项复验通过，其余各项均不通过，故解集无遗漏。"
-                "\n" + rf"\boxed{{{latex_set}}}"
-            )
-        else:
-            support = (
-                rf"The complete set is \({latex_set}\). For every \(1\le n\le {bound}\), "
-                rf"compute the integer modular power and test \((\operatorname{{pow}}({base},n,n)"
-                rf"{sign}{offset})\bmod n=0\). This avoids constructing the huge integer "
-                rf"\({expression}\) and exhausts the stated range; every listed value passes "
-                "a second check and every omitted value fails, so no cases are missing."
-                "\n" + rf"\boxed{{{latex_set}}}"
-            )
-        return f"本地有限自指数整除解集: {support}"
-
-    @staticmethod
-    def _competing_coin_pattern_probability_hint(problem: str) -> Optional[str]:
-        """Solve a two-pattern fair-coin race by its exact prefix automaton."""
-
-        text = str(problem or "").strip()
-        if re.search(r"\bbiased\b|不公平|有偏", text, re.IGNORECASE):
-            return None
-        fair = bool(re.search(
-            r"\bfair\s+coin\b|公平硬币|"
-            r"P\s*\(\s*H\s*\)\s*=\s*P\s*\(\s*T\s*\)\s*=\s*1\s*/\s*2",
-            text,
-            re.IGNORECASE,
-        ))
-        if not fair or not re.search(r"toss|flip|抛|掷", text, re.IGNORECASE):
-            return None
-        if re.search(
-            r"non[- ]overlapping|without\s+overlap|不允许重叠|不计重叠|"
-            r"within\s+\d+\s+(?:tosses|flips)|前\s*\d+\s*次|"
-            r"\b(?:expected|expectation|variance|conditional|conditioned)\b|期望|方差|条件概率|"
-            r"\b(?:given\s+that|assuming|suppose|start(?:s|ing)?\s+(?:with|after)|"
-            r"initial\s+(?:prefix|state)|already\s+(?:seen|observed)|first\s+(?:toss|flip)\s+is)\b|"
-            r"已知|假设|假定|初始(?:前缀|状态)|已有|第一次(?:抛掷|投掷)?(?:为|是)|"
-            r"\b(?:stopping|waiting)\s+time\b|number\s+of\s+(?:tosses|flips)|停止时刻|等待时间|"
-            r"\b(?:reset|restart|history|forced|depends?\s+on|markov|preceding\s+toss)\b|"
-            r"重置|重新开始|清空历史|强制|依赖|前一次",
-            text,
-            re.IGNORECASE,
-        ):
-            return None
-
-        patterns = []
-        for match in re.findall(r"(?<![A-Za-z])([HT]{2,12})(?![A-Za-z])", text):
-            if match not in patterns:
-                patterns.append(match)
-        if len(patterns) != 2 or len(patterns[0]) != len(patterns[1]):
-            return None
-        first, second = patterns
-        if first == second or not re.search(
-            r"appears?\s+first|occurs?\s+first|appears?\s+before|occurs?\s+before|"
-            r"first\s+appears?|先出现|率先出现|首先出现",
-            text,
-            re.IGNORECASE,
-        ):
-            return None
-
-        target = ""
-        for pattern in patterns:
-            escaped = re.escape(pattern)
-            if re.search(
-                rf"probability\s+that\s+\$?{escaped}\$?\s+"
-                rf"(?:appears?|occurs?)\s+(?:first|before)|"
-                rf"\$?{escaped}\$?[^。！？!?\n]{{0,24}}(?:先|率先|首先)出现"
-                rf"[^。！？!?\n]{{0,24}}概率",
-                text,
-                re.IGNORECASE,
-            ):
-                target = pattern
-                break
-        if not target and re.search(
-            r"probability\s+that\s+the\s+first\s+(?:word|pattern)\s+"
-            r"(?:appears?|occurs?)\s+(?:first|before)",
-            text,
-            re.IGNORECASE,
-        ):
-            target = first
-        if not target:
-            return None
-        other = second if target == first else first
-
-        states = sorted(
-            {"", *(target[:index] for index in range(1, len(target))),
-             *(other[:index] for index in range(1, len(other)))},
-            key=lambda item: (len(item), item),
-        )
-        state_index = {state: index for index, state in enumerate(states)}
-
-        def transition(state: str, symbol: str) -> tuple[str, str]:
-            combined = state + symbol
-            if combined.endswith(target):
-                return "target", ""
-            if combined.endswith(other):
-                return "other", ""
-            suffix = max(
-                (candidate for candidate in states if combined.endswith(candidate)),
-                key=len,
-            )
-            return "state", suffix
-
-        size = len(states)
-        matrix = [[Fraction(int(row == column)) for column in range(size)] for row in range(size)]
-        vector = [Fraction(0) for _ in range(size)]
-        transitions: dict[str, tuple[tuple[str, str], tuple[str, str]]] = {}
-        for state in states:
-            row = state_index[state]
-            outcomes = (transition(state, "H"), transition(state, "T"))
-            transitions[state] = outcomes
-            for kind, destination in outcomes:
-                if kind == "target":
-                    vector[row] += Fraction(1, 2)
-                elif kind == "state":
-                    matrix[row][state_index[destination]] -= Fraction(1, 2)
-
-        augmented = [row[:] + [value] for row, value in zip(matrix, vector)]
-        for column in range(size):
-            pivot = next((row for row in range(column, size) if augmented[row][column]), None)
-            if pivot is None:
-                return None
-            augmented[column], augmented[pivot] = augmented[pivot], augmented[column]
-            divisor = augmented[column][column]
-            augmented[column] = [value / divisor for value in augmented[column]]
-            for row in range(size):
-                if row == column or not augmented[row][column]:
-                    continue
-                factor = augmented[row][column]
-                augmented[row] = [
-                    left - factor * right
-                    for left, right in zip(augmented[row], augmented[column])
-                ]
-        probability = augmented[state_index[""]][-1]
-
-        def overlap_score(left: str, right: str) -> int:
-            return sum(
-                2**length
-                for length in range(1, len(left) + 1)
-                if left[-length:] == right[:length]
-            )
-
-        independent_numerator = overlap_score(other, other) - overlap_score(other, target)
-        independent_denominator = (
-            overlap_score(target, target) - overlap_score(target, other)
-            + independent_numerator
-        )
-        if independent_denominator == 0 or probability != Fraction(
-            independent_numerator, independent_denominator
-        ):
-            return None
-
-        def latex_fraction(value: Fraction) -> str:
-            return (
-                str(value.numerator)
-                if value.denominator == 1
-                else rf"\frac{{{value.numerator}}}{{{value.denominator}}}"
-            )
-
-        def state_name(state: str) -> str:
-            return r"u_{\emptyset}" if not state else rf"u_{{\mathrm{{{state}}}}}"
-
-        def outcome_name(outcome: tuple[str, str]) -> str:
-            kind, destination = outcome
-            if kind == "target":
-                return "1"
-            if kind == "other":
-                return "0"
-            return state_name(destination)
-
-        equations = r";\;".join(
-            rf"2{state_name(state)}={outcome_name(transitions[state][0])}"
-            rf"+{outcome_name(transitions[state][1])}"
-            for state in states
-        )
-        value_latex = latex_fraction(probability)
-        state_list = ",".join(r"\emptyset" if not state else state for state in states)
-        if re.search(r"[\u4e00-\u9fff]", text):
-            support = (
-                rf"所求 \({target}\) 先出现的概率为 \({value_latex}\)。取尚未吸收时"
-                rf"“当前串的最长后缀”为 \({{{state_list}}}\) 中的状态，令其成功概率为 \(u_s\)。"
-                rf"逐次抛掷得到完整方程组 \({equations}\)，并置 \(u_{{{target}}}=1\)、"
-                rf"\(u_{{{other}}}=0\)。在有理数域消元得 \(u_{{\emptyset}}={value_latex}\)。"
-                "状态是两个模式的全部真前缀，因此所有重叠情形均已计入。"
-                "\n" + rf"\boxed{{{value_latex}}}"
-            )
-        else:
-            support = (
-                rf"The probability that \({target}\) appears first is \({value_latex}\). "
-                rf"Use as states the longest current suffix in \({{{state_list}}}\), the full set "
-                rf"of proper prefixes of the two words, and let \(u_s\) be the success probability. "
-                rf"One toss gives the complete system \({equations}\), with "
-                rf"\(u_{{{target}}}=1\) and \(u_{{{other}}}=0\). Exact rational elimination gives "
-                rf"\(u_{{\emptyset}}={value_latex}\). Since every overlap is represented by a suffix "
-                "state, this recursion is exhaustive."
-                "\n" + rf"\boxed{{{value_latex}}}"
-            )
-        return f"本地竞争硬币模式概率: {support}"
-
-    @staticmethod
-    def _digit_permutation_divisibility_hint(problem: str) -> Optional[str]:
-        text = str(problem or "")
-        digits = re.search(
-            r"digits?\s*\$?0\s*,\s*1\s*,\s*(?:\\ldots|\\dots|\.\.\.)\s*,\s*(\d+)\$?",
-            text,
-            re.IGNORECASE,
-        )
-        modulus = re.search(r"divisible\s+by\s+\$?(\d+)\$?", text, re.IGNORECASE)
-        if not digits or not modulus or not re.search(r"exactly\s+once", text, re.IGNORECASE):
-            return None
-        last = int(digits.group(1))
-        divisor = int(modulus.group(1))
-        if not 1 <= last <= 8 or divisor <= 0:
-            return None
-        count = 0
-        for arrangement in permutations(range(last + 1)):
-            if arrangement[0] == 0:
-                continue
-            residue = 0
-            for digit in arrangement:
-                residue = (10 * residue + digit) % divisor
-            count += residue == 0
-        return f"本地数字排列整除计数: {count}"
-
-    @staticmethod
-    def _recursive_digit_deletion_hint(problem: str) -> Optional[str]:
-        """Enumerate the closed recursive digit-deletion definition exactly.
-
-        A deletion is interpreted as a canonical decimal representation: the
-        remaining string may not start with zero.  That is the normal meaning
-        of "the resulting number" even when the prompt does not restate it;
-        prompts that explicitly allow or strip leading zeroes do not match.
-        """
-        text = str(problem or "").strip()
-        structural_text = re.sub(
-            r"\s*A\s+deletion\s+may\s+not\s+leave\s+a\s+leading\s+zero\s*\.\s*|"
-            r"\s*删去后不允许前导零[。.]?\s*",
-            " ",
-            text,
-            flags=re.IGNORECASE,
-        ).strip()
-        structural_text = re.sub(r"([。.!?])\s+(?=\S)", r"\1", structural_text)
-        english = re.fullmatch(
-            r"A\s+positive\s+integer\s+\$?m\$?\s+consisting\s+of\s+distinct\s+digits\s+"
-            r"is\s+(?:considered|called)\s+[\"']?good[\"']?\s+if\s+it\s+is\s+a\s+"
-            r"single[- ]digit\s+number\s*,?\s+or\s+if\s+removing\s+one\s+of\s+its\s+"
-            r"digits\s+results\s+in\s+a\s+divisor\s+of\s+\$?m\$?\s+that\s+is\s+also\s+"
-            r"a\s+good\s+number\s*\.\s*Find\s+the\s+largest\s+good\s+number\s*\.?",
-            structural_text,
-            re.IGNORECASE | re.DOTALL,
-        )
-        chinese = re.fullmatch(
-            r"(?:一个)?由(?:互不相同|各不相同)的?(?:十进制)?数字组成的?正整数\$?m\$?"
-            r"(?:被)?(?:称为|叫作|叫做)[“\"']?好数[”\"']?[，,：:]?如果它是(?:一个)?一位数"
-            r"[，,](?:或|或者)删去其中(?:任意|某|一)?个数字后得到的数是\$?m\$?的(?:一个)?约数"
-            r"且(?:该数)?也是好数[。.]求(?:所有好数中的)?最(?:大|大的)好数[。.]?",
-            re.sub(r"\s+", "", structural_text),
-        )
-        if not english and not chinese:
-            return None
-        if re.search(
-            r"(?:leading\s+(?:zero|zeroes?)|(?:zero|zeroes?)\s+at\s+the\s+front)"
-            r".{0,24}(?:allowed|permitted|ignored|stripped)|"
-            r"(?:ignore|strip).{0,20}leading\s+(?:zero|zeroes?)|"
-            r"允许前导零|保留前导零|忽略前导零|去掉前导零|"
-            r"smallest|least|how\s+many|number\s+of|list\s+all|"
-            r"最小|多少|计数|列出|"
-            r"remove\s+(?:two|more\s+than\s+one)|删去(?:两个|多于一个)|"
-            r"base\s*[- ]?\d+|[二三四五六七八九十]进制",
-            structural_text,
-            re.IGNORECASE,
-        ):
-            return None
-
-        # Distinct digits bound the search at ten layers. Building a number by
-        # inserting one digit reverses every permitted canonical deletion.
-        layer = set(range(1, 10))
-        largest = 9
-        for _length in range(2, 11):
-            next_layer: set[int] = set()
-            for divisor in layer:
-                digits = str(divisor)
-                for inserted in "0123456789":
-                    if inserted in digits:
-                        continue
-                    for position in range(len(digits) + 1):
-                        candidate_text = digits[:position] + inserted + digits[position:]
-                        if candidate_text.startswith("0"):
-                            continue
-                        candidate = int(candidate_text)
-                        if candidate % divisor == 0:
-                            next_layer.add(candidate)
-            if next_layer:
-                largest = max(largest, max(next_layer))
-            layer = next_layer
-        return f"本地递归删位整除最大值: {largest}"
-
-    @staticmethod
-    def _adjacent_surjection_count_hint(problem: str) -> Optional[str]:
-        text = str(problem or "")
-        domain = re.search(r"\\\{1,2,\\(?:ldots|dots),(\d+)\\\}", text)
-        codomain = re.search(r"\\to\s*\\\{([^{}]+)\\\}", text)
-        if (
-            not domain or not codomain
-            or not re.search(r"surjective", text, re.IGNORECASE)
-            or not re.search(r"f\s*\(i\)\s*\\ne\s*f\s*\(i\s*\+\s*1\)", text)
-        ):
-            return None
-        values = [part.strip() for part in codomain.group(1).split(",")]
-        if not values or any(not value.isdigit() for value in values):
-            return None
-        numeric_values = [int(value) for value in values]
-        if numeric_values != list(range(1, len(numeric_values) + 1)):
-            return None
-        length, colors = int(domain.group(1)), len(numeric_values)
-        if not 1 <= length <= 10**5 or not 1 <= colors <= 30:
-            return None
-        count = 0
-        for omitted in range(colors + 1):
-            available = colors - omitted
-            proper = available * (available - 1) ** (length - 1) if available else 0
-            count += (-1) ** omitted * math.comb(colors, omitted) * proper
-        return f"本地相邻约束满射计数: {count}"
-
-    @staticmethod
-    def _multiset_no_adjacent_hint(problem: str) -> Optional[str]:
-        text = str(problem or "")
-        word = re.search(r"\\mathrm\{([A-Za-z]+)\}", text)
-        letter = re.search(
-            r"no\s+two\s+copies\s+of\s+the\s+letter\s+\$?([A-Za-z])\$?\s+adjacent",
-            text,
-            re.IGNORECASE,
-        )
-        if not word or not letter or not re.search(r"arrangements?", text, re.IGNORECASE):
-            return None
-        symbols = word.group(1).upper()
-        separated = letter.group(1).upper()
-        frequencies = Counter(symbols)
-        copies = frequencies.pop(separated, 0)
-        other_count = sum(frequencies.values())
-        if copies <= 1 or copies > other_count + 1 or len(symbols) > 30:
-            return None
-        arrangements = math.factorial(other_count)
-        for frequency in frequencies.values():
-            arrangements //= math.factorial(frequency)
-        arrangements *= math.comb(other_count + 1, copies)
-        return f"本地重复字母隔位计数: {arrangements}"
-
-    @staticmethod
-    def _binary_run_avoidance_hint(problem: str) -> Optional[str]:
-        text = str(problem or "")
-        length = re.search(r"binary\s+strings?\s+of\s+length\s+\$?(\d+)\$?", text, re.IGNORECASE)
-        forbidden = re.search(
-            r"neither\s+\$?(0+)\$?\s+nor\s+\$?(1+)\$?",
-            text,
-            re.IGNORECASE,
-        )
-        if not length or not forbidden or len(forbidden.group(1)) != len(forbidden.group(2)):
-            return None
-        size = int(length.group(1))
-        run_limit = len(forbidden.group(1))
-        if not 1 <= size <= 10**6 or run_limit <= 1:
-            return None
-        states = {(0, 1): 1, (1, 1): 1}
-        if size == 1:
-            return "本地二进制游程计数: 2"
-        for _ in range(1, size):
-            updated: dict[tuple[int, int], int] = {}
-            for (last, run), count in states.items():
-                updated[(1 - last, 1)] = updated.get((1 - last, 1), 0) + count
-                if run + 1 < run_limit:
-                    updated[(last, run + 1)] = updated.get((last, run + 1), 0) + count
-            states = updated
-        return f"本地二进制游程计数: {sum(states.values())}"
-
-    @staticmethod
-    def _bracelet_no_adjacent_hint(problem: str) -> Optional[str]:
-        text = str(problem or "")
-        size = re.search(r"bracelet\s+has\s+\$?(\d+)\$?\s+positions", text, re.IGNORECASE)
-        weight = re.search(
-            r"exactly\s+(\d+|one|two|three|four|five|six|seven|eight|nine|ten|"
-            r"eleven|twelve|thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|"
-            r"nineteen|twenty)\s+positions\s+are\s+black",
-            text,
-            re.IGNORECASE,
-        )
-        if (
-            not size or not weight
-            or not re.search(r"no\s+two\s+black\s+positions\s+are\s+adjacent", text, re.IGNORECASE)
-            or not re.search(r"rotation\s+or\s+a?\s*reflection", text, re.IGNORECASE)
-        ):
-            return None
-        number_words = {
-            word: value
-            for value, word in enumerate(
-                (
-                    "zero", "one", "two", "three", "four", "five", "six", "seven",
-                    "eight", "nine", "ten", "eleven", "twelve", "thirteen", "fourteen",
-                    "fifteen", "sixteen", "seventeen", "eighteen", "nineteen", "twenty",
-                )
-            )
-        }
-        weight_text = weight.group(1).lower()
-        n = int(size.group(1))
-        k = int(weight_text) if weight_text.isdigit() else number_words[weight_text]
-        if not 1 <= n <= 28 or not 0 <= k <= n or math.comb(n, k) > 2_000_000:
-            return None
-        representatives = set()
-        for selected in combinations(range(n), k):
-            chosen = set(selected)
-            if any(((index + 1) % n) in chosen for index in chosen):
-                continue
-            bits = tuple(int(index in chosen) for index in range(n))
-            reflected = tuple(reversed(bits))
-            orbit = [bits[offset:] + bits[:offset] for offset in range(n)]
-            orbit.extend(reflected[offset:] + reflected[:offset] for offset in range(n))
-            representatives.add(min(orbit))
-        return f"本地手链轨道计数: {len(representatives)}"
-
-    @staticmethod
-    def _strip_lattice_path_hint(problem: str) -> Optional[str]:
-        text = str(problem or "")
-        endpoint = re.search(
-            r"path\s+from\s+\$?\(0\s*,\s*0\)\$?\s+to\s+\$?\((\d+)\s*,\s*(\d+)\)\$?",
-            text,
-            re.IGNORECASE,
-        )
-        strip = re.search(
-            r"0\s*(?:<=|\\le)\s*x\s*-\s*y\s*(?:<=|\\le)\s*(\d+)",
-            text,
-        )
-        if (
-            not endpoint or not strip
-            or not re.search(r"monotone\s+lattice\s+path", text, re.IGNORECASE)
-            or not re.search(r"steps?\s+\$?\(1\s*,\s*0\).*\(0\s*,\s*1\)", text, re.IGNORECASE)
-        ):
-            return None
-        horizontal, vertical, width = map(int, (*endpoint.groups(), strip.group(1)))
-        if horizontal * vertical > 10**7:
-            return None
-        counts = {(0, 0): 1}
-        for x_value in range(horizontal + 1):
-            for y_value in range(vertical + 1):
-                if (x_value, y_value) == (0, 0) or not 0 <= x_value - y_value <= width:
-                    continue
-                counts[(x_value, y_value)] = (
-                    counts.get((x_value - 1, y_value), 0)
-                    + counts.get((x_value, y_value - 1), 0)
-                )
-        return f"本地条带格路计数: {counts.get((horizontal, vertical), 0)}"
-
-    @staticmethod
-    def _nested_modular_sum_hint(problem: str) -> Optional[str]:
-        compact = (
-            re.sub(r"\s+", "", str(problem or ""))
-            .replace(r"\(", "")
-            .replace(r"\)", "")
-            .replace("$", "")
-        )
-        match = re.search(
-            r"(\d+)\^\{(\d+)\^\{(\d+)\}\}\+"
-            r"(\d+)\^\{(\d+)\^\{(\d+)\}\}modulo(\d+(?:\^\{?\d+\}?)?)",
-            compact,
-            re.IGNORECASE,
-        )
-        if not match:
-            return None
-        first, inner_first, power_first, second, inner_second, power_second = map(int, match.groups()[:6])
-        modulus = SympyTool._parse_positive_product(match.group(7))
-        if modulus is None:
-            return None
-        if modulus <= 0 or max(power_first, power_second) > 10000:
-            return None
-        result = (
-            pow(first, inner_first**power_first, modulus)
-            + pow(second, inner_second**power_second, modulus)
-        ) % modulus
-        return f"本地嵌套模幂和: {result}"
-
-    def _quadratic_form_maximum_hint(self, problem: str) -> Optional[str]:
-        if not self.sympy:
-            return None
-        text = str(problem or "")
-        match = re.search(
-            r"maximum\s+value\s+of\s+\$?([^$]+?)\$?\s+over\s+all\s+real\s+triples",
-            text,
-            re.IGNORECASE,
-        )
-        if not match or not re.search(
-            r"x\^2\s*\+\s*y\^2\s*\+\s*z\^2\s*=\s*1", text
-        ):
-            return None
-        expression = re.sub(r"\s+|\\cdot", "", match.group(1))
-        expression = expression.replace(r"\(", "").replace(r"\)", "").replace("$", "")
-        terms = re.findall(r"([+-]?\d*)(xy|yz|zx)", expression)
-        if (
-            not re.fullmatch(r"(?:[+-]?\d*(?:xy|yz|zx)){3}", expression)
-            or {name for _, name in terms} != {"xy", "yz", "zx"}
-            or len(terms) != 3
-        ):
-            return None
-        coefficients = {}
-        for raw, name in terms:
-            coefficients[name] = -1 if raw == "-" else 1 if raw in {"", "+"} else int(raw)
-        matrix = self.sympy.Matrix([
-            [0, self.sympy.Rational(coefficients["xy"], 2), self.sympy.Rational(coefficients["zx"], 2)],
-            [self.sympy.Rational(coefficients["xy"], 2), 0, self.sympy.Rational(coefficients["yz"], 2)],
-            [self.sympy.Rational(coefficients["zx"], 2), self.sympy.Rational(coefficients["yz"], 2), 0],
-        ])
-        eigenvalues = tuple(matrix.eigenvals())
-        if not eigenvalues:
-            return None
-        maximum = max(eigenvalues, key=lambda value: float(value.evalf()))
-        return f"本地二次型最大值: {self._format(maximum)}"
-
-    @staticmethod
-    def _tree_degree_census_hint(problem: str) -> Optional[str]:
-        """Use the tree handshake identity for a closed degree census."""
-        compact = re.sub(r"\s+", "", str(problem or "")).rstrip("。！？?!.")
-        compact = compact.replace("节点", "顶点").replace("结点", "顶点")
-        compact = compact.replace("叶子", "叶顶点")
+    def _compile_arithmetic(self, text: str) -> Optional[ToolResult]:
         match = re.fullmatch(
-            r"(?:一棵)?(?:有(?P<n1>\d+)个顶点的树|树(?:有|共有)(?P<n2>\d+)个顶点)"
-            r"(?:且)?恰有(?P<leaves>\d+)个叶顶点[，,]"
-            r"(?:若)?其余(?:的)?非叶顶点(?:的)?度(?:数)?(?:都|均)为"
-            r"(?P<degree_a>\d+)或(?P<degree_b>\d+)[，,]"
-            r"求度(?:数)?为(?P<target>\d+)的顶点(?:的)?个数",
-            compact,
+            r"\s*(?:计算|求值|calculate|compute|evaluate)\s*(?:下列|the\s+value\s+of)?\s*[:：]?\s*(.+?)\s*[。.!?？]?\s*",
+            text,
+            re.IGNORECASE | re.DOTALL,
         )
-        if not match:
+        if not match or "=" in match.group(1):
             return None
-        vertex_count = int(match.group("n1") or match.group("n2"))
-        leaves = int(match.group("leaves"))
-        degrees = {int(match.group("degree_a")), int(match.group("degree_b"))}
-        target = int(match.group("target"))
-        if (
-            not 2 <= vertex_count <= 10**9
-            or not 2 <= leaves <= vertex_count
-            or len(degrees) != 2
-            or 2 not in degrees
-        ):
-            return None
-        higher_degree = next(degree for degree in degrees if degree != 2)
-        if higher_degree < 3 or higher_degree >= vertex_count or target not in {2, higher_degree}:
-            return None
-
-        higher_count = Fraction(leaves - 2, higher_degree - 2)
-        if higher_count.denominator != 1:
-            return None
-        degree_counts = {
-            1: leaves,
-            2: vertex_count - leaves - int(higher_count),
-            higher_degree: int(higher_count),
-        }
-        if any(count < 0 for count in degree_counts.values()):
-            return None
-        if sum(degree_counts.values()) != vertex_count:
-            return None
-        if sum(degree * count for degree, count in degree_counts.items()) != 2 * (vertex_count - 1):
-            return None
-        return f"本地树度数普查: {degree_counts[target]}"
-
-    @staticmethod
-    def _involution_fixed_point_count_hint(problem: str) -> Optional[str]:
-        """Choose fixed points and perfectly match every remaining element."""
-        compact = re.sub(r"\s+", "", str(problem or "")).replace("$", "")
-        compact = re.sub(r"\\(?:operatorname|mathrm)\{id\}", "id", compact, flags=re.IGNORECASE)
-        compact = compact.replace(r"\sigma", "σ").replace("^{2}", "^2")
-        compact = compact.replace("剩余", "其余").replace("先把", "先将").replace("两两配对", "配对")
-        compact = compact.rstrip("。！？?!.")
-        patterns = (
-            r"求n=(?P<n>\d+)时满足置换σ\^2=id且σ恰有(?P<fixed>\d+)个不动点的置换(?:数|个数)"
-            r"[，,；;]先将其余元素配对",
-            r"(?:当)?n=(?P<n>\d+)时[，,]求满足置换σ\^2=id且σ恰有(?P<fixed>\d+)个不动点的"
-            r"置换(?:数|个数)[，,；;]先将其余元素配对",
-        )
-        match = next((candidate for pattern in patterns if (candidate := re.fullmatch(pattern, compact, re.IGNORECASE))), None)
-        if not match:
-            return None
-        size, fixed = int(match.group("n")), int(match.group("fixed"))
-        if not 1 <= size <= 200 or not 0 <= fixed <= size:
-            return None
-        remaining = size - fixed
-        if remaining % 2:
-            return f"本地对合置换不动点计数: 0（其余{remaining}个元素不能完全配对）"
-        pair_count = remaining // 2
-        matching_count = math.factorial(remaining) // (2**pair_count * math.factorial(pair_count))
-        total = math.comb(size, fixed) * matching_count
-        if remaining == 0:
-            expression = rf"\binom{{{size}}}{{{fixed}}}={total}"
-        else:
-            expression = rf"\binom{{{size}}}{{{fixed}}}{remaining - 1}!!={total}"
-        return f"本地对合置换不动点计数: {expression}"
-
-    @staticmethod
-    def _composite_trapezoid_hint(problem: str) -> Optional[str]:
-        """Evaluate an explicitly stated equal-grid monomial trapezoidal rule."""
-        compact = re.sub(r"\s+", "", str(problem or "")).replace("$", "")
-        for command in (r"\left", r"\right", r"\,", r"\!", r"\;", r"\:"):
-            compact = compact.replace(command, "")
-        compact = compact.rstrip("。！？?!.")
-        number_words = "一二两三四五六七八九十"
-        match = re.fullmatch(
-            rf"用(?:复化|复合)梯形(?:公式|求积公式|法)将"
-            rf"\[(?P<grid_lower>-?\d+),(?P<grid_upper>-?\d+)\]"
-            rf"(?:分为|等分为)(?P<segments>[0-9{number_words}]+)"
-            rf"(?:段|个等长子区间|个子区间|等份)近似(?:计算)?积分"
-            rf"(?:∫|\\int)_?\{{?(?P<integral_lower>-?\d+)\}}?\^\{{?(?P<integral_upper>-?\d+)\}}?"
-            rf"(?P<coefficient>-?\d*)x(?:\^\{{?(?P<power>\d+)\}}?)?dx"
-            rf"[，,]求近似值并与精确值比较",
-            compact,
-        )
-        if not match:
-            return None
-        chinese_numbers = {
-            "一": 1, "二": 2, "两": 2, "三": 3, "四": 4, "五": 5,
-            "六": 6, "七": 7, "八": 8, "九": 9, "十": 10,
-        }
-        segment_token = match.group("segments")
-        segments = int(segment_token) if segment_token.isdigit() else chinese_numbers.get(segment_token, 0)
-        lower, upper = int(match.group("grid_lower")), int(match.group("grid_upper"))
-        if (
-            segments <= 0
-            or segments > 10000
-            or not -10**6 <= lower < upper <= 10**6
-            or int(match.group("integral_lower")) != lower
-            or int(match.group("integral_upper")) != upper
-        ):
-            return None
-        coefficient_token = match.group("coefficient")
-        coefficient = -1 if coefficient_token == "-" else int(coefficient_token or "1")
-        power = int(match.group("power") or "1")
-        if abs(coefficient) > 10**9 or not 0 <= power <= 20:
-            return None
-
-        step = Fraction(upper - lower, segments)
-        values = [
-            Fraction(coefficient) * (Fraction(lower) + index * step) ** power
-            for index in range(segments + 1)
-        ]
-        approximation = step * (Fraction(values[0] + values[-1], 2) + sum(values[1:-1], Fraction()))
-        exact = Fraction(coefficient, power + 1) * (upper ** (power + 1) - lower ** (power + 1))
-        difference = approximation - exact
-        if difference > 0:
-            comparison = f"误差={difference}（近似值偏大）"
-        elif difference < 0:
-            comparison = f"误差={-difference}（近似值偏小）"
-        else:
-            comparison = "误差=0（二者相等）"
-        return f"本地复化梯形精确计算: 近似值={approximation}，精确值={exact}，{comparison}"
-
-    @staticmethod
-    def _two_point_gauss_legendre_monomial_hint(problem: str) -> Optional[str]:
-        """Evaluate the exact two-node Gauss-Legendre value for one monomial."""
-        text = re.sub(r"\s+", " ", str(problem or "")).strip()
-        normalized = (
-            text.replace(r"\left", "")
-            .replace(r"\right", "")
-            .replace(r"\,", "")
-            .replace("−", "-")
-        )
-        if re.search(
-            r"\bcomposite\b|复合|"
-            r"\b(?:panels?|subintervals?)\b|子区间|小区间|分段|"
-            r"\b(?:two|three|four|five|six|\d+)\s+(?:equal\s+)?intervals?\b|"
-            r"\b(?:divide|partition|split)\b[^.!?。！？\n]{0,50}\binterval\b|"
-            r"\bon\s+each\b|(?:二|两|三|四|五|六|\d+)\s*(?:个)?等分|"
-            r"(?:将|把)[^。！？!?\n]{0,30}区间[^。！？!?\n]{0,20}(?:分成|划分)|"
-            r"\bweighted\b|\bweight\s+function\b|"
-            r"\bweight\s+\$?\s*(?:w|omega|\\omega)\s*\(|"
-            r"权函数|权重函数|加权求积|加权高斯",
-            normalized,
-            re.IGNORECASE,
-        ):
-            return None
-        method = re.search(
-            r"(?:two[- ]point|2[- ]point|二点)\s*Gauss[- ]Legendre|"
-            r"Gauss[- ]Legendre[^.!?。！？\n]{0,30}(?:two\s+points?|2\s+points?|二点)",
-            normalized,
-            re.IGNORECASE,
-        )
-        interval = re.search(
-            r"(?:on|over|在)\s*\$?\s*\[\s*(-?\d+(?:/\d+)?)\s*,\s*"
-            r"(-?\d+(?:/\d+)?)\s*\]\s*\$?",
-            normalized,
-            re.IGNORECASE,
-        )
-        integral = re.search(
-            r"\\int_\{?\s*(-?\d+(?:/\d+)?)\s*\}?\^\{?\s*(-?\d+(?:/\d+)?)\s*\}?\s*"
-            r"(?:(-?\d+)\s*)?([A-Za-z])(?:\^\{?(\d+)\}?)?\s*d\4",
-            normalized,
-            re.IGNORECASE,
-        )
-        exact_fraction = bool(re.search(
-            r"exact\s+fraction|精确分数|既约分数|分数形式",
-            normalized,
-            re.IGNORECASE,
-        ))
-        integral_count = len(re.findall(r"(?:\\int|∫)", normalized))
-        extra_outputs = bool(re.search(
-            r"(?:求|给出|写出|报告)[^。！？!?\n]{0,80}(?:节点|结点)"
-            r"[^。！？!?\n]{0,80}(?:权重|权系数)|"
-            r"\b(?:find|give|report|determine|compute)\b[^.!?\n]{0,80}\bnodes?\b"
-            r"[^.!?\n]{0,80}\bweights?\b",
-            normalized,
-            re.IGNORECASE,
-        ))
-        output_transform = bool(re.search(
-            r"(?:result|approximation)[^.!?。！？\n]{0,35}"
-            r"(?:plus|minus|times|multiplied\s+by|divided\s+by|modulo)|"
-            r"\b(?:add|subtract|multiply|divide)\b[^.!?。！？\n]{0,25}"
-            r"\b(?:result|approximation)\b|"
-            r"(?:then|and\s+then)\s+(?:add|subtract|multiply|divide|take\s+the\s+remainder)|"
-            r"(?:结果|近似值)[^.!?。！？\n]{0,30}(?:再|然后)?(?:加|减|乘|除|取模)|"
-            r"(?:再|然后)(?:加上?|减去|乘以?|除以?|取模)",
-            normalized,
-            re.IGNORECASE,
-        ))
-        if not (method and interval and integral and exact_fraction):
-            return None
-        if integral_count != 1 or extra_outputs or output_transform:
+        expression = match.group(1).strip().strip("$ ")
+        if not re.search(r"\d", expression):
             return None
         try:
-            lower, upper = Fraction(interval.group(1)), Fraction(interval.group(2))
-            int_lower, int_upper = Fraction(integral.group(1)), Fraction(integral.group(2))
-            coefficient = int(integral.group(3) or "1")
-            power = int(integral.group(5) or "1")
-        except (ValueError, ZeroDivisionError):
-            return None
-        if lower >= upper or (lower, upper) != (int_lower, int_upper):
-            return None
-        if abs(coefficient) > 10**9 or not 0 <= power <= 20:
-            return None
-
-        # Nodes are midpoint +/- half-width/sqrt(3).  SymPy keeps the
-        # irrational cancellation exact; refuse the route if it does not
-        # simplify to a rational value.
-        if not SympyTool().sympy:
-            return None
-        s = SympyTool().sympy
-        midpoint = s.Rational(lower.numerator, lower.denominator) / 2 + s.Rational(
-            upper.numerator, upper.denominator
-        ) / 2
-        half_width = (
-            s.Rational(upper.numerator, upper.denominator)
-            - s.Rational(lower.numerator, lower.denominator)
-        ) / 2
-        approximation = s.simplify(
-            half_width
-            * coefficient
-            * ((midpoint - half_width / s.sqrt(3)) ** power
-               + (midpoint + half_width / s.sqrt(3)) ** power)
-        )
-        if not approximation.is_Rational:
-            return None
-        value = Fraction(int(approximation.p), int(approximation.q))
-        return f"本地二点Gauss-Legendre精确计算: {value}"
-
-    @staticmethod
-    def _exponential_l1_sequence_hint(problem: str) -> Optional[str]:
-        """Certify the standard n^2*x*exp(-n*x) L1 counterexample."""
-        compact = re.sub(r"\s+", "", str(problem or "")).replace("$", "")
-        compact = compact.replace(r"\left", "").replace(r"\right", "")
-        formula_match = re.search(
-            r"f_?\{?n\}?\(x\)=n\^\{?2\}?x(?:e\^\{?-nx\}?|\\exp\(-nx\))",
-            compact,
-            re.IGNORECASE,
-        )
-        formula = bool(
-            formula_match
-            and not re.match(
-                r"(?:[+\-*/^]|\\(?:cdot|times)\b|[A-Za-z0-9_])",
-                compact[formula_match.end():],
-                re.IGNORECASE,
-            )
-        )
-        domain = bool(re.search(r"\(0,(?:\\infty|∞)\)", compact))
-        l1_question = bool(re.search(
-            r"(?:判断|是否|能否).{0,100}L\^?\{?1\}?.{0,80}(?:收敛|极限)|"
-            r"(?:whether|determine).{0,100}L\^?\{?1\}?.{0,80}converg",
-            str(problem or ""),
-            re.IGNORECASE | re.DOTALL,
-        ))
-        pointwise = bool(re.search(r"逐点|pointwise", str(problem or ""), re.IGNORECASE))
-        if not (formula and domain and l1_question and pointwise):
-            return None
-        if re.search(
-            r"证明|推导|解释|依测度|一致收敛|弱收敛|上确界|"
-            r"\b(?:prove|derive|explain|convergence\s+in\s+measure|uniform|weak|supremum)\b",
-            str(problem or ""),
-            re.IGNORECASE,
-        ):
-            return None
-        return (
-            r"本地指数函数列L1判定: 否；逐点极限为0，但"
-            r"\lVert f_n\rVert_1=\int_0^\infty n^2xe^{-nx}\,dx=1。"
-        )
-
-    @staticmethod
-    def _propositional_implication_chain_hint(problem: str) -> Optional[str]:
-        """Resolve an explicit two-step implication chain using modus ponens."""
-        normalized = (
-            str(problem or "")
-            .replace(r"\to", "→")
-            .replace("->", "→")
-            .replace(r"\land", "∧")
-            .replace(" ", "")
-        )
-        chain = re.search(
-            r"\(([A-Za-z])→([A-Za-z])\)∧\(\2→([A-Za-z])\)∧\1(?![A-Za-z])",
-            normalized,
-        )
-        if not chain or not re.search(r"推理规则|inference\s+rule", problem, re.IGNORECASE):
-            return None
-        first, middle, conclusion = chain.group(1, 2, 3)
-        return (
-            "本地命题逻辑推导: "
-            f"由 {first} 与 {first}→{middle} 用假言推理得 {middle}，"
-            f"再由 {middle} 与 {middle}→{conclusion} 用假言推理得 {conclusion}；"
-            f"故合取范式下必然推出的最简结论为 {conclusion}。"
-        )
-
-    @staticmethod
-    def _minimum_degree_path_hint(problem: str) -> Optional[str]:
-        """Apply the longest-path endpoint argument under explicit bounds."""
-        text = str(problem or "")
-        graph = re.search(
-            r"简单图.*?(\d+)\s*个顶点.*?(?:每个顶点度数|最小度数).*?(?:至少|≥|>=)\s*(\d+)",
-            text,
-        )
-        target = re.search(r"长度(?:至少)?为?\s*(\d+)\s*的路径", text)
-        if not graph or not target or not re.search(r"证明|show|prove", text, re.IGNORECASE):
-            return None
-        vertices, minimum_degree, target_length = map(
-            int, (graph.group(1), graph.group(2), target.group(1))
-        )
-        if vertices < minimum_degree + 1 or minimum_degree < target_length or target_length < 1:
-            return None
-        return (
-            "本地图论路径证明: 取最长路径 P=v_0v_1...v_k；若端点 v_0 有邻点不在 P 中，"
-            f"则可延长 P，故 v_0 的至少{minimum_degree}个邻点全在 P 上，于是 k≥{minimum_degree}。"
-            f"因此 P 的前{target_length + 1}个顶点构成长为{target_length}的路径；"
-            f"所用度数条件为最小度数 δ(G)≥{minimum_degree}。"
-        )
-
-    @staticmethod
-    def _even_subset_count_hint(problem: str) -> Optional[str]:
-        """Count all even-cardinality subsets of an explicitly positive finite set."""
-        text = str(problem or "")
-        chinese_set = re.search(
-            r"集合\s*([A-Za-z])\s*(?:有|含有?)\s*\$?\s*(\d+|[A-Za-z])\s*\$?\s*个元素",
-            text,
-        )
-        english_set = re.search(
-            r"(?:let\s+)?([A-Za-z])\s+be\s+(?:a\s+)?set\s+with\s+"
-            r"(\d+|[A-Za-z])\s+elements?",
-            text,
-            re.IGNORECASE,
-        )
-        set_match = chinese_set or english_set
-        if not set_match:
-            return None
-        parent, size_token = set_match.group(1), set_match.group(2)
-
-        notation = re.search(
-            r"([A-Za-z])\s*(?:⊆|\\subseteq)\s*([A-Za-z])",
-            text,
-        )
-        english_subset = re.search(
-            rf"subsets?\s+(?:[A-Za-z]\s+)?of\s+{re.escape(parent)}\b",
-            text,
-            re.IGNORECASE,
-        )
-        if notation:
-            child, notation_parent = notation.groups()
-            if child.lower() == notation_parent.lower() or notation_parent.lower() != parent.lower():
-                return None
-        elif not english_subset:
-            return None
-
-        even_constraint = bool(
-            re.search(
-                r"\|\s*[A-Za-z]\s*\|\s*(?:为|是)?\s*偶数|"
-                r"(?:even[- ]cardinality|cardinality\s+is\s+even|even\s+(?:size|cardinality))",
-                text,
-                re.IGNORECASE,
-            )
-        )
-        asks_count = bool(re.search(
-            r"子集(?:的)?(?:个数|数量)|多少(?:个)?(?:这样的)?子集|"
-            r"how\s+many|number\s+of\s+(?:such\s+)?subsets?",
-            text,
-            re.IGNORECASE,
-        ))
-        if not (even_constraint and asks_count):
-            return None
-        if re.search(
-            r"固定(?:大小|基数)|恰有\s*\d+\s*个元素|"
-            r"fixed\s+(?:size|cardinality)|exactly\s+\d+\s+elements?|"
-            r"另(?:求|算)|并(?:求|计算)|推广|一般化|generalize|compare",
-            text,
-            re.IGNORECASE,
-        ):
-            return None
-
-        if size_token.isdigit():
-            size = int(size_token)
-            if not (1 <= size <= 10**9):
-                return None
-            if size <= 256:
-                result = str(1 << (size - 1))
-                total = str(1 << size)
-            else:
-                result = rf"2^{{{size - 1}}}"
-                total = rf"2^{{{size}}}"
-        else:
-            positivity = bool(re.search(
-                rf"(?<![A-Za-z0-9_]){re.escape(size_token)}\s*(?:≥|>=|\\geq?|\\ge)\s*1(?![0-9])|"
-                rf"\b{re.escape(size_token)}\s+is\s+(?:a\s+)?positive\s+integer\b",
-                text,
-                re.IGNORECASE,
-            ))
-            if not positivity:
-                return None
-            result = rf"2^{{{size_token}-1}}"
-            total = rf"2^{{{size_token}}}"
-
-        english = SympyTool._uses_english_prose(text)
-        support = (
-            rf"The number of even-cardinality subsets is \({result}\). Since the set is nonempty, "
-            rf"toggling one fixed element is a bijection between even- and odd-cardinality subsets. "
-            rf"There are \({total}\) subsets in total, so each class has \({result}\) members."
-            if english else
-            rf"偶数基数子集数为 \({result}\)。因集合非空，固定一个元素并切换其是否属于子集，"
-            rf"即得到偶数基数与奇数基数子集之间的双射；全部子集共 \({total}\) 个，故两类各有 \({result}\) 个。"
-        )
-        return f"本地偶基数子集计数: {support}"
-
-    @staticmethod
-    def _deleted_edge_bipartite_path_hint(problem: str) -> Optional[str]:
-        """Count three-edge simple paths between the endpoints of one missing edge."""
-        text = str(problem or "")
-        graph = re.search(
-            r"(?:完全二部图\s*|complete\s+bipartite\s+graph\s+)"
-            r"\$?K\s*_?\s*\{?\s*(\d+)\s*,\s*(\d+)\s*\}?\$?",
-            text,
-            re.IGNORECASE,
-        )
-        if not graph:
-            return None
-        left_size, right_size = map(int, graph.groups())
-        if not (2 <= left_size <= 10**9 and 2 <= right_size <= 10**9):
-            return None
-        one_edge = bool(re.search(
-            r"删去\s*(?:一|1)\s*条边|删除\s*(?:一|1)\s*条边|"
-            r"(?:delete|remove|deleting|removing)\s+(?:one|a\s+single)\s+edge",
-            text,
-            re.IGNORECASE,
-        ))
-        simple_length_three = bool(re.search(
-            r"长度(?:恰)?为?\s*3\s*的简单路径|"
-            r"simple\s+paths?\s+(?:of\s+)?length\s+3|"
-            r"length[- ]3\s+simple\s+paths?",
-            text,
-            re.IGNORECASE,
-        ))
-        chinese_endpoints = bool(re.search(
-            r"从左部(?:的)?指定顶点到右部(?:的)?指定(?:非邻接|不相邻)顶点|"
-            r"从右部(?:的)?指定顶点到左部(?:的)?指定(?:非邻接|不相邻)顶点",
-            text,
-        ))
-        english_endpoints = bool(
-            re.search(
-                r"between\s+the\s+(?:two\s+)?endpoints?\s+of\s+the\s+"
-                r"(?:deleted|removed|missing)\s+edge",
-                text,
-                re.IGNORECASE,
-            )
-            or re.search(
-                r"(?:delete|remove|deleting|removing)\s+(?:one|a\s+single)\s+edge\s+([A-Za-z])([A-Za-z])"
-                r".*?from\s+\1\s+to\s+\2\b",
-                text,
-                re.IGNORECASE | re.DOTALL,
-            )
-        )
-        asks_count = bool(re.search(
-            r"路径数|路径的(?:个数|数量)|多少(?:条|个)?路径|"
-            r"number\s+of\s+(?:(?:such|simple)\s+)?paths?|how\s+many",
-            text,
-            re.IGNORECASE,
-        ))
-        if not (one_edge and simple_length_three and (chinese_endpoints or english_endpoints) and asks_count):
-            return None
-        if re.search(
-            r"有向|多重图|游走|walks?|directed|multigraph|"
-            r"删去\s*(?:两|2|多)\s*条边|(?:delete|remove)\s+(?:two|multiple)\s+edges?|"
-            r"长度(?:至多|不超过|至少)|length\s+(?:at\s+most|at\s+least)",
-            text,
-            re.IGNORECASE,
-        ):
-            return None
-
-        result = (left_size - 1) * (right_size - 1)
-        english = SympyTool._uses_english_prose(text)
-        support = (
-            rf"Choose the internal vertex in the right part in {right_size - 1} ways and then "
-            rf"the internal vertex in the left part in {left_size - 1} ways; hence "
-            rf"\(({right_size}-1)({left_size}-1)={result}\)."
-            if english else
-            rf"第一步的右部中间点有{right_size - 1}种选择，第二个左部中间点有{left_size - 1}种选择，"
-            rf"故简单路径数为 \(({right_size}-1)({left_size}-1)={result}\)。"
-        )
-        return f"本地删边完全二部图三步路计数: {support}"
-
-    @staticmethod
-    def _positive_composition_lower_bounds_hint(problem: str) -> Optional[str]:
-        """Count unit-coefficient positive compositions with explicit lower bounds."""
-        text = str(problem or "")
-        normalized = (
-            text.replace(r"\geq", ">=")
-            .replace(r"\ge", ">=")
-            .replace("≥", ">=")
-            .replace(r"\left", "")
-            .replace(r"\right", "")
-            .replace("$", "")
-        )
-        equation = re.search(
-            r"((?:[A-Za-z]\s*_\s*\{?\d+\}?\s*\+\s*)+"
-            r"[A-Za-z]\s*_\s*\{?\d+\}?)\s*=\s*(\d+)",
-            normalized,
-        )
-        if not equation:
-            return None
-        lhs, total_text = equation.groups()
-        terms = re.findall(r"([A-Za-z])\s*_\s*\{?(\d+)\}?", lhs)
-        if len(terms) < 2:
-            return None
-        base = terms[0][0]
-        indices = [int(index) for name, index in terms if name.lower() == base.lower()]
-        if (
-            len(indices) != len(terms)
-            or not 2 <= len(terms) <= 100
-            or indices != list(range(1, len(terms) + 1))
-        ):
-            return None
-        residue = re.sub(r"[A-Za-z]\s*_\s*\{?\d+\}?", "", lhs)
-        if re.sub(r"[+\s]", "", residue):
-            return None
-
-        positive_domain = bool(re.search(
-            rf"(?:每个|所有)\s*{re.escape(base)}\s*_\s*i\s*(?:为|是|均为)?\s*正整数|"
-            rf"{re.escape(base)}\s*_\s*i\s*(?:均|都)?\s*(?:为|是)\s*正整数|"
-            rf"(?:all|each)\s+{re.escape(base)}\s*_\s*i\s+(?:are|is)\s+positive\s+integers?|"
-            rf"positive\s+integer\s+solutions?\s+(?:for|to)",
-            normalized,
-            re.IGNORECASE,
-        ))
-        asks_count = bool(re.search(
-            r"解数|解的(?:个数|数量)|多少(?:个|组)?解|"
-            r"number\s+of\s+(?:(?:such|positive\s+integer)\s+)?solutions?|how\s+many",
-            normalized,
-            re.IGNORECASE,
-        ))
-        if not (positive_domain and asks_count):
-            return None
-        if re.search(
-            r"非负整数|nonnegative|互不相同|distinct|偶数|奇数|parity|"
-            r"生成函数|递推|枚举|generating\s+function|recurrence|"
-            r"[A-Za-z]\s*_\s*\{?\d+\}?\s*(?:<=|<(?!=)|>(?!=))|"
-            r"(?:<=|<(?!=)|>(?!=))\s*[A-Za-z]\s*_\s*\{?\d+\}?|(?:!=|≠)",
-            normalized,
-            re.IGNORECASE,
-        ):
-            return None
-
-        bounds = re.findall(
-            rf"{re.escape(base)}\s*_\s*\{{?(\d+)\}}?\s*>=\s*(\d+)",
-            normalized,
-            re.IGNORECASE,
-        )
-        if not bounds or normalized.count(">=") != len(bounds):
-            return None
-        lower = [1] * len(terms)
-        seen: set[int] = set()
-        for index_text, bound_text in bounds:
-            index, bound = int(index_text), int(bound_text)
-            if index in seen or not (1 <= index <= len(lower)) or bound < 1:
-                return None
-            seen.add(index)
-            lower[index - 1] = bound
-        if all(bound == 1 for bound in lower):
-            return None
-
-        # Apart from the sum equation and >= lower bounds, another equality is
-        # an unsupported relation between variables.
-        without_bounds = re.sub(
-            rf"{re.escape(base)}\s*_\s*\{{?\d+\}}?\s*>=\s*\d+",
-            "",
-            normalized,
-            flags=re.IGNORECASE,
-        )
-        if len(re.findall(r"(?<![<>!])=(?!=)", without_bounds)) != 1:
-            return None
-
-        total = int(total_text)
-        if total > 10**6:
-            return None
-        residual = total - sum(lower)
-        result = math.comb(residual + len(lower) - 1, len(lower) - 1) if residual >= 0 else 0
-        top = residual + len(lower) - 1
-        english = SympyTool._uses_english_prose(text)
-        shifts = ", ".join(
-            rf"y_{index}={base}_{index}-{bound}"
-            for index, bound in enumerate(lower, start=1)
-        )
-        if residual < 0:
-            support = (
-                rf"The lower bounds sum to {sum(lower)}, which exceeds {total}; hence the number "
-                rf"of solutions is \(N=0\)."
-                if english else
-                rf"各变量下界之和为{sum(lower)}，超过总和{total}，故解数为 "
-                rf"\(N=0\)。"
-            )
-        else:
-            support = (
-                rf"Set \({shifts}\), so every \(y_i\ge 0\) and \(\sum y_i={residual}\). "
-                rf"Stars and bars gives \(\binom{{{top}}}{{{len(lower) - 1}}}={result}\)."
-                if english else
-                rf"令 \({shifts}\)，则各 \(y_i\ge 0\) 且 \(\sum y_i={residual}\)。"
-                rf"由隔板法，解数为 \(\binom{{{top}}}{{{len(lower) - 1}}}={result}\)。"
-            )
-        return f"本地正整数下界隔板计数: {support}"
-
-    @staticmethod
-    def _binomial_choose_two_positive_root_hint(problem: str) -> Optional[str]:
-        """Solve C(variable, 2)=M over positive integers by its quadratic."""
-        text = str(problem or "")
-        normalized = (
-            text.replace(r"\left", "")
-            .replace(r"\right", "")
-            .replace("$", "")
-        )
-        plain = re.search(
-            r"C\s*\(\s*([A-Za-z])\s*,\s*2\s*\)\s*=\s*(\d+)",
-            normalized,
-            re.IGNORECASE,
-        )
-        latex = re.search(
-            r"\\binom\s*\{\s*([A-Za-z])\s*\}\s*\{\s*2\s*\}\s*=\s*(\d+)",
-            normalized,
-            re.IGNORECASE,
-        )
-        equation = plain or latex
-        if not equation:
-            return None
-        variable, target_text = equation.groups()
-        positive_domain = bool(re.search(
-            rf"正整数\s*{re.escape(variable)}|{re.escape(variable)}\s*(?:为|是)\s*正整数|"
-            rf"positive\s+integers?\s+{re.escape(variable)}\b|"
-            rf"{re.escape(variable)}\s+(?:is|over)\s+(?:the\s+)?positive\s+integers?",
-            normalized,
-            re.IGNORECASE,
-        ))
-        asks_all_solutions = bool(re.search(
-            rf"求所有[^。.!?]{{0,40}}(?:正整数\s*)?{re.escape(variable)}|"
-            rf"find\s+all\s+positive\s+integers?\s+{re.escape(variable)}|"
-            rf"solve[^.!?]{{0,40}}(?:for\s+)?{re.escape(variable)}[^.!?]{{0,20}}positive\s+integers?",
-            normalized,
-            re.IGNORECASE,
-        ))
-        if not (positive_domain and asks_all_solutions):
-            return None
-        if re.search(
-            r"(?:<=|>=|<|>|≤|≥|≠|!=)|模\s*\d+|同余|approximately|近似|"
-            r"非负整数|整数解个数|number\s+of\s+solutions?|另(?:求|算)|并(?:求|计算)",
-            normalized,
-            re.IGNORECASE,
-        ):
-            return None
-
-        target = int(target_text)
-        if target > 10**18:
-            return None
-        discriminant = 1 + 8 * target
-        square_root = math.isqrt(discriminant)
-        english = SympyTool._uses_english_prose(text)
-        if square_root * square_root != discriminant:
-            support = (
-                rf"There is no positive-integer solution. Indeed, "
-                rf"\(\binom{{{variable}}}{{2}}={target}\) gives "
-                rf"\({variable}^2-{variable}-{2 * target}=0\), whose discriminant "
-                rf"\({discriminant}\) is not a perfect square, so it has no integer root."
-                if english else
-                rf"无正整数解。由 \(\binom{{{variable}}}{{2}}={target}\) 得 "
-                rf"\({variable}^2-{variable}-{2 * target}=0\)，其判别式{discriminant}不是完全平方数，"
-                rf"故不存在整数根。"
-            )
-            return f"本地二项式系数正整数无解: {support}"
-        if (1 + square_root) % 2:
-            return None
-        positive_root = (1 + square_root) // 2
-        other_root = (1 - square_root) // 2
-        if positive_root <= 0 or positive_root * (positive_root - 1) // 2 != target:
-            return None
-
-        support = (
-            rf"The positive-integer solution is \({variable}={positive_root}\). Indeed, "
-            rf"\(\binom{{{variable}}}{{2}}={target}\) gives "
-            rf"\({variable}^2-{variable}-{2 * target}=0\), whose roots are "
-            rf"\({positive_root}\) and \({other_root}\); the latter is not positive and is discarded."
-            if english else
-            rf"正整数解为 \({variable}={positive_root}\)。由 "
-            rf"\(\binom{{{variable}}}{{2}}={target}\) 得 "
-            rf"\({variable}^2-{variable}-{2 * target}=0\)，两根为{positive_root}与{other_root}；"
-            rf"后者不是正整数，故舍去。"
-        )
-        return f"本地二项式系数正整数解: {support}"
-
-    @staticmethod
-    def _finite_cyclic_subgroup_count_hint(problem: str) -> Optional[str]:
-        """Count all subgroups of a finite cyclic group from the divisors of its order."""
-        text = str(problem or "")
-        chinese = re.search(
-            r"(?:设\s*)?([A-Za-z])\s*(?:为|是)\s*(\d+)\s*阶循环群|"
-            r"(?:设\s*)?([A-Za-z])\s*(?:为|是)\s*阶(?:数)?为\s*(\d+)\s*的循环群",
-            text,
-        )
-        english = re.search(
-            r"(?:let\s+)?([A-Za-z])\s+be\s+(?:a\s+)?(?:finite\s+)?cyclic\s+group\s+"
-            r"of\s+order\s+(\d+)",
-            text,
-            re.IGNORECASE,
-        )
-        match = chinese or english
-        if not match:
-            return None
-        groups = match.groups()
-        group_name, order_text = (
-            (groups[0], groups[1]) if groups[0] is not None else
-            (groups[2], groups[3]) if len(groups) == 4 and groups[2] is not None else
-            (groups[0], groups[1])
-        )
-        order = int(order_text)
-        if not (1 <= order <= 10**9):
-            return None
-        asks_count = bool(re.search(
-            r"(?:所有|全部)子群的?(?:个数|数量)|子群总数|"
-            r"number\s+of\s+all\s+(?:of\s+its\s+)?subgroups?|"
-            r"total\s+number\s+of\s+(?:its\s+)?subgroups?|how\s+many\s+subgroups",
-            text,
-            re.IGNORECASE,
-        ))
-        if not asks_count:
-            return None
-        if re.search(
-            r"真子群|正规子群|极大子群|生成元|元素的阶|列出|写出(?:所有|全部)子群|"
-            r"proper\s+subgroups?|normal\s+subgroups?|maximal\s+subgroups?|generators?|"
-            r"elements?\s+of\s+order|list\s+(?:all\s+)?subgroups?",
-            text,
-            re.IGNORECASE,
-        ):
-            return None
-
-        factors = SympyTool._factor_prime_powers(order)
-        count = math.prod(exponent + 1 for _, exponent in factors)
-        if order == 1:
-            factorization = "1"
-        else:
-            factorization = " \\cdot ".join(
-                str(prime) if exponent == 1 else rf"{prime}^{{{exponent}}}"
-                for prime, exponent in factors
-            )
-        english_prose = SympyTool._uses_english_prose(text)
-        support = (
-            rf"The group has \({count}\) subgroups. Since \(|{group_name}|={order}={factorization}\), "
-            rf"each positive divisor \(d\mid {order}\) corresponds to the unique subgroup of order "
-            rf"\(d\), namely \(\langle g^{{{order}/d}}\rangle\); hence \(\tau({order})={count}\)."
-            if english_prose else
-            rf"子群个数为 \({count}\)。因 \(|{group_name}|={order}={factorization}\)，"
-            rf"每个正因子 \(d\mid {order}\) 唯一对应一个d阶子群 "
-            rf"\(\langle g^{{{order}/d}}\rangle\)，故 \(\tau({order})={count}\)。"
-        )
-        return f"本地有限循环群子群计数: {support}"
-
-    @staticmethod
-    def _linear_nonadjacent_selection_hint(problem: str) -> Optional[str]:
-        """Count fixed-size nonconsecutive subsets of a finite integer interval."""
-        text = str(problem or "")
-        normalized = (
-            text.replace(r"\left", "")
-            .replace(r"\right", "")
-            .replace(r"\{", "{")
-            .replace(r"\}", "}")
-            .replace(r"\ldots", "...")
-            .replace(r"\dots", "...")
-            .replace("…", "...")
-            .replace("$", "")
-        )
-        interval = re.search(
-            r"\{\s*1\s*[,，]\s*2\s*[,，]\s*\.\.\.\s*[,，]\s*(\d+)\s*\}",
-            normalized,
-        )
-        if not interval:
-            return None
-        upper = int(interval.group(1))
-        chinese_selection = re.search(
-            r"(?:任选|选取|选择|取出)\s*(\d+)\s*个元素",
-            normalized,
-        )
-        english_selection = re.search(
-            r"(?:choose|select)\s+(?:exactly\s+)?(\d+)\s+elements?",
-            normalized,
-            re.IGNORECASE,
-        )
-        selection = chinese_selection or english_selection
-        if not selection:
-            return None
-        chosen = int(selection.group(1))
-        no_adjacent = bool(re.search(
-            r"不含相邻整数|任意两个(?:所选)?(?:整数|元素)?(?:均|都)?不相邻|"
-            r"没有(?:两个)?相邻(?:整数|元素)|"
-            r"no\s+two\s+(?:chosen\s+)?(?:elements?|integers?)\s+(?:are\s+)?"
-            r"(?:adjacent|consecutive)|without\s+(?:adjacent|consecutive)\s+(?:elements?|integers?)",
-            normalized,
-            re.IGNORECASE,
-        ))
-        asks_count = bool(re.search(
-            r"选法数|选取方法数|多少(?:种|个)?(?:选法|选择)|"
-            r"number\s+of\s+(?:such\s+)?(?:selections?|subsets?)|how\s+many",
-            normalized,
-            re.IGNORECASE,
-        ))
-        if not (no_adjacent and asks_count):
-            return None
-        if not (1 <= upper <= 10000 and 1 <= chosen <= 1000):
-            return None
-        if re.search(
-            r"圆周|环形|循环|首尾|模\s*\d+|circle|circular|cyclic|modulo|wrap[- ]around|"
-            r"至多\s*\d+|至少\s*\d+|at\s+most|at\s+least|"
-            r"差(?:至少|大于)\s*[3-9]\d*|difference\s+(?:at\s+least|greater\s+than)\s*[3-9]\d*|"
-            r"可重复|with\s+replacement|另(?:求|算)|并(?:求|计算)",
-            normalized,
-            re.IGNORECASE,
-        ):
-            return None
-
-        compressed_upper = upper - chosen + 1
-        result = math.comb(compressed_upper, chosen) if compressed_upper >= chosen else 0
-        english = SympyTool._uses_english_prose(text)
-        if result == 0:
-            support = (
-                rf"Selecting {chosen} pairwise nonconsecutive integers needs at least "
-                rf"\(2\cdot {chosen}-1={2 * chosen - 1}>{upper}\) positions, so "
-                rf"\(N_{{\rm selections}}=0\)."
-                if english else
-                rf"选{chosen}个两两不相邻整数至少需要 "
-                rf"\(2\cdot {chosen}-1={2 * chosen - 1}>{upper}\) 个位置，故 "
-                rf"\(N_{{\rm 选法}}=0\)。"
-            )
-        else:
-            support = (
-                rf"If \(1\le a_1<\cdots<a_{chosen}\le {upper}\) are selected, set "
-                rf"\(b_i=a_i-(i-1)\). Then \(1\le b_1<\cdots<b_{chosen}\le {compressed_upper}\), "
-                rf"so position compression gives \(\binom{{{compressed_upper}}}{{{chosen}}}={result}\)."
-                if english else
-                rf"设所选数为 \(1\le a_1<\cdots<a_{chosen}\le {upper}\)，令 "
-                rf"\(b_i=a_i-(i-1)\)，则 \(1\le b_1<\cdots<b_{chosen}\le {compressed_upper}\)。"
-                rf"由位置压缩，选法数为 \(\binom{{{compressed_upper}}}{{{chosen}}}={result}\)。"
-            )
-        return f"本地线性区间不相邻选择: {support}"
-
-    @staticmethod
-    def _nonadjacent_binary_string_count_hint(problem: str) -> Optional[str]:
-        """Count fixed-weight binary strings with no adjacent ones."""
-        text = str(problem or "")
-        length = re.search(
-            r"长度(?:为|是)?\s*(\d+)|(?:binary\s+strings?).{0,40}?"
-            r"(?:of\s+)?length\s*(\d+)",
-            text,
-            re.IGNORECASE | re.DOTALL,
-        )
-        weight = re.search(
-            r"恰有\s*(\d+)\s*个?\s*1|(?:exactly|with)\s*(\d+)\s*(?:ones?|1s?)",
-            text,
-            re.IGNORECASE,
-        )
-        no_adjacent = re.search(
-            r"(?:不含|没有|任意)[^。.!?]{0,24}(?:相邻|连续)[^。.!?]{0,8}(?:两个)?\s*1|"
-            r"no\s+(?:two\s+)?(?:ones?|1s?)\s+(?:are\s+)?(?:adjacent|consecutive)|"
-            r"without\s+(?:adjacent|consecutive)\s+(?:ones?|1s?)",
-            text,
-            re.IGNORECASE,
-        )
-        asks_count = re.search(
-            r"(?:串|字符串)(?:的)?(?:数|数量)|多少(?:个)?|"
-            r"(?:number|count)\s+of\s+(?:such\s+)?(?:binary\s+)?strings?|how\s+many",
-            text,
-            re.IGNORECASE,
-        )
-        if not (length and weight and no_adjacent and asks_count):
-            return None
-        n = int(next(group for group in length.groups() if group is not None))
-        k = int(next(group for group in weight.groups() if group is not None))
-        if not (0 <= k <= n <= 10000):
-            return None
-        gaps = n - k + 1
-        result = math.comb(gaps, k) if gaps >= k else 0
-        english = SympyTool._uses_english_prose(text)
-        answer = (
-            rf"Position selection: arrange the {n-k} zeros first, giving {gaps} gaps; "
-            rf"choose {k} gaps, so \(\binom{{{gaps}}}{{{k}}}={result}\)."
-            if english else
-            rf"插空选位置：先排{n-k}个0得到{gaps}个空位，选择其中{k}个放1，"
-            rf"故 \(\binom{{{gaps}}}{{{k}}}={result}\)。"
-        )
-        needs_more = bool(re.search(
-            r"证明|解释|推广|比较|另求|并求|并计算|"
-            r"\b(?:prove|justify|explain|generalize|compare|also\s+(?:find|compute|determine))\b",
-            text,
-            re.IGNORECASE,
-        ))
-        label = "本地不相邻二进制串核验" if needs_more else "本地不相邻二进制串计数"
-        return f"{label}: {answer}"
-
-    @staticmethod
-    def _precedence_permutation_count_hint(problem: str) -> Optional[str]:
-        """Count a precedence condition while excluding one first element."""
-        text = str(problem or "")
-        size = re.search(
-            r"(\d+)\s*个不同元素|(?:permutations?\s+of|among)\s*(\d+)\s+distinct\s+elements?",
-            text,
-            re.IGNORECASE,
-        )
-        before = re.search(
-            r"(?:元素)?\s*([A-Za-z])\s*在\s*([A-Za-z])\s*之前|"
-            r"\b(?:have\s+)?([A-Za-z])\s+(?:(?:comes?|is)\s+before|precedes|before)\s+([A-Za-z])\b",
-            text,
-            re.IGNORECASE,
-        )
-        excluded = re.search(
-            r"([A-Za-z])\s*不在首位|([A-Za-z])\s+is\s+not\s+(?:in\s+)?(?:the\s+)?first(?:\s+position)?",
-            text,
-            re.IGNORECASE,
-        )
-        asks_count = re.search(
-            r"排列数|多少(?:种|个)?排列|number\s+of\s+(?:such\s+)?permutations?|how\s+many",
-            text,
-            re.IGNORECASE,
-        )
-        if not (size and before and excluded and asks_count):
-            return None
-        n = int(next(group for group in size.groups() if group is not None))
-        left, right = (
-            (before.group(1), before.group(2))
-            if before.group(1) is not None else (before.group(3), before.group(4))
-        )
-        blocked = excluded.group(1) or excluded.group(2)
-        if n < 3 or len({left.lower(), right.lower(), blocked.lower()}) != 3 or n > 1000:
-            return None
-        all_precedence = math.factorial(n) // 2
-        blocked_first = math.factorial(n - 1) // 2
-        result = all_precedence - blocked_first
-        english = SympyTool._uses_english_prose(text)
-        answer = (
-            rf"Conditional counting: \({n}!/2-({n-1})!/2={all_precedence}-{blocked_first}={result}\)."
-            if english else
-            rf"条件计数：\({n}!/2-({n-1})!/2={all_precedence}-{blocked_first}={result}\)。"
-        )
-        needs_more = bool(re.search(
-            r"证明|解释|推广|比较|另求|并求|并计算|"
-            r"\b(?:prove|justify|explain|generalize|compare|also\s+(?:find|compute|determine))\b",
-            text,
-            re.IGNORECASE,
-        ))
-        label = "本地排列条件计数核验" if needs_more else "本地排列条件计数"
-        return f"{label}: {answer}"
-
-    @staticmethod
-    def _surjection_count_hint(problem: str) -> Optional[str]:
-        """Count onto maps between two explicitly finite sets."""
-        text = (
-            str(problem or "")
-            .replace(r"\left", "")
-            .replace(r"\right", "")
-            .replace(r"\{", "{")
-            .replace(r"\}", "}")
-        )
-        if not re.search(r"满射|surjections?|onto\s+(?:maps?|functions?)", text, re.IGNORECASE):
-            return None
-        explicit_sets = re.search(
-            r"(?:从|from)\s*(?:集合\s*)?\{([^{}]+)\}\s*(?:到|to)\s*"
-            r"(?:集合\s*)?\{([^{}]+)\}",
-            text,
-            re.IGNORECASE,
-        )
-        if explicit_sets:
-            source_items = [item.strip() for item in re.split(r"[,，]", explicit_sets.group(1)) if item.strip()]
-            target_items = [item.strip() for item in re.split(r"[,，]", explicit_sets.group(2)) if item.strip()]
-            if (
-                len(set(source_items)) != len(source_items)
-                or len(set(target_items)) != len(target_items)
-            ):
-                return None
-            n, m = len(source_items), len(target_items)
-        else:
-            size_match = re.search(
-                r"从\s*([一二三四五六七八九十\d]+)\s*元素集合\s*到\s*"
-                r"([一二三四五六七八九十\d]+)\s*元素集合|"
-                r"from\s+(?:a\s+)?([a-z\d-]+)[ -]element\s+set\s+to\s+"
-                r"(?:a\s+)?([a-z\d-]+)[ -]element\s+set",
-                text,
-                re.IGNORECASE,
-            )
-            if not size_match:
-                return None
-            first, second = (
-                (size_match.group(1), size_match.group(2))
-                if size_match.group(1) is not None else (size_match.group(3), size_match.group(4))
-            )
-            n = SympyTool._small_integer_word(first)
-            m = SympyTool._small_integer_word(second)
-        if not n or not m or not (1 <= n <= 1000 and 1 <= m <= 50):
-            return None
-        asks_count = re.search(
-            r"(?:满射)(?:的)?(?:个数|数量)|求[^。.!?]{0,40}满射[^。.!?]{0,12}(?:个数|数量)|"
-            r"number\s+of\s+(?:such\s+)?(?:surjections?|onto\s+(?:maps?|functions?))|how\s+many",
-            text,
-            re.IGNORECASE,
-        )
-        if not asks_count:
-            return None
-        result = sum(
-            (-1) ** omitted * math.comb(m, omitted) * (m - omitted) ** n
-            for omitted in range(m + 1)
-        )
-        english = SympyTool._uses_english_prose(text)
-        formula = rf"\sum_{{j=0}}^{{{m}}}(-1)^j\binom{{{m}}}{{j}}({m}-j)^{{{n}}}={result}"
-        answer = (
-            rf"Inclusion-exclusion gives \({formula}\)."
-            if english else rf"由容斥原理，\({formula}\)。"
-        )
-        needs_more = bool(re.search(
-            r"证明|解释|推广|比较|另求|并求|并计算|"
-            r"\b(?:prove|justify|explain|generalize|compare|also\s+(?:find|compute|determine))\b",
-            text,
-            re.IGNORECASE,
-        ))
-        label = "本地满射容斥核验" if needs_more else "本地满射容斥计数"
-        return f"{label}: {answer}"
-
-    @staticmethod
-    def _small_integer_word(value: str) -> Optional[int]:
-        token = str(value or "").strip().lower()
-        words = {
-            "one": 1, "two": 2, "three": 3, "four": 4, "five": 5,
-            "six": 6, "seven": 7, "eight": 8, "nine": 9, "ten": 10,
-            "一": 1, "二": 2, "三": 3, "四": 4, "五": 5,
-            "六": 6, "七": 7, "八": 8, "九": 9, "十": 10,
-        }
-        if token.isdigit():
-            return int(token)
-        return words.get(token)
-
-    @staticmethod
-    def _planar_euler_face_hint(problem: str) -> Optional[str]:
-        """Compute the face count of a connected planar graph and verify Euler."""
-        text = str(problem or "")
-        chinese = re.search(
-            r"连通平面(?:简单)?图.*?(\d+)\s*个顶点.*?(\d+)\s*条边",
-            text,
-            re.DOTALL,
-        )
-        english_match = re.search(
-            r"connected\s+(?:(?:simple\s+)?planar|planar(?:\s+simple)?)\s+graph"
-            r".*?(?:has|with)\s*(\d+)\s+vertices?"
-            r".*?(?:and|with)\s*(\d+)\s+edges?",
-            text,
-            re.IGNORECASE | re.DOTALL,
-        )
-        match = chinese or english_match
-        if not match or not re.search(r"面数|number\s+of\s+faces?|how\s+many\s+faces?", text, re.IGNORECASE):
-            return None
-        if not re.search(
-            r"验证[^。.!?]{0,40}欧拉公式|verify[^.!?]{0,60}euler(?:'s)?\s+formula",
-            text,
-            re.IGNORECASE,
-        ):
-            return None
-        vertices, edges = map(int, match.groups())
-        if vertices < 1 or edges < 0 or vertices > 10**9 or edges > 10**12:
-            return None
-        faces = edges - vertices + 2
-        if faces < 1:
-            return None
-        english = SympyTool._uses_english_prose(text)
-        answer = (
-            rf"Euler's formula gives \(F=E-V+2={edges}-{vertices}+2={faces}\), and "
-            rf"\({vertices}-{edges}+{faces}=2\)."
-            if english else
-            rf"由欧拉公式，\(F=E-V+2={edges}-{vertices}+2={faces}\)，且 "
-            rf"\({vertices}-{edges}+{faces}=2\)。"
-        )
-        extra = bool(re.search(
-            r"证明|推广|另求|并求|并计算|"
-            r"\b(?:prove|generalize|also\s+(?:find|compute|determine))\b",
-            text,
-            re.IGNORECASE,
-        ))
-        label = "本地平面图欧拉核验" if extra else "本地平面图欧拉答案"
-        return f"{label}: {answer}"
-
-    @staticmethod
-    def _paraboloid_curvature_hint(problem: str) -> Optional[str]:
-        """Return the exact curvatures of z=x^2+y^2 at the origin."""
-        text = re.sub(r"\s+", "", str(problem or ""))
-        surface = re.search(
-            r"(?:曲面|surface)(?:z=)?x\^\{?2\}?\+y\^\{?2\}?|"
-            r"z=x\^\{?2\}?\+y\^\{?2\}?",
-            text,
-            re.IGNORECASE,
-        )
-        origin = re.search(r"原点|at(?:the)?origin|\(0,0(?:,0)?\)", text, re.IGNORECASE)
-        principal = re.search(r"主曲率|principalcurvatures?", text, re.IGNORECASE)
-        gaussian = re.search(r"高斯曲率|gaussiancurvature", text, re.IGNORECASE)
-        derivatives = re.search(r"二阶导数|second(?:order)?(?:partial)?derivatives?", text, re.IGNORECASE)
-        if not (surface and origin and principal and gaussian and derivatives):
-            return None
-        english = SympyTool._uses_english_prose(problem)
-        answer = (
-            r"At the origin, \(f_x=f_y=0\) and \(f_{xx}=2,f_{xy}=0,f_{yy}=2\). "
-            r"Thus the shape operator is \(\operatorname{diag}(2,2)\), so "
-            r"\(\kappa_1=\kappa_2=2\) and \(K=\kappa_1\kappa_2=4\)."
-            if english else
-            r"原点处 \(f_x=f_y=0\)，二阶导数为 \(f_{xx}=2,f_{xy}=0,f_{yy}=2\)。"
-            r"形算子为 \(\operatorname{diag}(2,2)\)，故 \(\kappa_1=\kappa_2=2\)，"
-            r"\(K=\kappa_1\kappa_2=4\)。"
-        )
-        extra = bool(re.search(
-            r"证明|推广|另求|并求|并计算|"
-            r"\b(?:prove|generalize|also\s+(?:find|compute|determine))\b",
-            str(problem or ""),
-            re.IGNORECASE,
-        ))
-        label = "本地抛物面曲率核验" if extra else "本地抛物面曲率答案"
-        return f"{label}: {answer}"
-
-    @staticmethod
-    def _ordered_positive_triple_hint(problem: str) -> Optional[str]:
-        """Exactly count an explicitly ordered positive-integer triple."""
-        normalized = (
-            str(problem or "")
-            .replace(r"\leq", "≤")
-            .replace(r"\le", "≤")
-            .replace("<=", "≤")
-        )
-        total_match = re.search(
-            r"([a-z])\s*\+\s*([a-z])\s*\+\s*([a-z])\s*=\s*(\d+)(?!\d)",
-            normalized,
-            re.IGNORECASE,
-        )
-        if not total_match or not re.search(r"正整数|positive\s+integers?", normalized, re.IGNORECASE):
-            return None
-        first, second, third = total_match.group(1, 2, 3)
-        if len({first.lower(), second.lower(), third.lower()}) != 3:
-            return None
-        ordered = re.compile(
-            rf"{re.escape(first)}\s*≤\s*{re.escape(second)}\s*≤\s*{re.escape(third)}",
-            re.IGNORECASE,
-        )
-        if not ordered.search(normalized):
-            return None
-        total = int(total_match.group(4))
-        if not 3 <= total <= 10000:
-            return None
-        counts: list[tuple[int, int]] = []
-        for first_value in range(1, total + 1):
-            count = sum(
-                1
-                for second_value in range(first_value, total + 1)
-                if total - first_value - second_value >= second_value
-            )
-            if count:
-                counts.append((first_value, count))
-        if not counts:
-            return None
-        cases = "，".join(f"{value}时{count}个" for value, count in counts)
-        return f"本地有序三元组计数: 按{first}分类，{first}={cases}，共{sum(count for _, count in counts)}个"
-
-    @staticmethod
-    def _fair_dice_conditional_probability_hint(problem: str) -> Optional[str]:
-        """Enumerate an exact conditional event for two fair standard dice."""
-        text = re.sub(r"\s+", " ", str(problem or "")).strip()
-        normalized = re.sub(
-            r"\\(?:operatorname|mathrm|text)\s*\{([^{}]*)\}",
-            r"\1",
-            text,
-        )
-        for token in (r"\left", r"\right", r"\,", r"\;", r"\!", "$", r"\(", r"\)"):
-            normalized = normalized.replace(token, "")
-        normalized = normalized.replace("−", "-").replace("–", "-")
-
-        if not re.search(r"骰|\b(?:die|dice)\b", normalized, re.IGNORECASE):
-            return None
-        if re.search(
-            r"不公平|非公平|有偏|加权|各面概率不(?:同|等)|"
-            r"\b(?:unfair|biased|loaded|weighted|non[- ]uniform)\b|"
-            r"\bnot\s+(?:an?\s+)?fair\b",
-            normalized,
-            re.IGNORECASE,
-        ):
-            return None
-        if not re.search(
-            r"公平|均匀(?:的)?(?:骰|六面)|各面(?:出现)?(?:等可能|概率相等)|"
-            r"\b(?:fair|unbiased)\b",
-            normalized,
-            re.IGNORECASE,
-        ):
-            return None
-
-        explicit_side_counts = [
-            int(value)
-            for value in re.findall(
-                r"(?<!\d)(\d+)\s*(?:面(?:的)?(?:骰子|骰)?|[- ]sided\b)",
-                normalized,
-                re.IGNORECASE,
-            )
-        ]
-        explicit_side_counts.extend(
-            int(value)
-            for value in re.findall(r"\b[dD](\d+)\b", normalized)
-        )
-        side_words = re.findall(
-            r"\b(one|two|three|four|five|six|seven|eight|nine|ten|twelve|twenty)"
-            r"[- ]sided\b",
-            normalized,
-            re.IGNORECASE,
-        )
-        if any(value != 6 for value in explicit_side_counts):
-            return None
-        if any(word.lower() != "six" for word in side_words):
-            return None
-        chinese_side_words = re.findall(
-            r"([一二三四五六七八九十]+)\s*面(?:的)?(?:骰子|骰)?",
-            normalized,
-        )
-        if any(word != "六" for word in chinese_side_words):
-            return None
-
-        chinese_other_roll_count = re.search(
-            r"(?:掷|投掷|抛掷|抛|扔)[^，。；;,.!?]{0,20}"
-            r"(?:一|三|四|五|六|七|八|九|十|[013-9]|[1-9]\d+)\s*次",
-            normalized,
-        )
-        english_other_roll_count = re.search(
-            r"\b(?:roll|toss)(?:ed|ing|es|s)?\b[^.!?]{0,35}"
-            r"(?:once|three|four|five|six|seven|eight|nine|ten|[013-9]|[1-9]\d+)\s+times?\b",
-            normalized,
-            re.IGNORECASE,
-        )
-        if chinese_other_roll_count or english_other_roll_count:
-            return None
-        exactly_two = bool(re.search(
-            r"(?:连续)?(?:掷|投掷|抛掷|抛|扔)[^，。；;,.!?]{0,28}(?:两|2)\s*次|"
-            r"(?:掷|投掷|抛掷|抛|扔)[^，。；;,.!?]{0,12}(?:两|2)\s*(?:枚|个|颗)"
-            r"[^，。；;,.!?]{0,16}骰|"
-            r"\b(?:roll|toss)(?:ed|ing|es|s)?\b[^.!?]{0,38}\btwice\b|"
-            r"\btwo\s+(?:successive\s+)?(?:rolls?|tosses?)\b|"
-            r"\b(?:roll|toss)(?:ed|ing|es|s)?\b[^.!?]{0,24}\btwo\s+"
-            r"(?:fair\s+)?(?:six[- ]sided\s+)?dice\b",
-            normalized,
-            re.IGNORECASE,
-        ))
-        if not exactly_two:
-            return None
-
-        chinese_sum_patterns = (
-            r"(?:已知|给定)[^，。；;,.!?]{0,35}(?:总点数|点数(?:之)?和|两次(?:结果|点数)(?:之)?和)"
-            r"\s*(?:为|是|等于|=)\s*(-?\d+)",
-            r"(?:总点数|点数(?:之)?和|两次(?:结果|点数)(?:之)?和)"
-            r"\s*(?:为|是|等于|=)\s*(-?\d+)\s*(?:的)?条件下",
-            r"在[^，。；;,.!?]{0,28}(?:总点数|点数(?:之)?和|两次(?:结果|点数)(?:之)?和)"
-            r"\s*(?:为|是|等于|=)\s*(-?\d+)\s*(?:时|的情况下)",
-        )
-        english_sum_patterns = (
-            r"(?:given(?:\s+that)?|conditioned\s+on|conditional\s+on|provided\s+that|"
-            r"under\s+the\s+condition\s+that)[^.!?]{0,55}"
-            r"(?:sum|total)(?:\s+of\s+(?:the\s+)?(?:two\s+)?(?:rolls?|dice))?"
-            r"\s*(?:is|equals?|=)\s*(-?\d+)",
-            r"(?:given(?:\s+that)?|conditioned\s+on|conditional\s+on|provided\s+that)"
-            r"[^.!?]{0,55}(?:rolls?|dice)\s+(?:sum|add\s+up)\s+to\s*(-?\d+)",
-        )
-        sum_value: Optional[int] = None
-        for pattern in (*chinese_sum_patterns, *english_sum_patterns):
-            match = re.search(pattern, normalized, re.IGNORECASE)
-            if match:
-                sum_value = int(match.group(1))
-                break
-        if sum_value is None:
-            return None
-
-        chinese_first = re.findall(
-            r"(?:第一次|第一\s*(?:枚|个|颗)(?:骰子|骰)?)"
-            r"(?:\s*(?:掷(?:骰子)?|投掷|抛掷))?(?:\s*(?:所得|掷出|出现|的))?"
-            r"\s*(?:点数|结果)?\s*(?:为|是|等于|=)\s*(-?\d+)",
-            normalized,
-        )
-        english_first = re.findall(
-            r"\bfirst\s+(?:roll|die|dice)(?:'s)?(?:\s+(?:result|outcome|value|face))?"
-            r"\s*(?:is|equals?|=|shows?|being|lands?\s+on)\s*(-?\d+)",
-            normalized,
-            re.IGNORECASE,
-        )
-        queried_values = [int(value) for value in (*chinese_first, *english_first)]
-        if len(queried_values) != 1:
-            return None
-        first_value = queried_values[0]
-        if not 1 <= first_value <= 6:
-            return None
-        if not re.search(r"条件概率|概率|\b(?:conditional\s+)?probability\b|\bchance\b", normalized, re.IGNORECASE):
-            return None
-        if re.search(
-            r"期望|均值|方差|协方差|标准差|分布函数|熵|证明|说明理由|推导|"
-            r"乘积|积为|差为|最大值|最小值|至少|至多|奇数|偶数|第二次[^，。；;,.!?]{0,12}(?:为|是|=)|"
-            r"\b(?:expectation|expected\s+value|mean|variance|covariance|standard\s+deviation|"
-            r"distribution\s+function|entropy|prove|justify|derive|product|difference|maximum|minimum|"
-            r"at\s+least|at\s+most|odd|even)\b|"
-            r"\bsecond\s+(?:roll|die|dice)[^.!?]{0,16}(?:is|equals?|=)",
-            normalized,
-            re.IGNORECASE,
-        ):
-            return None
-
-        outcomes = tuple(
-            (first, sum_value - first)
-            for first in range(1, 7)
-            if 1 <= sum_value - first <= 6
-        )
-        if not outcomes:
-            return None
-        favorable = int((first_value, sum_value - first_value) in outcomes)
-        probability = Fraction(favorable, len(outcomes))
-
-        def render_fraction(value: Fraction) -> str:
-            if value.denominator == 1:
-                return str(value.numerator)
-            return rf"\frac{{{value.numerator}}}{{{value.denominator}}}"
-
-        wants_sample_space = bool(re.search(
-            r"(?:列出|写出|给出|枚举|求)[^，。；;,.!?]{0,18}条件样本空间|"
-            r"条件样本空间[^，。；;,.!?]{0,12}(?:是什么|为多少)|"
-            r"\b(?:list|write|give|state|enumerate|find)\b[^.!?]{0,45}"
-            r"\bconditional\s+sample\s+space\b|"
-            r"\bwhat\s+is\s+the\s+conditional\s+sample\s+space\b",
-            normalized,
-            re.IGNORECASE,
-        ))
-        probability_text = render_fraction(probability)
-        if wants_sample_space:
-            sample_space = ",".join(f"({first},{second})" for first, second in outcomes)
-            result = (
-                rf"\Omega_{{S={sum_value}}}=\{{{sample_space}\}},\quad "
-                rf"P(D_1={first_value}\mid S={sum_value})={probability_text}"
-            )
-        else:
-            result = rf"P(D_1={first_value}\mid D_1+D_2={sum_value})={probability_text}"
-        return f"本地公平六面骰条件概率: {result}"
-
-    @staticmethod
-    def _bernoulli_centered_second_moment_hint(problem: str) -> Optional[str]:
-        """Evaluate the centered second moment of one Bernoulli variable."""
-        text = re.sub(r"\s+", " ", str(problem or "")).strip()
-        normalized = re.sub(
-            r"\\(?:operatorname|mathrm|text)\s*\{([^{}]*)\}",
-            r"\1",
-            text,
-        )
-        normalized = re.sub(r"\\mathbb\s*\{?\s*E\s*\}?", "E", normalized)
-        normalized = re.sub(r"\\(?:mathbf|mathsf|mathcal)\s*\{?\s*E\s*\}?", "E", normalized)
-        normalized = normalized.replace(r"\sim", "~").replace("∼", "~")
-        normalized = normalized.replace("−", "-").replace("–", "-")
-        normalized = re.sub(r"\^\s*\{\s*2\s*\}", "^2", normalized)
-        for token in (
-            r"\left", r"\right", r"\bigl", r"\bigr", r"\big", r"\,", r"\;", r"\!", "$", r"\(", r"\)",
-        ):
-            normalized = normalized.replace(token, "")
-
-        if len(re.findall(r"Bernoulli|伯努利", normalized, re.IGNORECASE)) != 1:
-            return None
-        if re.search(
-            r"微分方程|导数|似然|估计|样本|构造|独立性|"
-            r"\b(?:differential\s+equation|derivative|likelihood|estimat|sample|construct|independen)\w*\b|"
-            r"[A-Za-z]\s*'",
-            normalized,
-            re.IGNORECASE,
-        ):
-            return None
-
-        distribution_patterns = (
-            r"(?P<variable>[A-Za-z])\s*~\s*(?:Bernoulli|伯努利)\s*\(\s*(?P<parameter>[a-z])\s*\)",
-            r"(?P<variable>[A-Za-z])\s*服从\s*参数\s*(?:为|=)?\s*(?P<parameter>[a-z])\s*的?\s*"
-            r"(?:Bernoulli|伯努利)(?:分布)?",
-            r"(?P<variable>[A-Za-z])\s*服从\s*(?:Bernoulli|伯努利)\s*\(\s*(?P<parameter>[a-z])\s*\)\s*(?:分布)?",
-            r"(?:let\s+)?(?P<variable>[A-Za-z])\s+(?:be|is|follows?|obeys?|has)\s+(?:a\s+)?"
-            r"Bernoulli(?:\s+(?:random\s+variable|distribution))?\s*\(\s*(?P<parameter>[a-z])\s*\)",
-            r"(?:let\s+)?(?P<variable>[A-Za-z])\s+(?:be|is|follows?|obeys?|has)\s+(?:a\s+)?"
-            r"Bernoulli(?:\s+(?:random\s+variable|distribution))?\s+with\s+(?:the\s+)?parameter\s+"
-            r"(?P<parameter>[a-z])\b",
-        )
-        distribution = next(
-            (
-                candidate
-                for pattern in distribution_patterns
-                if (candidate := re.search(pattern, normalized, re.IGNORECASE))
-            ),
-            None,
-        )
-        if distribution is None:
-            return None
-        variable = distribution.group("variable")
-        parameter = distribution.group("parameter")
-        if not variable.isupper() or not parameter.islower():
-            return None
-
-        moment_pattern = (
-            rf"(?:E|expectation\s+of)\s*[\[(]\s*\(\s*{re.escape(variable)}\s*-\s*"
-            rf"{re.escape(parameter)}\s*\)\s*(?:\^\s*2|\*\*\s*2)\s*[\])]"
-        )
-        moments = re.findall(moment_pattern, normalized, re.IGNORECASE)
-        if len(moments) != 1:
-            return None
-        expectation_count = len(re.findall(
-            r"(?<![A-Za-z])E\s*[\[(]|\bexpectation\s+of\b",
-            normalized,
-            re.IGNORECASE,
-        ))
-        if expectation_count != 1:
-            return None
-        if not re.search(
-            r"求|计算|确定|识别|认出|指出|"
-            r"\b(?:find|compute|calculate|evaluate|determine|identify|recognize|what\s+is)\b",
-            normalized,
-            re.IGNORECASE,
-        ):
-            return None
-        if re.search(
-            r"条件期望|条件方差|协方差|标准差|偏度|峰度|特征函数|矩母函数|分布函数|熵|"
-            r"最大(?:化|值)|最小(?:化|值)|证明|推导|说明理由|解释|"
-            r"\b(?:conditional\s+(?:expectation|variance)|covariance|standard\s+deviation|skewness|"
-            r"kurtosis|characteristic\s+function|moment[- ]generating\s+function|distribution\s+function|"
-            r"entropy|maximi[sz]e|minimi[sz]e|maximum|minimum|prove|derive|justify|explain|demonstrate)\b|"
-            r"\b(?:binomial|poisson|normal|geometric)\s+(?:random\s+variable|distribution)\b|"
-            r"二项分布|泊松分布|正态分布|几何分布|"
-            r"\bP\s*\(",
-            normalized,
-            re.IGNORECASE,
-        ):
-            return None
-
-        result = (
-            rf"E[({variable}-{parameter})^2]="
-            rf"\operatorname{{Var}}({variable})={parameter}(1-{parameter})"
-        )
-        return f"本地Bernoulli中心二阶矩: {result}"
-
-    @staticmethod
-    def _fair_coin_geometric_tail_hint(problem: str) -> Optional[str]:
-        """Compute a strict tail for tosses until the first head of one fair coin."""
-        text = re.sub(r"\s+", " ", str(problem or "")).strip()
-        normalized = (
-            text.replace(r"\left", "")
-            .replace(r"\right", "")
-            .replace(r"\,", "")
-            .replace(r"\;", "")
-            .replace(r"\gt", ">")
-            .replace("−", "-")
-        )
-        if not re.search(r"公平(?:的)?硬币|均匀(?:的)?硬币|\bfair\s+coin\b", normalized, re.IGNORECASE):
-            return None
-        if re.search(
-            r"不公平|有偏|加权|两枚|多个硬币|"
-            r"\b(?:unfair|biased|loaded|weighted|two|multiple)\s+coins?\b",
-            normalized,
-            re.IGNORECASE,
-        ):
-            return None
-        if not re.search(
-            r"(?:持续|反复|不断)?(?:抛掷|投掷|掷|抛)[^。！？!?]{0,60}"
-            r"直到[^。！？!?]{0,24}(?:首次|第一次)[^。！？!?]{0,12}正面|"
-            r"\b(?:toss|flip)(?:ed|ing|s)?\b[^.!?]{0,70}\buntil\b"
-            r"[^.!?]{0,24}\b(?:the\s+)?first\s+head\b",
-            normalized,
-            re.IGNORECASE,
-        ):
-            return None
-        if not re.search(r"概率|\bprobability\b|P\s*\(", normalized, re.IGNORECASE):
-            return None
-        if re.search(
-            r"大于等于|不少于|至少|至多|不超过|恰好|正好|无记忆|条件概率|"
-            r"\b(?:at\s+least|at\s+most|no\s+more\s+than|exactly|memoryless|"
-            r"conditional\s+probability)\b",
-            normalized,
-            re.IGNORECASE,
-        ):
-            return None
-
-        thresholds: list[int] = []
-        patterns = (
-            r"(?:抛掷|投掷|掷|抛)(?:的)?次数\s*(?:T\s*)?(?:大于|超过|>)\s*(\d+)",
-            r"P\s*\(\s*T\s*>\s*(\d+)\s*\)",
-            r"(?:number\s+of\s+(?:tosses|flips)|T)\s*(?:is\s+)?"
-            r"(?:greater\s+than|exceeds?|>)\s*(\d+)",
-        )
-        for pattern in patterns:
-            thresholds.extend(
-                int(value)
-                for value in re.findall(pattern, normalized, re.IGNORECASE)
-            )
-        unique_thresholds = set(thresholds)
-        if len(unique_thresholds) != 1:
-            return None
-        threshold = unique_thresholds.pop()
-        if not 0 <= threshold <= 1000:
-            return None
-        if re.search(
-            r"期望|均值|方差|标准差|生成函数|分布函数|熵|证明|推导|"
-            r"\b(?:expectation|expected\s+value|mean|variance|standard\s+deviation|"
-            r"generating\s+function|distribution\s+function|entropy|prove|derive)\b",
-            normalized,
-            re.IGNORECASE,
-        ):
-            return None
-
-        probability = Fraction(1, 2 ** threshold)
-        probability_text = (
-            str(probability.numerator)
-            if probability.denominator == 1
-            else rf"\frac{{{probability.numerator}}}{{{probability.denominator}}}"
-        )
-        if SympyTool._uses_english_prose(problem):
-            support = (
-                rf"Let \(T\) be the number of tosses through the first head. Then "
-                rf"\(T\sim\operatorname{{Geom}}(1/2)\) on \(1,2,\ldots\), so "
-                rf"\(P(T>{threshold})=(1/2)^{{{threshold}}}={probability_text}\)."
-            )
-        else:
-            support = (
-                rf"令 \(T\) 为首次出现正面所需的抛掷次数，则 "
-                rf"\(T\sim\operatorname{{Geom}}(1/2)\)，其取值从1开始，故 "
-                rf"\(P(T>{threshold})=(1/2)^{{{threshold}}}={probability_text}\)。"
-            )
-        return f"本地公平硬币几何尾概率: {support}"
-
-    @staticmethod
-    def _poisson_process_increment_hint(problem: str) -> Optional[str]:
-        """Return a conditional law certified by homogeneous independent increments."""
-        text = re.sub(r"\s+", " ", str(problem or "")).strip()
-        normalized = (
-            text.replace(r"\left", "")
-            .replace(r"\right", "")
-            .replace(r"\,", "")
-            .replace(r"\;", "")
-            .replace(r"\lambda", "λ")
-            .replace("−", "-")
-        )
-        if not re.search(r"泊松过程|\bPoisson\s+process\b", normalized, re.IGNORECASE):
-            return None
-        if re.search(
-            r"非齐次|非均匀|复合泊松|Cox过程|"
-            r"\b(?:nonhomogeneous|non-homogeneous|inhomogeneous|compound|Cox)\b",
-            normalized,
-            re.IGNORECASE,
-        ):
-            return None
-
-        rate_match = re.search(
-            r"(?:强度|速率|率)\s*(?:为|是|等于|=)?\s*(λ|lambda|\d+(?:\.\d+|/\d+)?)|"
-            r"\b(?:intensity|rate)\s*(?:is|equals?|=|of)?\s*(λ|lambda|\d+(?:\.\d+|/\d+)?)",
-            normalized,
-            re.IGNORECASE,
-        )
-        if not rate_match:
-            return None
-        rate_token = next(group for group in rate_match.groups() if group is not None)
-        symbolic_rate = rate_token.lower() in {"λ", "lambda"}
-        if symbolic_rate:
-            rate_value: Optional[Fraction] = None
-        else:
-            try:
-                rate_value = Fraction(rate_token)
-            except (ValueError, ZeroDivisionError):
-                return None
-            if rate_value <= 0:
-                return None
-
-        number = r"(?:\d+(?:\.\d+)?|\d+/\d+)"
-        increment_matches = re.findall(
-            rf"N\s*\(\s*({number})\s*\)\s*-\s*N\s*\(\s*({number})\s*\)",
-            normalized,
-            re.IGNORECASE,
-        )
-        if len(increment_matches) != 1:
-            return None
-        upper_raw, lower_raw = increment_matches[0]
-        try:
-            upper = Fraction(upper_raw)
-            lower = Fraction(lower_raw)
-        except (ValueError, ZeroDivisionError):
-            return None
-        duration = upper - lower
-        if duration <= 0:
-            return None
-
-        conditioning = re.findall(
-            rf"N\s*\(\s*({number})\s*\)\s*=\s*(\d+)",
-            normalized,
-            re.IGNORECASE,
-        )
-        if len(conditioning) != 1:
-            return None
-        condition_time_raw, condition_count_raw = conditioning[0]
-        try:
-            condition_time = Fraction(condition_time_raw)
-        except (ValueError, ZeroDivisionError):
-            return None
-        if condition_time != lower:
-            return None
-        condition_count = int(condition_count_raw)
-        if condition_count < 0:
-            return None
-        if not re.search(
-            r"条件分布|给定[^。！？!?]{0,120}(?:时|条件下)[^。！？!?]{0,120}分布|"
-            r"\bconditional\s+distribution\b|\bdistribution\b[^.!?]{0,120}\bgiven\b|"
-            r"\bgiven\b[^.!?]{0,160}\bdistribution\b",
-            normalized,
-            re.IGNORECASE,
-        ):
-            return None
-        if re.search(
-            r"期望|均值|方差|协方差|概率|到达时间|等待时间|矩母函数|证明|推导|"
-            r"\b(?:expectation|expected\s+value|mean|variance|covariance|probability|"
-            r"arrival\s+time|waiting\s+time|moment[- ]generating\s+function|prove|derive)\b",
-            normalized,
-            re.IGNORECASE,
-        ):
-            return None
-
-        if symbolic_rate:
-            if duration == 1:
-                parameter = r"\lambda"
-            elif duration.denominator == 1:
-                parameter = rf"{duration.numerator}\lambda"
-            else:
-                parameter = rf"\frac{{{duration.numerator}}}{{{duration.denominator}}}\lambda"
-        else:
-            parameter_value = duration * rate_value
-            parameter = (
-                str(parameter_value.numerator)
-                if parameter_value.denominator == 1
-                else rf"\frac{{{parameter_value.numerator}}}{{{parameter_value.denominator}}}"
-            )
-        increment = rf"N({upper_raw})-N({lower_raw})"
-        condition = rf"N({condition_time_raw})={condition_count}"
-        result = (
-            rf"{increment}\mid {condition}\sim"
-            rf"\operatorname{{Poisson}}({parameter})"
-        )
-        if SympyTool._uses_english_prose(problem):
-            support = (
-                rf"By independent increments, \({increment}\) is independent of "
-                rf"\({condition}\) and has parameter rate times interval length. Hence "
-                rf"\({result}\)."
-            )
-        else:
-            support = (
-                rf"由泊松过程的独立增量性，\({increment}\) 与过去事件 \({condition}\) 独立，"
-                rf"其参数为强度乘区间长度，故 \({result}\)。"
-            )
-        return f"本地泊松过程独立增量: {support}"
-
-    @staticmethod
-    def _finite_discrete_moments_hint(problem: str) -> Optional[str]:
-        """Compute exact mean and variance from a complete finite probability table."""
-        text = re.sub(r"\s+", " ", str(problem or "")).strip()
-        chinese = re.search(
-            r"随机变量\s*([A-Za-z])\s*取值\s*([^，。；;]+?)\s*(?:且|，)?\s*"
-            r"概率分别为\s*([^，。；;]+?)(?=\s*[，,]?\s*(?:求|计算))",
-            text,
-            re.IGNORECASE,
-        )
-        english = re.search(
-            r"random\s+variable\s+([A-Za-z])\s+takes?\s+(?:the\s+)?values?\s*"
-            r"([^.;]+?)\s+with\s+(?:respective\s+)?probabilities\s*"
-            r"([^.;]+?)(?=\s*[.;,]?\s*(?:find|compute|calculate))",
-            text,
-            re.IGNORECASE,
-        )
-        match = chinese or english
-        if not match:
-            return None
-        variable = match.group(1)
-        if not (
-            re.search(rf"E\s*\[\s*{re.escape(variable)}\s*\]", text, re.IGNORECASE)
-            and re.search(rf"Var\s*\(\s*{re.escape(variable)}\s*\)", text, re.IGNORECASE)
-        ):
-            return None
-        if re.search(
-            r"协方差|分布函数|特征函数|矩母函数|偏度|峰度|条件期望|"
-            r"\b(?:covariance|distribution\s+function|characteristic\s+function|"
-            r"moment[- ]generating|skewness|kurtosis|conditional\s+expectation)\b",
-            text,
-            re.IGNORECASE,
-        ):
-            return None
-
-        def parse_list(raw: str) -> Optional[list[Fraction]]:
-            tokens = [token.strip() for token in re.split(r"[,，、]", raw) if token.strip()]
-            try:
-                return [Fraction(token) for token in tokens]
-            except (ValueError, ZeroDivisionError):
-                return None
-
-        values = parse_list(match.group(2))
-        probabilities = parse_list(match.group(3))
-        if (
-            not values
-            or not probabilities
-            or len(values) != len(probabilities)
-            or not 2 <= len(values) <= 20
-            or len(set(values)) != len(values)
-            or any(probability < 0 for probability in probabilities)
-            or sum(probabilities, Fraction()) != 1
-        ):
-            return None
-        expectation = sum(
-            (value * probability for value, probability in zip(values, probabilities)),
-            Fraction(),
-        )
-        second_moment = sum(
-            (value * value * probability for value, probability in zip(values, probabilities)),
-            Fraction(),
-        )
-        variance = second_moment - expectation * expectation
-
-        def render(value: Fraction) -> str:
-            return str(value.numerator) if value.denominator == 1 else f"{value.numerator}/{value.denominator}"
-
-        return (
-            f"本地有限离散分布矩: E[{variable}]={render(expectation)}，"
-            f"Var({variable})={render(variance)}"
-        )
-
-    @staticmethod
-    def _two_sided_z_rejection_hint(problem: str) -> Optional[str]:
-        """Return the standard two-sided Z rejection region at common levels."""
-        text = re.sub(r"\s+", " ", str(problem or "")).strip()
-        if not (
-            re.search(r"双侧\s*Z\s*检验|two[- ]sided\s+Z[- ]?test", text, re.IGNORECASE)
-            and re.search(r"拒绝域|rejection\s+region", text, re.IGNORECASE)
-            and re.search(r"临界值|critical\s+values?", text, re.IGNORECASE)
-        ):
-            return None
-        if re.search(r"单侧|one[- ]sided|t\s*检验|t[- ]?test", text, re.IGNORECASE):
-            return None
-        level = re.search(
-            r"(?:显著性水平|significance\s+level)\s*(?:为|=|of|is)?\s*"
-            r"(0\.10|0\.05|0\.02|0\.01)(?!\d)",
-            text,
-            re.IGNORECASE,
-        )
-        if not level:
-            return None
-        critical_values = {
-            "0.10": "1.645",
-            "0.05": "1.96",
-            "0.02": "2.326",
-            "0.01": "2.576",
-        }
-        critical = critical_values[level.group(1)]
-        return f"本地双侧Z检验拒绝域: |Z|>{critical}"
-
-    @staticmethod
-    def _simple_random_walk_hint(problem: str) -> Optional[str]:
-        """Return exact first and second moments for a named simple symmetric walk."""
-        text = str(problem or "")
-        if not re.search(r"简单对称随机游走|simple\s+symmetric\s+random\s+walk", text, re.IGNORECASE):
-            return None
-        if not re.search(r"从\s*0\s*出发|S_?\{?0\}?\s*=\s*0|starts?\s+(?:at|from)\s+0", text, re.IGNORECASE):
-            return None
-        expectation = re.search(r"E\s*\[\s*S_?\{?(\d+)\}?\s*\]", text, re.IGNORECASE)
-        variance = re.search(r"Var\s*\(\s*S_?\{?(\d+)\}?\s*\)", text, re.IGNORECASE)
-        if not expectation or not variance or expectation.group(1) != variance.group(1):
-            return None
-        step = int(expectation.group(1))
-        return (
-            f"本地随机游走矩: E[S_{step}]=0，Var(S_{step})={step}；由独立增量，"
-            f"E[S_{step}]={step}E[X_1]，Var(S_{step})={step}Var(X_1)"
-        )
-
-    @staticmethod
-    def _complete_graph_cover_time_hint(problem: str) -> Optional[str]:
-        """Exact coupon-collector expectation for a complete-graph walk."""
-        text = str(problem or "")
-        numeric_graph = re.search(r"完全图\s*\$?K_?\{?(\d+)\}?\$?", text)
-        if numeric_graph:
-            size = int(numeric_graph.group(1))
-            words = {
-                "一": 1, "二": 2, "两": 2, "三": 3, "四": 4, "五": 5,
-                "六": 6, "七": 7, "八": 8, "九": 9, "十": 10,
-            }
-            all_vertices = re.search(r"首次访问全部([一二两三四五六七八九十\d]+)个顶点", text)
-            alternatives = re.search(r"每一步等概率走向另外([一二两三四五六七八九十\d]+)个顶点", text)
-
-            def parse_count(value: str) -> Optional[int]:
-                return int(value) if value.isdigit() else words.get(value)
-
-            if (
-                2 <= size <= 10**6
-                and all_vertices and parse_count(all_vertices.group(1)) == size
-                and alternatives and parse_count(alternatives.group(1)) == size - 1
-                and re.search(r"简单随机游走", text)
-                and re.search(r"期望", text)
-                and not re.search(r"懒惰|加权|自环", text)
-            ):
-                expectation = (size - 1) * sum(
-                    (Fraction(1, index) for index in range(1, size)),
-                    Fraction(),
-                )
-                answer = (
-                    str(expectation.numerator)
-                    if expectation.denominator == 1
-                    else f"{expectation.numerator}/{expectation.denominator}"
-                )
-                return f"本地完全图覆盖时间: {answer}"
-        if not re.search(
-            r"(?:\$\s*)?N(?:\s*\$|\\\))?\s*个顶点的完全图|"
-            r"complete\s+graph\s+(?:on|with)\s+(?:\$\s*)?N(?:\s*\$)?\s+vertices",
-            text,
-            re.IGNORECASE,
-        ):
-            return None
-        if not re.search(r"首次遍访所有顶点|cover\s+time|visited?\s+all\s+vertices", text, re.IGNORECASE):
-            return None
-        if not re.search(r"简单随机游动|simple\s+random\s+walk", text, re.IGNORECASE):
-            return None
-        if re.search(r"lazy|weighted|加权|懒惰|自环|self[- ]?loop", text, re.IGNORECASE):
-            return None
-        if not re.search(r"(?:求|find|compute)\s*E\s*T|期望", text, re.IGNORECASE):
-            return None
-        return r"本地完全图覆盖时间: (N-1)\sum_{j=1}^{N-1}\frac{1}{j}"
-
-    @staticmethod
-    def _two_venue_capacity_hint(problem: str) -> Optional[str]:
-        """Invert an exact symmetric binomial tail for two equiprobable venues."""
-        text = str(problem or "")
-        population = re.search(r"(\d+)\s*名(?:市民|观众|顾客)", text)
-        threshold = re.search(r"概率不超过\s*([0-9]+(?:\.[0-9]+)?)", text)
-        if not population or not threshold:
-            return None
-        if not re.search(r"两个(?:剧院|场馆).*(?:独立)?等可能", text, re.DOTALL):
-            return None
-        if not re.search(
-            r"(?:每个|各).*?有\s*(?:\\\(\s*)?[xX](?:\s*\\\))?\s*个座位|"
-            r"(?:\\\(\s*)?[xX](?:\s*\\\))?\s*的最小值",
-            text,
-            re.DOTALL,
-        ):
-            return None
-        count = int(population.group(1))
-        if count < 1 or count > 20000:
-            return None
-        probability = Fraction(threshold.group(1))
-        total_outcomes = 1 << count
-        tail = 0
-        largest_tail_index = -1
-        for index in range(0, count // 2):
-            proposed = tail + math.comb(count, index)
-            if 2 * proposed * probability.denominator > probability.numerator * total_outcomes:
-                break
-            tail = proposed
-            largest_tail_index = index
-        capacity = count - largest_tail_index - 1
-        return f"本地二项分布容量: {capacity}"
-
-    @staticmethod
-    def _circle_laplacian_hint(problem: str) -> Optional[str]:
-        """Separate the ambient Laplacian from the circle Laplace--Beltrami operator."""
-        text = str(problem or "")
-        compact = re.sub(r"\s+", "", text).lower()
-        if re.search(
-            r"bi\s*[-–—]?\s*laplacian|biharmonic|双拉普拉斯|双调和|"
-            r"weighted\s+laplacian|加权拉普拉斯|p\s*[-–—]?\s*laplacian|p\s*[-–—]?\s*拉普拉斯",
-            text,
-            re.IGNORECASE,
-        ):
-            return None
-        if not re.search(r"拉普拉斯|laplacian|laplace\s*[-–—]?\s*beltrami", text, re.IGNORECASE):
-            return None
-        expression = bool(re.search(
-            r"f\(x,y\)=x(?:\^\{?2\}?|²)\+y(?:\^\{?2\}?|²)", compact,
-        ))
-        circle = bool(
-            re.search(r"圆周|circle|s\^?1", text, re.IGNORECASE)
-            and re.search(
-                r"x(?:\^\{?2\}?|²)\+y(?:\^\{?2\}?|²)="
-                r"(?:1|[1-9]\d*(?:\^\{?2\}?|²)?|[a-z](?:\^\{?2\}?|²))",
-                compact,
-                re.IGNORECASE,
-            )
-        )
-        if not (expression and circle):
-            return None
-
-        explicit_intrinsic = bool(re.search(
-            r"laplace\s*[-–—]?\s*beltrami|laplacebeltrami|"
-            r"拉普拉斯\s*[-–—]?\s*贝尔特拉米|拉普拉斯贝尔特拉米|"
-            r"内蕴拉普拉斯|intrinsic\s+laplacian|"
-            r"(?:限制函数|限制到|restriction\s+of|restricted\s+to|f\s*\|)"
-            r"[^。.!?]{0,40}(?:拉普拉斯|laplacian)",
-            text,
-            re.IGNORECASE,
-        ))
-        explicit_ambient = bool(re.search(
-            r"环境拉普拉斯|欧氏拉普拉斯|ambient\s+laplacian|euclidean\s+laplacian|"
-            r"\\Delta_?\{?\\mathbb\s*\{?R\}?\^?2\}?",
-            text,
-            re.IGNORECASE,
-        ))
-        explicit_ambiguity = bool(
-            re.search(
-                r"(?:环境|欧氏|ambient|euclidean).{0,30}(?:还是|或|或者|or|versus|vs\.?)"
-                r".{0,30}(?:内蕴|贝尔特拉米|intrinsic|beltrami)|"
-                r"(?:内蕴|贝尔特拉米|intrinsic|beltrami).{0,30}"
-                r"(?:还是|或|或者|or|versus|vs\.?).{0,30}(?:环境|欧氏|ambient|euclidean)|"
-                r"(?:未说明|不明确|有歧义|unspecified|ambiguous).{0,20}"
-                r"(?:拉普拉斯|laplacian)",
-                text,
-                re.IGNORECASE,
-            )
-            or (explicit_intrinsic and explicit_ambient)
-        )
-        needs_support = bool(re.search(
-            r"证明|推导|解释|说明理由|"
-            r"\b(?:prove|derive|justify|explain|show\s+why)\b",
-            text,
-            re.IGNORECASE,
-        ))
-
-        if explicit_ambiguity:
-            return (
-                "本地圆周拉普拉斯歧义核验: "
-                r"若指环境算子，则 \(\Delta_{\mathbb R^2}f=f_{xx}+f_{yy}=2+2=4\)；"
-                r"若指限制函数的 Laplace--Beltrami 算子，则 \(f|_{S^1}\) 为常数，故值为 \(0\)"
-            )
-        if explicit_intrinsic:
-            label = "本地圆周Laplace-Beltrami核验" if needs_support else "本地圆周Laplace-Beltrami"
-            return f"{label}: 0"
-        if explicit_ambient:
-            label = "本地圆周拉普拉斯核验" if needs_support else "本地圆周拉普拉斯"
-            return f"{label}: 4"
-        return (
-            "本地圆周拉普拉斯歧义核验: "
-            r"若指环境算子，则 \(\Delta_{\mathbb R^2}f=f_{xx}+f_{yy}=2+2=4\)；"
-            r"若指限制函数的 Laplace--Beltrami 算子，则 \(f|_{S^1}\) 为常数，故值为 \(0\)"
-        )
-
-    @staticmethod
-    def _central_difference_hint(problem: str) -> Optional[str]:
-        """Compute the named centered first-difference formula for sin."""
-        text = str(problem or "")
-        if not re.search(r"中心差分|central\s+difference", text, re.IGNORECASE):
-            return None
-        if not re.search(r"f\s*\(\s*x\s*\)\s*=\s*(?:\\sin|sin)\s*\(\s*x\s*\)", text, re.IGNORECASE):
-            return None
-        point = re.search(r"x\s*=\s*(?:\\pi|π)\s*/\s*(\d+)", text, re.IGNORECASE)
-        step = re.search(r"h\s*=\s*(\d+(?:\.\d+)?)", text, re.IGNORECASE)
-        if not point or not step:
-            return None
-        denominator = int(point.group(1))
-        h_value = float(step.group(1))
-        if denominator <= 0 or not (0 < h_value <= 1):
-            return None
-        x_value = math.pi / denominator
-        approximation = (
-            math.sin(x_value + h_value) - math.sin(x_value - h_value)
-        ) / (2 * h_value)
-        point_text = rf"\pi/{denominator}"
-        return (
-            "本地中心差分: 中心差分公式 "
-            rf"\frac{{\sin({point_text}+{h_value:g})-\sin({point_text}-{h_value:g})}}"
-            rf"{{2\times {h_value:g}}}\approx {approximation:.4f}"
-        )
-
-    @staticmethod
-    def _rational_f2_constraint_hint(problem: str) -> Optional[str]:
-        """Propagate the exact parity invariant generated by three rational involutions."""
-        text = re.sub(r"\s+", " ", str(problem or "")).strip()
-        function = re.search(
-            r"([A-Za-z])\s*:\s*\\mathbb\s*\{Q\}\s*\\rightarrow\s*"
-            r"\\mathbb\s*\{F\}\s*_?\s*\{?2\}?",
-            text,
-        )
-        if not function:
-            return None
-        name = re.escape(function.group(1))
-        if not re.search(
-            rf"{name}\s*\(\s*r\s*\)\s*\+\s*{name}\s*\(\s*r['’]?\s*\)\s*=\s*1",
-            text,
-            re.IGNORECASE,
-        ):
-            return None
-        if not re.search(r"distinct\s+rational\s+numbers", text, re.IGNORECASE):
-            return None
-        required_relations = (
-            r"r\s*\+\s*r['’]?\s*=\s*0",
-            r"r\s*\+\s*r['’]?\s*=\s*1",
-            r"r\s*r['’]?\s*=\s*1",
-        )
-        if any(not re.search(pattern, text, re.IGNORECASE) for pattern in required_relations):
-            return None
-        seed = re.search(
-            rf"{name}\s*\(\s*([+-]?\d+)\s*/\s*(\d+)\s*\)\s*=\s*([01])",
-            text,
-        )
-        request = re.search(r"\b(?:evaluate|compute|find)\b", text, re.IGNORECASE)
-        if not seed or not request:
-            return None
-        denominator = int(seed.group(2))
-        if denominator == 0:
-            return None
-        seed_value = Fraction(int(seed.group(1)), denominator)
-        seed_bit = int(seed.group(3))
-        query = text[request.end():]
-        terms = re.findall(
-            rf"{name}\s*\(\s*([+-]?\d+)(?:\s*/\s*(\d+))?\s*\)",
-            query,
-        )
-        if not terms or len(terms) > 100:
-            return None
-        rationals = []
-        for numerator_text, denominator_text in terms:
-            term_denominator = int(denominator_text or "1")
-            if term_denominator == 0:
-                return None
-            rationals.append(Fraction(int(numerator_text), term_denominator))
-
-        seed_colour = SympyTool._rational_involution_colour(seed_value)
-        result = 0
-        for value in rationals:
-            result ^= seed_bit ^ seed_colour ^ SympyTool._rational_involution_colour(value)
-        needs_support = bool(re.search(
-            r"\b(?:prove|justify|explain|derive|show\s+why)\b",
-            query,
-            re.IGNORECASE,
-        ))
-        label = "本地有理数约束传播核验" if needs_support else "本地有理数约束传播答案"
-        return f"{label}: {result}"
-
-    @staticmethod
-    def _rational_involution_colour(value: Fraction) -> int:
-        """Two-colour Q for edges r~-r, r~1-r and r~1/r."""
-        if value == 0:
-            return 1
-        flips = int(value < 0)
-        numerator = abs(value.numerator)
-        denominator = value.denominator
-        while numerator != denominator:
-            if numerator > denominator:
-                # Repeated integer translations use two involutions and keep colour.
-                numerator = (numerator - 1) % denominator + 1
-            else:
-                numerator, denominator = denominator, numerator
-                flips ^= 1
-        return flips
-
-    @staticmethod
-    def _digit_sum_window_hint(problem: str) -> Optional[str]:
-        """Find the first window whose digit sums all avoid a requested divisor."""
-        text = re.sub(r"\s+", " ", str(problem or "")).strip()
-        if not re.search(
-            r"S\s*\(\s*n\s*\)\s*\$?\s+(?:be|is).*?sum\s+of\s+the\s+digits.*?"
-            r"decimal\s+representation.*?positive\s+integer",
-            text,
-            re.IGNORECASE,
-        ):
-            return None
-        if not re.search(r"smallest\s+positive\s+integer\s+\$?n\$?", text, re.IGNORECASE):
-            return None
-        offset = re.search(
-            r"S\s*\(\s*n\s*\)\s*S\s*\(\s*n\s*\+\s*1\s*\)\s*"
-            r"(?:\\cdots|\\dots|\.\.\.).*?S\s*\(\s*n\s*\+\s*(\d+)\s*\)",
-            text,
-            re.IGNORECASE,
-        )
-        modulus = re.search(r"not\s+a\s+multiple\s+of\s+\$?(\d+)\$?", text, re.IGNORECASE)
-        if not offset or not modulus:
-            return None
-        window_offset = int(offset.group(1))
-        divisor = int(modulus.group(1))
-        if not 1 <= window_offset <= 200 or not 2 <= divisor <= 100:
-            return None
-        window_size = window_offset + 1
-        search_limit = 2_000_000
-
-        def divisible_digit_sum(number: int) -> int:
-            total = 0
-            value = number
-            while value:
-                total += value % 10
-                value //= 10
-            return int(total % divisor == 0)
-
-        bad = sum(divisible_digit_sum(number) for number in range(1, window_size + 1))
-        answer = None
-        for start in range(1, search_limit + 1):
-            if bad == 0:
-                answer = start
-                break
-            bad -= divisible_digit_sum(start)
-            bad += divisible_digit_sum(start + window_size)
-        if answer is None:
-            return None
-        needs_support = bool(re.search(
-            r"\b(?:prove|justify|explain|derive|show\s+that)\b",
-            text,
-            re.IGNORECASE,
-        ))
-        label = "本地数位和窗口最小性核验" if needs_support else "本地数位和窗口答案"
-        return f"{label}: {answer}"
-
-    @staticmethod
-    def _number_writing_game_hint(problem: str) -> Optional[str]:
-        """Exhaust a fully specified ``n+1``/``2n`` normal-play game.
-
-        The matcher intentionally verifies every rule needed to identify a game
-        position.  A computed value is only labelled as a complete answer when
-        the prompt asks for that value alone; requested proofs or strategies
-        still receive the value as local evidence for the model solver.
-        """
-        text = str(problem or "")
-        compact = re.sub(r"\s+", " ", text).strip()
-        if not re.search(
-            r"two\s+players\s+[\$({]*A[\$)}]*\s+and\s+[\$({]*B[\$)}]*.*?"
-            r"taking\s+turns\s+writing\s+numbers?",
-            compact,
-            re.IGNORECASE,
-        ):
-            return None
-        required_rules = (
-            r"set\s*\$?\\?\{\s*1\s*,\s*(?:\\dots|\\ldots|\.\.\.)\s*,\s*N\s*\\?\}\$?",
-            r"\$?N\$?\s+is\s+a\s+positive\s+integer",
-            r"player\s*\$?A\$?\s+starts?\s+(?:the\s+game\s+)?by\s+writing\s+(?:the\s+number\s+)?\$?1\$?",
-            r"if\s+a\s+player\s+writes?\s+(?:the\s+number\s+)?\$?n\$?.*?"
-            r"other\s+player\s+can\s+write\s+either\s+\$?n\s*\+\s*1\$?\s+or\s+\$?2\s*n\$?",
-            r"provided\s+(?:that\s+)?the\s+number\s+does\s+not\s+exceed\s+\$?N(?!\s*[+\-*/])\$?",
-            r"player\s+who\s+writes?\s+(?:the\s+number\s+)?\$?N(?!\s*[+\-*/])\$?\s+wins?",
-            r"\$?N\$?\s+is\s+of\s+type\s+\$?A\$?.*?player\s+\$?A\$?\s+has\s+a\s+winning\s+strategy",
-            r"(?:\$?N\$?\s+is\s+|and\s+)of\s+type\s+\$?B\$?.*?"
-            r"player\s+\$?B\$?\s+has\s+a\s+winning\s+strategy",
-        )
-        if any(not re.search(rule, compact, re.IGNORECASE) for rule in required_rules):
-            return None
-        if re.search(
-            r"player\s+who\s+(?:cannot|can\s+not)\s+move|no\s+legal\s+move|"
-            r"may\s+also\s+write|instead\s+of",
-            compact,
-            re.IGNORECASE,
-        ):
-            return None
-        request = re.search(
-            r"find\s+the\s+least\s+\$?N\s*>\s*(\d+)\$?\s+such\s+that\s+"
-            r"it\s+is\s+a\s+type\s+\$?([AB])\$?\s+number",
-            compact,
-            re.IGNORECASE,
-        )
-        if not request:
-            return None
-        threshold = int(request.group(1))
-        requested_type = request.group(2).upper()
-        # Keep exhaustive search predictably cheap.  Refusing a larger instance
-        # is safer than presenting an unchecked heuristic as certified output.
-        if not 1 <= threshold <= 1000:
-            return None
-        search_limit = max(2048, 2 * threshold + 1024)
-        candidate = next(
-            (
-                limit
-                for limit in range(threshold + 1, search_limit + 1)
-                if SympyTool._number_game_type(limit) == requested_type
-            ),
-            None,
-        )
-        if candidate is None:
-            return None
-        request_tail = compact[request.end():]
-        needs_support = bool(re.search(
-            r"\b(?:prove|justify|explain|derive|show\s+that|give|describe)\b.*?"
-            r"\b(?:strategy|reason|proof|derivation)\b",
-            compact,
-            re.IGNORECASE,
-        ) or re.search(r"\b(?:also|in\s+addition|and\s+then)\b", request_tail, re.IGNORECASE))
-        label = "本地取数博弈状态核验" if needs_support else "本地取数博弈答案"
-        return f"{label}: {candidate}"
-
-    @staticmethod
-    def _number_game_type(limit: int) -> str:
-        """Return the winning player's type after A has written the initial 1."""
-        winning = bytearray(limit + 1)
-        for current in range(limit - 1, 0, -1):
-            plus_one_loses = not winning[current + 1]
-            doubled_loses = 2 * current <= limit and not winning[2 * current]
-            winning[current] = plus_one_loses or doubled_loses
-        # At position 1 it is B's turn.  A losing position for that player means
-        # the initial writer A has the winning strategy.
-        return "B" if winning[1] else "A"
-
-    @staticmethod
-    def _path_independent_set_partition_hint(problem: str) -> Optional[str]:
-        """Compute the hard-core partition polynomial of an explicitly named path."""
-        text = str(problem or "")
-        compact = re.sub(r"\s+", " ", text).strip()
-        if not re.search(
-            r"(?:let\s+)?\$?P_?\{?n\}?\$?\s+(?:be|is)\s+a\s+path\s+on\s+"
-            r"\$?n\$?\s+vertices",
-            compact,
-            re.IGNORECASE,
-        ):
-            return None
-        if not re.search(
-            r"\$?\\lambda\$?\s+(?:be|is)\s+a\s+positive\s+real\s+number",
-            compact,
-            re.IGNORECASE,
-        ):
-            return None
-        if not (
-            re.search(r"define\s+\$?Z_?\{?P_?\{?n\}?\}?\s*\(\s*\\lambda\s*\)", compact, re.IGNORECASE)
-            and re.search(r"=\s*\\sum_?\{?\s*I\s*\\in", compact, re.IGNORECASE)
-            and re.search(r"\\lambda\s*\^\s*\{?\s*\|\s*I\s*\|\s*\}?", compact, re.IGNORECASE)
-            and re.search(r"independent\s+sets?\s+of\s+\$?P_?\{?n\}?", compact, re.IGNORECASE)
-        ):
-            return None
-        request = re.search(
-            r"(?:compute|find|determine)\s+(?:the\s+value\s+of\s+)?\$?"
-            r"[zZ]_?\{?(?:P_?\{?)?(\d+)\}?\}?"
-            r"(?:\s*\(\s*\\lambda\s*\))?\$?\s+in\s+terms\s+of\s+\$?\\lambda\$?",
-            compact,
-            re.IGNORECASE,
-        )
-        if not request:
-            return None
-        vertices = int(request.group(1))
-        if not 1 <= vertices <= 100:
-            return None
-        polynomial = SympyTool._path_partition_polynomial(vertices)
-        request_tail = compact[request.end():]
-        needs_support = bool(re.search(
-            r"\b(?:prove|justify|explain|derive|show|establish)\b|"
-            r"(?:also|and)\s+(?:give|find|derive|show).*?\brecurrence\b",
-            compact,
-            re.IGNORECASE,
-        ) or re.search(r"\b(?:also|in\s+addition|and\s+then)\b", request_tail, re.IGNORECASE))
-        label = "本地路径配分函数递推核验" if needs_support else "本地路径配分函数答案"
-        return f"{label}: {polynomial}"
-
-    @staticmethod
-    def _path_partition_polynomial(vertices: int) -> str:
-        """Apply ``Z_n=Z_{n-1}+lambda*Z_{n-2}`` from ``Z_0,Z_1`` exactly."""
-        previous_two = [1]
-        previous_one = [1, 1]
-        for _ in range(2, vertices + 1):
-            coefficients = previous_one.copy()
-            if len(coefficients) < len(previous_two) + 1:
-                coefficients.append(0)
-            for size, coefficient in enumerate(previous_two, start=1):
-                coefficients[size] += coefficient
-            previous_two, previous_one = previous_one, coefficients
-        result = previous_one
-        terms = [str(result[0])]
-        for size, coefficient in enumerate(result[1:], start=1):
-            variable = r"\lambda" if size == 1 else rf"\lambda^{{{size}}}"
-            terms.append(variable if coefficient == 1 else f"{coefficient}{variable}")
-        return "+".join(terms)
-
-    @staticmethod
-    def _spike_sequence_construction_hint(problem: str) -> Optional[str]:
-        """Provide the canonical unit-mass spike only for its exact contract."""
-        text = str(problem or "")
-        english = SympyTool._uses_english_prose(text)
-        normalized = (
-            text.replace(r"\left", "")
-            .replace(r"\right", "")
-            .replace("，", ",")
-        )
-        construct = bool(re.search(
-            r"构造|写出.*(?:函数列|例子)|\b(?:construct|exhibit|give|find)\b.*?"
-            r"(?:sequence|example)",
-            normalized,
-            re.IGNORECASE | re.DOTALL,
-        ))
-        function_sequence = bool(re.search(
-            r"函数列|f\s*_?\s*\{?n\}?|sequence\s+of\s+(?:nonnegative\s+)?(?:measurable\s+)?functions?",
-            normalized,
-            re.IGNORECASE,
-        ))
-        convergence_context = bool(re.search(
-            r"逐点|收敛|趋于|极限|pointwise|converge|tend|limit",
-            normalized,
-            re.IGNORECASE,
-        ))
-        integral_context = bool(re.search(r"积分|\\int|\bintegrals?\b", normalized, re.IGNORECASE))
-        if not (construct and function_sequence and convergence_context and integral_context):
-            return None
-
-        exact_conditions = {
-            "domain": bool(re.search(r"\[\s*0\s*,\s*1\s*\]", normalized)),
-            "nonnegative": bool(re.search(r"非负|non[- ]?negative", normalized, re.IGNORECASE)),
-            "measurable": bool(re.search(r"可测|measurable", normalized, re.IGNORECASE)),
-            "pointwise_zero": bool(re.search(
-                r"逐点\s*(?:收敛|趋(?:于|向)|极限(?:为|是)?)\s*(?:到|至)?\s*0|"
-                r"(?:converges?|tends?)\s+pointwise\s+to\s+0|"
-                r"pointwise.{0,24}(?:converges?|tends?|limit).{0,12}0",
-                normalized,
-                re.IGNORECASE,
-            )),
-            "unit_integral": bool(re.search(
-                r"积分\s*(?:恒|始终)?\s*(?:等于|为|=)\s*1(?![\d/.])|"
-                r"(?:integral|\\int).{0,40}(?:equals?|equal\s+to|is|=)\s*1(?![\d/.])",
-                normalized,
-                re.IGNORECASE,
-            )),
-            "formula": bool(re.search(
-                r"具体公式|显式公式|写出.{0,12}公式|explicit\s+formula|"
-                r"(?:give|write|state).{0,16}(?:formula|expression)",
-                normalized,
-                re.IGNORECASE,
-            )),
-        }
-        extra_obligation = bool(re.search(
-            r"证明|说明(?:理由|为什么|为何)|解释|验证|推广|比较|讨论|"
-            r"并\s*(?:求|计算|证明|说明|验证|比较|讨论)|"
-            r"范数|上确界|下确界|一致收敛|依测度收敛|控制收敛|"
-            r"\b(?:prove|justify|explain|verify|generalize|compare|discuss|also|"
-            r"supremum|infimum|norm|uniform\s+convergence|convergence\s+in\s+measure|"
-            r"dominated\s+convergence)\b",
-            normalized,
-            re.IGNORECASE,
-        ))
-        result = (
-            (
-                r"Take \(f_n(x)=n\mathbf{1}_{(0,1/n]}(x)\) for \(x\in[0,1]\). "
-                r"It is nonnegative and measurable, \(f_n(x)\to0\) pointwise on \([0,1]\), "
-                r"and \(\int_0^1 f_n(x)\,dx=1\)."
-            )
-            if english else (
-                r"取 f_n(x)=n\mathbf{1}_{(0,1/n]}(x)\ (x\in[0,1])；"
-                r"则 f_n\geq0 且可测，逐点 f_n(x)\to0\ (\forall x\in[0,1])，"
-                r"积分为 \int_0^1 f_n(x)\,dx=1。"
-            )
-        )
-        if not all(exact_conditions.values()) or extra_obligation:
-            missing = ",".join(name for name, present in exact_conditions.items() if not present)
-            reason = "存在额外证明或计算义务" if extra_obligation else f"标准条件未完整匹配({missing})"
-            return f"本地尖峰函数构造核验: {result} 仅核验上述标准构造；{reason}。"
-        return f"本地尖峰函数构造答案: {result}"
-
-    @staticmethod
-    def _dependent_bernoulli_construction_hint(problem: str) -> Optional[str]:
-        """Construct perfectly dependent fair Bernoulli marginals when asked exactly."""
-        text = str(problem or "")
-        english = SympyTool._uses_english_prose(text)
-        normalized = re.sub(r"\s+", " ", text).strip()
-        construct = bool(re.search(r"构造|\b(?:construct|exhibit|give)\b", normalized, re.IGNORECASE))
-        random_variables = bool(re.search(
-            r"随机变量|random\s+variables?",
-            normalized,
-            re.IGNORECASE,
-        ))
-        bernoulli = bool(re.search(r"Bernoulli|伯努利", normalized, re.IGNORECASE))
-        dependence_context = bool(re.search(
-            r"独立|不(?:相互)?独立|非独立|not\s+independent|\bdependent\b|\bindependent\b",
-            normalized,
-            re.IGNORECASE,
-        ))
-        if not (construct and random_variables and bernoulli and dependence_context):
-            return None
-
-        fair = r"(?:Bernoulli|伯努利)\s*[（(]\s*(?:1\s*/\s*2|0\.5)\s*[）)]"
-        two_variables = bool(re.search(
-            r"两个.{0,60}随机变量|random\s+variables?\s+X\s+and\s+Y|"
-            r"two\s+(?:Bernoulli\s+)?random\s+variables?",
-            normalized,
-            re.IGNORECASE,
-        ))
-        fair_marginals = bool(
-            re.search(
-                rf"(?:两个)?边缘(?:分布)?.{{0,12}}(?:均|都).{{0,12}}{fair}|"
-                rf"both\s+(?:marginals?|marginal\s+distributions?).{{0,12}}{fair}|"
-                rf"(?:marginals?|marginal\s+distributions?).{{0,12}}(?:are\s+)?both.{{0,12}}{fair}|"
-                rf"X\s+and\s+Y.{{0,20}}(?:both|each).{{0,16}}{fair}",
-                normalized,
-                re.IGNORECASE,
-            )
-        )
-        not_independent = bool(re.search(
-            r"不(?:相互)?独立|非独立|not\s+independent|\bdependent\b",
-            normalized,
-            re.IGNORECASE,
-        ))
-        equality_probability = bool(re.search(
-            r"(?:P|\\mathbb\s*\{P\})\s*[（(]\s*X\s*=\s*Y\s*[）)]",
-            normalized,
-            re.IGNORECASE,
-        ))
-
-        probability_events = [
-            re.sub(r"\s+", "", event).upper()
-            for event in re.findall(
-                r"(?:P|\\mathbb\s*\{P\})\s*[（(]\s*([^）)]+)\s*[）)]",
-                normalized,
-                re.IGNORECASE,
-            )
-        ]
-        extra_probability = any(event not in {"X=Y", "Y=X"} for event in probability_events)
-        extra_obligation = extra_probability or bool(re.search(
-            r"证明|说明(?:理由|为什么|为何)|解释|验证|协方差|相关系数|相关性|"
-            r"联合分布(?:表)?|条件概率|期望|方差|熵|互信息|不相关|"
-            r"\b(?:prove|justify|explain|verify|covariance|correlation|uncorrelated|"
-            r"joint\s+distribution|conditional\s+probability|expectation|variance|"
-            r"entropy|mutual\s+information)\b",
-            normalized,
-            re.IGNORECASE,
-        ))
-        result = (
-            (
-                r"Let \(P((X,Y)=(0,0))=P((X,Y)=(1,1))=1/2\), with probability zero "
-                r"otherwise (equivalently, \(X\sim\operatorname{Bernoulli}(1/2)\) and \(Y=X\)). "
-                r"Both marginals are \(\operatorname{Bernoulli}(1/2)\), and "
-                r"\(P(X=1,Y=1)=1/2\neq1/4=P(X=1)P(Y=1)\), so they are not independent; "
-                r"\(P(X=Y)=1\)."
-            )
-            if english else (
-                r"取 P((X,Y)=(0,0))=P((X,Y)=(1,1))=1/2，其余情形概率为0（即 "
-                r"X\sim\operatorname{Bernoulli}(1/2),\ Y=X）。两边缘均为 "
-                r"\operatorname{Bernoulli}(1/2)，且 P(X=1,Y=1)=1/2\neq1/4="
-                r"P(X=1)P(Y=1)，故 X,Y 不独立；所求概率 P=1，即 P(X=Y)=1。"
-            )
-        )
-        exact = two_variables and fair_marginals and not_independent and equality_probability
-        if not exact or extra_obligation:
-            reason = "存在额外证明或计算义务" if extra_obligation else "公平Bernoulli边缘、非独立或目标概率条件未完整匹配"
-            return f"本地Bernoulli依赖构造核验: {result} 仅核验上述标准构造；{reason}。"
-        return f"本地Bernoulli依赖构造答案: {result}"
-
-    @staticmethod
-    def _uses_english_prose(problem: str) -> bool:
-        """Choose tool-answer prose without counting one-letter math variables."""
-        value = re.sub(
-            r"\$.*?\$|\\\(.*?\\\)|\\\[.*?\\\]",
-            " ",
-            str(problem or ""),
-            flags=re.DOTALL,
-        )
-        chinese_chars = len(re.findall(r"[\u4e00-\u9fff]", value))
-        english_words = len(re.findall(r"\b[A-Za-z]{2,}\b", value))
-        return english_words >= 2 and english_words > chinese_chars
-
-    @staticmethod
-    def _lz78_encoding_hint(problem: str) -> Optional[str]:
-        """Encode a fully specified, standard fixed-width LZ78 exercise.
-
-        A complete answer is certified only for the empty-dictionary LZ78
-        convention (empty string at index 0), an explicit one-character binary
-        alphabet map, and an input that ends when a new phrase is emitted.  The
-        final dictionary has ``m`` phrases, so every prefix index that an output
-        pair may contain lies in ``0,...,m-1`` and needs ``ceil(log2(m))`` bits.
-        Variant or incomplete statements still receive a deterministic phrase
-        check, but are never presented as a complete encoded answer.
-        """
-        text = str(problem or "")
-        explicit_lz78 = bool(re.search(r"\bLZ[- ]?\s*78\b", text, re.IGNORECASE))
-        generic_lempel_ziv = bool(re.search(r"\bLempel[- ]Ziv\b", text, re.IGNORECASE))
-        if not (explicit_lz78 or generic_lempel_ziv):
-            return None
-        if re.search(r"\bLZ\s*77\b|sliding\s+window|滑动窗口", text, re.IGNORECASE):
-            return None
-        asks_phrases = bool(re.search(
-            r"(?:decomposition\s+into\s+phrases|phrase\s+decomposition|"
-            r"decompos(?:e|ition).*?phrases?|短语分解|分解.*?短语)",
-            text,
-            re.IGNORECASE | re.DOTALL,
-        ))
-        asks_encoding = bool(re.search(
-            r"(?:encoded\s+string|encode(?:d|s|ing)?\s+(?:the\s+)?(?:message|string)|"
-            r"编码(?:串|结果|该?(?:消息|字符串)))",
-            text,
-            re.IGNORECASE,
-        ))
-        if not (asks_phrases and asks_encoding):
-            return None
-
-        message = SympyTool._lz78_message(text)
-        if not message or len(message) > 10000:
-            return None
-        pairs, phrases, terminal_prefix = SympyTool._lz78_parse(message)
-        if not pairs:
-            return None
-
-        pair_text = ", ".join(f"({index},{symbol})" for index, symbol in pairs)
-        phrase_text = ", ".join(phrases)
-        base = f"Phrases: {phrase_text}; pairs: {pair_text}"
-        issues: list[str] = []
-        if not explicit_lz78:
-            issues.append(
-                "the Lempel-Ziv variant is unspecified; these values use standard empty-dictionary LZ78"
-            )
-        if terminal_prefix:
-            issues.append(
-                "the input ends in an existing dictionary phrase "
-                f"{terminal_prefix!r}, so an EOF convention is required"
-            )
-
-        mapping, mapping_issue = SympyTool._lz78_letter_mapping(text)
-        if mapping_issue:
-            issues.append(mapping_issue)
-        missing_symbols = sorted(set(message) - set(mapping))
-        if missing_symbols:
-            issues.append("the explicit bit mapping omits " + ", ".join(missing_symbols))
-
-        phrase_count = len(pairs)
-        derived_width = max(1, (phrase_count - 1).bit_length())
-        explicit_widths = SympyTool._lz78_explicit_index_widths(text)
-        if len(explicit_widths) > 1:
-            issues.append("conflicting index widths are stated")
-            index_width = derived_width
-        elif explicit_widths:
-            index_width = next(iter(explicit_widths))
-            if index_width < derived_width:
-                issues.append(
-                    f"the stated {index_width}-bit index cannot represent all prefix indices 0,...,{phrase_count - 1}"
-                )
-            elif index_width > 64:
-                issues.append("the stated index width is outside the supported deterministic range")
-        else:
-            index_width = derived_width
-
-        if re.search(
-            r"(?:index|indices|dictionary\s+entries?).{0,24}(?:start|begin)(?:s|ning)?\s+(?:at|from)\s+1|"
-            r"(?:索引|下标).{0,12}从\s*1\s*开始|"
-            r"(?:preloaded|initial(?:ly)?\s+contains|initial\s+dictionary\s+(?:is\s+)?(?:not\s+empty|contains)|"
-            r"预置字典|初始字典.{0,8}(?:非空|包含))|"
-            r"(?:variable|dynamic|adaptive)[- ](?:width|length)\s+(?:index|code)|"
-            r"(?:变长|动态|自适应).{0,8}(?:索引|编码)",
-            text,
-            re.IGNORECASE | re.DOTALL,
-        ):
-            issues.append("the problem specifies a nonstandard dictionary or index convention")
-
-        needs_support = bool(re.search(
-            r"\b(?:prove|justify|explain|derive|show\s+why)\b|证明|说明理由|解释|推导",
-            text,
-            re.IGNORECASE,
-        ))
-        if needs_support:
-            issues.append("the requested justification is not covered by the deterministic encoding result")
-
-        can_encode = (
-            not missing_symbols
-            and len(explicit_widths) <= 1
-            and index_width >= derived_width
-            and index_width <= 64
-        )
-        encoded_chunks = (
-            [f"{index:0{index_width}b}{mapping[symbol]}" for index, symbol in pairs]
-            if can_encode else []
-        )
-        encoded_check = (
-            f"; candidate encoded string: {' '.join(encoded_chunks)}"
-            if encoded_chunks else ""
-        )
-        if issues:
-            return (
-                f"本地LZ78编码核验: {base}{encoded_check}; "
-                f"verification only: {'; '.join(issues)}"
-            )
-
-        width_reason = (
-            f"stated index width: {index_width} bits"
-            if explicit_widths
-            else (
-                f"fixed index width: ceil(log2({phrase_count}))={index_width} bits "
-                f"for prefix indices 0,...,{phrase_count - 1}"
-            )
-        )
-        return (
-            f"本地LZ78编码答案: {base}; {width_reason}; "
-            f"encoded string: {' '.join(encoded_chunks)}"
-        )
-
-    @staticmethod
-    def _lz78_message(text: str) -> str:
-        """Extract one explicit alphanumeric message token from public text."""
-        patterns = (
-            r"(?:consider\s+the\s+)?message\s*(?:is|=|:|：)?\s*"
-            r"(?:\\texttt\s*\{|[`\"'$])?\s*([A-Za-z0-9]+)\s*(?:\}|[`\"'$])?",
-            r"(?:encode|compress)\s+(?:the\s+)?(?:message|string)\s*"
-            r"(?:\\texttt\s*\{|[`\"'$])?\s*([A-Za-z0-9]+)\s*(?:\}|[`\"'$])?",
-            r"(?:消息|报文|字符串)\s*(?:为|是|=|:|：)\s*"
-            r"(?:\\texttt\s*\{|[`\"'$])?\s*([A-Za-z0-9]+)\s*(?:\}|[`\"'$])?",
-        )
-        for pattern in patterns:
-            match = re.search(pattern, text, re.IGNORECASE)
-            if match and match.group(1).lower() not in {
-                "is", "the", "a", "an", "using", "obtained", "string",
+            value = self.sympy.simplify(self._parse(self._latex_to_sympy(expression)))
+            if value.has(self.sympy.nan, self.sympy.zoo) or value in {
+                self.sympy.nan, self.sympy.zoo,
             }:
-                return match.group(1)
-        return ""
-
-    @staticmethod
-    def _lz78_parse(message: str) -> tuple[list[tuple[int, str]], list[str], str]:
-        """Return standard LZ78 output pairs and any ambiguous terminal prefix."""
-        dictionary = {"": 0}
-        pairs: list[tuple[int, str]] = []
-        phrases: list[str] = []
-        position = 0
-        while position < len(message):
-            cursor = position
-            prefix = ""
-            while cursor < len(message) and prefix + message[cursor] in dictionary:
-                prefix += message[cursor]
-                cursor += 1
-            if cursor == len(message):
-                return pairs, phrases, prefix
-            symbol = message[cursor]
-            phrase = prefix + symbol
-            pairs.append((dictionary[prefix], symbol))
-            phrases.append(phrase)
-            dictionary[phrase] = len(dictionary)
-            position = cursor + 1
-        return pairs, phrases, ""
-
-    @staticmethod
-    def _lz78_letter_mapping(text: str) -> tuple[dict[str, str], str]:
-        normalized = (
-            text.replace(r"\rightarrow", "->")
-            .replace(r"\longrightarrow", "->")
-            .replace(r"\to", "->")
-            .replace("→", "->")
+                return None
+            result = self._format(value)
+        except Exception:
+            return None
+        return make_tool_result(
+            problem=text,
+            operation="calculate",
+            result=result,
+            result_kind="scalar",
+            method="sympy_exact_recompute",
+            whole=True,
+            checks=("full_statement_parse", "independent_recompute", "no_unparsed_suffix"),
+            answer_shapes=("number", "expression"),
+            requirements=("result_present", "numeric_result"),
         )
-        entries = re.findall(
-            r"(?<![A-Za-z0-9])([A-Za-z0-9])\s*->\s*([01]+)(?![01])",
-            normalized,
-        )
-        mapping: dict[str, str] = {}
-        for symbol, bits in entries:
-            if symbol in mapping and mapping[symbol] != bits:
-                return mapping, f"conflicting bit codes are given for {symbol}"
-            mapping[symbol] = bits
-        if not mapping:
-            return {}, "no explicit letter-to-bit mapping was found"
-        widths = {len(bits) for bits in mapping.values()}
-        if len(widths) != 1:
-            return mapping, "the explicit letter codes do not have one fixed width"
-        if len(set(mapping.values())) != len(mapping):
-            return mapping, "the explicit letter-to-bit mapping is not one-to-one"
-        return mapping, ""
 
-    @staticmethod
-    def _lz78_explicit_index_widths(text: str) -> set[int]:
-        widths: set[int] = set()
+    def _compile_derivative(self, text: str) -> Optional[ToolResult]:
+        parsed = self._parse_derivative_request(text)
+        if not parsed or not self._single_operation_request(text, "derivative"):
+            return None
+        expression, variable = parsed
+        result = self.derivative(self._latex_to_sympy(expression), variable)
+        if result is None:
+            return None
+        return make_tool_result(
+            problem=text,
+            operation="derivative",
+            result=result,
+            result_kind="expression",
+            method="sympy_differentiate_then_simplify",
+            whole=True,
+            checks=("full_statement_parse", "symbolic_differentiation", "no_unparsed_suffix"),
+            answer_shapes=("expression",),
+        )
+
+    def _compile_definite_integral(self, text: str) -> Optional[ToolResult]:
+        if not self._single_operation_request(text, "integral"):
+            return None
+        math_text = self._math_source(text)
+        match = re.search(
+            r"\\int\s*_\s*\{?([^{}\s]+)\}?\s*\^\s*\{?([^{}\s]+)\}?\s*"
+            r"(.+?)\s*(?:\\,|\\;|\s)*d\s*([A-Za-z])\b",
+            math_text,
+            re.DOTALL,
+        )
+        if not match:
+            return None
+        lower, upper, expression, variable = match.groups()
+        result = self.definite_integral(
+            self._latex_to_sympy(expression), variable,
+            self._latex_to_sympy(lower), self._latex_to_sympy(upper),
+        )
+        if result is None or "Integral" in result:
+            return None
+        return make_tool_result(
+            problem=text,
+            operation="definite_integral",
+            result=result,
+            result_kind="scalar",
+            method="sympy_integrate_then_differentiate_check",
+            whole=True,
+            checks=("full_statement_parse", "explicit_bounds", "exact_integration", "no_unparsed_suffix"),
+            support=(
+                f"Exact symbolic integration over the stated bounds gives {result}; "
+                "the integrand, variable, and both endpoints were parsed explicitly and "
+                "the antiderivative evaluation was simplified exactly."
+            ),
+            answer_shapes=("number", "expression"),
+            requirements=("result_present", "numeric_result"),
+        )
+
+    def _compile_limit(self, text: str) -> Optional[ToolResult]:
+        if not self._single_operation_request(text, "limit"):
+            return None
+        math_text = self._math_source(text)
+        match = re.search(
+            r"\\lim\s*_\s*\{?\s*([A-Za-z])\s*\\to\s*([^}\s]+)\s*\}?\s*(.+)",
+            math_text,
+            re.DOTALL,
+        )
+        if not match:
+            return None
+        variable, point, expression = match.groups()
+        result = self.limit(
+            self._latex_to_sympy(expression), variable, self._latex_to_sympy(point)
+        )
+        if result is None or "Limit" in result:
+            return None
+        return make_tool_result(
+            problem=text,
+            operation="limit",
+            result=result,
+            result_kind="expression",
+            method="sympy_limit",
+            whole=True,
+            checks=("full_statement_parse", "limit_variable_and_point", "no_unparsed_suffix"),
+            answer_shapes=("number", "expression"),
+            requirements=("result_present", "numeric_result"),
+        )
+
+    def _compile_equation(self, text: str) -> Optional[ToolResult]:
+        parsed = self._parse_direct_equation(text)
+        if not parsed or not self._single_operation_request(text, "equation"):
+            return None
+        left, right, variable = parsed
+        try:
+            expression = self._parse(left) - self._parse(right)
+            symbol = self.sympy.Symbol(variable)
+            polynomial = self.sympy.Poly(expression, symbol)
+            if polynomial.degree() < 1 or polynomial.degree() > 4:
+                return None
+            solutions = self.sympy.solve(polynomial.as_expr(), symbol)
+            if any(getattr(item, "free_symbols", set()) for item in solutions):
+                return None
+            if not all(self.sympy.simplify(expression.subs(symbol, item)) == 0 for item in solutions):
+                return None
+            if any(item.is_real is not True for item in solutions):
+                return None
+        except Exception:
+            return None
+        rendered = r"\varnothing" if not solutions else r",\;".join(
+            f"{variable}={self._format(item)}" for item in solutions
+        )
+        return make_tool_result(
+            problem=text,
+            operation="solve_equation",
+            result=rendered,
+            result_kind="solution_set",
+            method="sympy_solve_and_substitute",
+            whole=True,
+            checks=("full_statement_parse", "single_variable", "all_roots_substituted", "no_unparsed_suffix"),
+            answer_shapes=("roots", "number"),
+            requirements=("result_present", "all_solutions"),
+        )
+
+    def _compile_matrix_operation(self, text: str) -> Optional[ToolResult]:
+        target_patterns = (
+            ("matrix_determinant", r"行列式|\\det|\bdeterminant\b", "scalar"),
+            ("matrix_rank", r"(?:矩阵的?)?秩|\brank\b", "integer"),
+            ("matrix_inverse", r"逆矩阵|\binverse\b", "matrix"),
+            ("matrix_eigenvalues", r"特征值|\beigenvalues?\b", "solution_set"),
+        )
+        selected = [item for item in target_patterns if re.search(item[1], text, re.IGNORECASE)]
+        if len(selected) != 1:
+            return None
+        matrix_match = re.search(
+            r"\\begin\{[pbvBV]?matrix\}(.+?)\\end\{[pbvBV]?matrix\}",
+            text,
+            re.DOTALL,
+        )
+        if not matrix_match:
+            return None
+        rows = [row.strip() for row in re.split(r"\\\\", matrix_match.group(1)) if row.strip()]
+        cells = [[cell.strip() for cell in row.split("&")] for row in rows]
+        if not cells or any(len(row) != len(cells[0]) for row in cells):
+            return None
+        try:
+            matrix = self.sympy.Matrix([[self._parse(self._latex_to_sympy(cell)) for cell in row] for row in cells])
+            operation, _, result_kind = selected[0]
+            if operation == "matrix_determinant":
+                if matrix.rows != matrix.cols:
+                    return None
+                value = matrix.det()
+            elif operation == "matrix_rank":
+                value = matrix.rank()
+            elif operation == "matrix_inverse":
+                if matrix.rows != matrix.cols or matrix.det() == 0:
+                    return None
+                value = matrix.inv()
+            else:
+                if matrix.rows != matrix.cols:
+                    return None
+                eigenvalues = matrix.eigenvals()
+                value = r"\{\," + r",\;".join(
+                    rf"{self._format(root)}\;(m={multiplicity})"
+                    for root, multiplicity in eigenvalues.items()
+                ) + r"\,\}"
+            rendered = self._format(value) if operation != "matrix_eigenvalues" else str(value)
+        except Exception:
+            return None
+        answer_shapes = {
+            "matrix_determinant": ("number", "expression"),
+            "matrix_rank": ("number",),
+            "matrix_inverse": ("matrix",),
+            "matrix_eigenvalues": ("expression",),
+        }[operation]
+        requirements = (
+            ("result_present", "numeric_result")
+            if operation in {"matrix_determinant", "matrix_rank"}
+            else ("result_present",)
+        )
+        return make_tool_result(
+            problem=text,
+            operation=operation,
+            result=rendered,
+            result_kind=result_kind,
+            method="sympy_matrix_recompute",
+            whole=True,
+            checks=("full_statement_parse", "explicit_matrix", "independent_recompute", "no_unparsed_suffix"),
+            answer_shapes=answer_shapes,
+            requirements=requirements,
+        )
+
+    def _parse_derivative_request(self, text: str) -> Optional[tuple[str, str]]:
         patterns = (
-            r"(?:dictionary\s+)?(?:index|pointer)\s*(?:field)?\s*(?:uses?|is|has|:|=)?\s*(\d+)\s*[- ]?bits?",
-            r"(\d+)\s*[- ]?bit\s+(?:dictionary\s+)?(?:index|pointer)",
-            r"(?:索引|下标)(?:字段)?.{0,12}?(\d+)\s*位",
+            r"(?:求|计算)\s*(?:函数\s*)?(?:f\s*\(\s*(?P<v1>[A-Za-z])\s*\)\s*=\s*)?(?P<e1>.+?)\s*(?:的|关于)\s*(?P<v2>[A-Za-z])?\s*(?:导数|一阶导数)",
+            r"(?:differentiate|find\s+the\s+derivative\s+of)\s+(?P<e2>.+?)(?:\s+with\s+respect\s+to\s+(?P<v3>[A-Za-z]))?[.!]?\s*$",
+            r"\\frac\s*\{d\}\s*\{d\s*(?P<v4>[A-Za-z])\}\s*(?P<e3>.+)",
         )
         for pattern in patterns:
-            widths.update(int(value) for value in re.findall(pattern, text, re.IGNORECASE))
-        return widths
-
-    def _linear_recurrence_hint(self, problem: str) -> Optional[str]:
-        """Solve a first-order affine recurrence only when every coefficient is explicit."""
-        match = re.search(
-            r"a_n\s*=\s*([+-]?\d*)\s*\*?\s*a_\{?n-1\}?\s*([+-]\s*\d+)?",
-            problem,
-            re.IGNORECASE,
-        )
-        initial = re.search(r"a_1\s*=\s*([+-]?\d+(?:/\d+)?)", problem, re.IGNORECASE)
-        if not match or not initial or not self.sympy:
-            return None
-        coefficient_text = match.group(1).replace(" ", "")
-        coefficient_text = "1" if coefficient_text in {"", "+"} else ("-1" if coefficient_text == "-" else coefficient_text)
-        offset_text = (match.group(2) or "0").replace(" ", "")
-        try:
-            coefficient = self.sympy.Rational(coefficient_text)
-            offset = self.sympy.Rational(offset_text)
-            first = self.sympy.Rational(initial.group(1))
-            n = self.sympy.Symbol("n", integer=True, positive=True)
-            if coefficient == 1:
-                expression = first + (n - 1) * offset
-            else:
-                fixed_point = offset / (1 - coefficient)
-                expression = fixed_point + (first - fixed_point) * coefficient ** (n - 1)
-            return f"SymPy 递推通项: a_n={self._format(self.sympy.simplify(expression))}"
-        except Exception:
-            return None
-
-    def _curve_speed_hint(self, problem: str) -> Optional[str]:
-        if not self.sympy or not re.search(r"速度长度|弧长参数", problem):
-            return None
-        match = re.search(
-            r"(?:γ|gamma)\s*\(\s*([A-Za-z])\s*\)\s*=\s*\(([^()]+(?:\([^()]*\)[^()]*)*)\)",
-            problem,
-            re.IGNORECASE,
-        )
-        if not match:
-            return None
-        components = [item.strip() for item in match.group(2).split(",")]
-        if len(components) not in {2, 3}:
-            return None
-        try:
-            variable = self.sympy.Symbol(match.group(1))
-            vector = [self._parse(self._latex_to_sympy(item)) for item in components]
-            speed = self.sympy.simplify(self.sympy.sqrt(sum(self.sympy.diff(item, variable) ** 2 for item in vector)))
-            judgement = "是弧长参数" if self.sympy.simplify(speed - 1) == 0 else "不是弧长参数"
-            return f"SymPy 曲线速度: 速度长度为{self._format(speed)}，{judgement}"
-        except Exception:
-            return None
-
-    def _first_fundamental_form_hint(self, problem: str) -> Optional[str]:
-        if not self.sympy or not re.search(r"第一基本形式.*E\s*[,，]\s*F\s*[,，]\s*G", problem, re.IGNORECASE):
-            return None
-        match = re.search(
-            r"X\s*\(\s*([A-Za-z])\s*,\s*([A-Za-z])\s*\)\s*=\s*\(([^()]+)\)",
-            problem,
-        )
-        if not match:
-            return None
-        components = [item.strip() for item in match.group(3).split(",")]
-        if len(components) != 3:
-            return None
-        try:
-            u, v = self.sympy.Symbol(match.group(1)), self.sympy.Symbol(match.group(2))
-            vector = [self._parse(self._latex_to_sympy(item)) for item in components]
-            xu = [self.sympy.diff(item, u) for item in vector]
-            xv = [self.sympy.diff(item, v) for item in vector]
-            e_value = self.sympy.simplify(sum(item * item for item in xu))
-            f_value = self.sympy.simplify(sum(left * right for left, right in zip(xu, xv)))
-            g_value = self.sympy.simplify(sum(item * item for item in xv))
-            return (
-                "SymPy 第一基本形式: "
-                f"E={self._format(e_value)}，F={self._format(f_value)}，G={self._format(g_value)}"
-            )
-        except Exception:
-            return None
-
-    @staticmethod
-    def _graph_gaussian_curvature_hint(problem: str) -> Optional[str]:
-        if re.search(r"曲面.*z\s*=\s*f\s*\(\s*x\s*,\s*y\s*\).*∇f\s*=\s*0", problem, re.IGNORECASE) and re.search(
-            r"高斯曲率.*Hessian|Hessian.*高斯曲率", problem, re.IGNORECASE
-        ):
-            return "本地高斯曲率公式: K=f_{xx}f_{yy}-f_{xy}^2"
+            match = re.search(pattern, text, re.IGNORECASE | re.DOTALL)
+            if not match:
+                continue
+            groups = match.groupdict()
+            expression = next((groups.get(name) for name in ("e1", "e2", "e3") if groups.get(name)), "")
+            variable = next((groups.get(name) for name in ("v2", "v1", "v3", "v4") if groups.get(name)), "x")
+            expression = expression.strip(" $，,。.!?：:")
+            if expression:
+                return expression, variable
         return None
 
-    def _pde_verification_hint(self, problem: str) -> Optional[str]:
-        if not self.sympy:
+    def _parse_direct_equation(self, text: str) -> Optional[tuple[str, str, str]]:
+        if not re.search(r"方程|求解|求.*根|\b(?:solve|equation|roots?|zeros?)\b", text, re.IGNORECASE):
+            return None
+        if re.search(r"整数解|正整数|实数解|复数解|区间|范围|近似|迭代|\b(?:integer solutions?|positive integer|real roots?|complex roots?|interval|approximately|iteration)\b", text, re.IGNORECASE):
+            return None
+        candidates = self._math_fragments(text)
+        direct = re.search(
+            r"(?:方程|equation)\s*[:：]?\s*\$?\s*"
+            r"([A-Za-z0-9_+\-*/^().{}\\\s]+?\s*=\s*"
+            r"[A-Za-z0-9_+\-*/^().{}\\\s]+?)"
+            r"(?=\$|\s*的?(?:全部|所有)?解|\s*(?:for|over)\b|[。.!?？]|$)",
+            text,
+            re.IGNORECASE,
+        )
+        if direct:
+            candidates = [direct.group(1).strip()]
+        else:
+            candidates = list(dict.fromkeys(candidates))
+        equations = [item for item in candidates if len(re.findall(r"(?<![<>!])=(?!=)", item)) == 1]
+        if len(equations) != 1:
+            return None
+        left, right = equations[0].split("=", 1)
+        prepared = self._latex_to_sympy(left + " " + right)
+        variables = set(re.findall(r"(?<![A-Za-z])[a-z](?![A-Za-z])", prepared.casefold())) - {"e", "i"}
+        if len(variables) != 1:
+            return None
+        variable = next(iter(variables))
+        return self._latex_to_sympy(left), self._latex_to_sympy(right), variable
+
+    @staticmethod
+    def _single_operation_request(text: str, operation: str) -> bool:
+        operation_patterns = {
+            "derivative": r"导数|求导|differentiat|derivative|\\frac\s*\{d\}",
+            "integral": r"积分|integral|\\int",
+            "limit": r"极限|\blimit\b|\\lim",
+            "equation": r"方程|求解|\bsolve\b|\bequation\b|\broots?\b",
+        }
+        counts = {
+            name: bool(re.search(pattern, text, re.IGNORECASE))
+            for name, pattern in operation_patterns.items()
+        }
+        if not counts.get(operation) or sum(counts.values()) != 1:
+            return False
+        return not bool(re.search(
+            r"比较|误差|近似|绘图|构造|并求|并计算|以及|同时|"
+            r"\b(?:compare|error|approximate|plot|construct|and then|also compute)\b",
+            text,
+            re.IGNORECASE,
+        ))
+
+    def _numeric_identity_status(self, answer: str) -> str:
+        checked = 0
+        text = str(answer or "")
+        delimiters = "\n,，;；:：$"
+        depths: list[int] = []
+        depth = 0
+        for character in text:
+            if character in ")]}" and depth > 0:
+                depth -= 1
+            depths.append(depth)
+            if character in "([{":
+                depth += 1
+        for equality in re.finditer(r"(?<![<>=])=(?!=)", text):
+            equality_depth = depths[equality.start()]
+            left_positions = [
+                position for position, character in enumerate(text[:equality.start()])
+                if character in delimiters and depths[position] == equality_depth
+            ]
+            left_boundary = max(left_positions) if left_positions else -1
+            right_candidates = [
+                position for position in range(equality.end(), len(text))
+                if text[position] in delimiters and depths[position] == equality_depth
+            ]
+            right_boundary = min(right_candidates) if right_candidates else len(text)
+            left = text[left_boundary + 1:equality.start()].strip(" \\()[]")
+            right = text[equality.end():right_boundary].strip(" \\()[]。.!?？")
+            numeric_syntax = r"[-+]?\d[\d\s{}()+\-*/^.]*"
+            if not re.fullmatch(numeric_syntax, left) or not re.fullmatch(numeric_syntax, right):
+                continue
+            try:
+                difference = self.sympy.simplify(self._parse(left) - self._parse(right))
+            except Exception:
+                continue
+            checked += 1
+            if difference != 0:
+                return "fail"
+        return "pass" if checked else ""
+
+    def _first_scalar_result(self, value: str):
+        from reasoning.finalizer import Finalizer
+        extracted = Finalizer.extract_result(value)
+        candidate = extracted.answer if extracted.valid and extracted.answer else value
+        match = re.search(r"(?:=|为|is)?\s*(\\frac\s*\{[^{}]+\}\s*\{[^{}]+\}|[-+]?\d+(?:\.\d+)?(?:/\d+)?)", candidate)
+        if not match:
             return None
         try:
-            x, y, t = self.sympy.symbols("x y t")
-            if re.search(r"热方程.*u_t\s*=\s*u_\{?xx\}?", problem, re.IGNORECASE):
-                match = re.search(r"u\s*\(\s*x\s*,\s*t\s*\)\s*=\s*(.+?)(?=是否|，|。|；|;|$)", problem)
-                if match:
-                    expression = self._parse(self._latex_to_sympy(match.group(1)))
-                    time_derivative = self.sympy.simplify(self.sympy.diff(expression, t))
-                    space_derivative = self.sympy.simplify(self.sympy.diff(expression, x, 2))
-                    judgement = "是解" if self.sympy.simplify(time_derivative - space_derivative) == 0 else "不是解"
-                    return (
-                        "SymPy PDE核验: "
-                        f"u_t={self._format(time_derivative)}，u_{{xx}}={self._format(space_derivative)}，{judgement}"
-                    )
-            if re.search(r"拉普拉斯方程|u_\{?xx\}?\s*\+\s*u_\{?yy\}?\s*=\s*0", problem, re.IGNORECASE):
-                match = re.search(r"函数\s*u\s*=\s*(.+?)(?=是否|调和|，|。|；|;|$)", problem)
-                if match:
-                    expression = self._parse(self._latex_to_sympy(match.group(1)))
-                    u_xx = self.sympy.simplify(self.sympy.diff(expression, x, 2))
-                    u_yy = self.sympy.simplify(self.sympy.diff(expression, y, 2))
-                    total = self.sympy.simplify(u_xx + u_yy)
-                    judgement = "是调和函数" if total == 0 else "不是调和函数"
-                    return (
-                        "SymPy PDE核验: "
-                        f"u_{{xx}}={self._format(u_xx)}，u_{{yy}}={self._format(u_yy)}，二者之和为{self._format(total)}，{judgement}"
-                    )
+            return self._parse(self._latex_to_sympy(match.group(1)))
         except Exception:
             return None
-        return None
 
-    @staticmethod
-    def _plain_equations(problem: str) -> list[str]:
-        """Extract only short, ASCII-style equations outside LaTex delimiters."""
-        if "$" in problem or not re.search(r"方程|求解|equation|solve|roots?|zeros?", problem, re.IGNORECASE):
-            return []
-        matches = re.findall(
-            r"([0-9xyzXYZ(][0-9A-Za-z_+\-*/^().,\s]{0,120}=[0-9A-Za-z_+\-*/^().,\s]{1,120})",
-            problem,
+    def _candidate_roots(self, value: str, variable: str) -> list[str]:
+        roots = re.findall(
+            rf"(?<![A-Za-z]){re.escape(variable)}\s*=\s*([^,，;；\s$]+)",
+            value,
+            re.IGNORECASE,
         )
-        return [match.strip() for match in matches]
+        return [self._latex_to_sympy(item.strip("{}()")) for item in roots]
+
+    def _explicit_math_value(self, value: str) -> str:
+        from reasoning.finalizer import Finalizer
+        extracted = Finalizer.extract_result(value)
+        candidate = extracted.answer if extracted.valid and extracted.answer else value
+        if "=" in candidate:
+            candidate = candidate.rsplit("=", 1)[-1]
+        return self._latex_to_sympy(candidate.strip(" $\\()[]"))
 
     @staticmethod
-    def _congruence_hint(problem: str) -> Optional[str]:
-        normalized = (
-            problem.replace(r"\equiv", "≡")
-            .replace(r"\pmod{", " mod ")
-            .replace(r"\pmod", " mod ")
-            .replace("}", "")
-        )
-        match = re.search(
-            r"(-?\d+)\s*\*?\s*x\s*≡\s*(-?\d+)\s*(?:mod\s*|\b)(\d+)",
-            normalized,
-        )
-        if not match:
-            return None
-        coefficient, constant, modulus = map(int, match.groups())
-        divisor = gcd(coefficient, modulus)
-        if constant % divisor:
-            return "本地同余方程：无解"
-        if divisor != 1:
-            return None
-        solution = (pow(coefficient % modulus, -1, modulus) * constant) % modulus
-        return f"本地同余方程解: x={solution} (mod {modulus})"
+    def _math_source(text: str) -> str:
+        fragments = SympyTool._math_fragments(text)
+        return max(fragments, key=len) if fragments else text
 
     @staticmethod
-    def _modular_power_hint(problem: str) -> Optional[str]:
-        normalized = problem.replace(r"\bmod", "mod").replace("{", "").replace("}", "")
-        match = re.search(r"(-?\d+)\s*\^\s*(\d+)\s*mod\s*(\d+)", normalized)
-        if not match:
-            return None
-        base, exponent, modulus = map(int, match.groups())
-        if modulus == 0:
-            return None
-        return f"本地模幂计算: {pow(base, exponent, modulus)}"
-
-    @staticmethod
-    def _raw_latex_parts(problem: str) -> list[str]:
-        """Find standalone raw LaTex limits and integrals without `$...$`."""
-        return re.findall(r"(\\(?:lim|int)[^。？?\n]+)", problem)
+    def _math_fragments(text: str) -> list[str]:
+        fragments = [item.strip() for item in re.findall(r"\$([^$]+)\$", text) if item.strip()]
+        for pair in re.findall(r"\\\((.+?)\\\)|\\\[(.+?)\\\]", text, re.DOTALL):
+            fragments.extend(item.strip() for item in pair if item.strip())
+        if not fragments:
+            command = re.sub(
+                r"^(?:求解|解方程|求|计算|solve|find|determine)\s*",
+                "",
+                text.strip(),
+                flags=re.IGNORECASE,
+            ).strip(" 。.!?？")
+            if "=" in command or r"\int" in command or r"\lim" in command:
+                fragments.append(command)
+        return fragments
 
     def _parse(self, expression: str):
-        from sympy.parsing.sympy_parser import (
-            implicit_multiplication_application,
-            parse_expr,
-            standard_transformations,
-        )
-
-        if not re.fullmatch(r"[0-9A-Za-z_+\-*/^().,\s]+", expression):
-            raise ValueError("unsupported symbolic expression")
-        identifiers = set(re.findall(r"[A-Za-z]+", expression))
-        allowed = {"sin", "cos", "tan", "asin", "acos", "atan", "log", "exp", "sqrt", "pi", "oo"}
-        if any(identifier not in allowed and len(identifier) != 1 for identifier in identifiers):
-            raise ValueError("unsupported symbolic identifier")
-        return parse_expr(
-            expression,
-            transformations=standard_transformations + (implicit_multiplication_application,),
-        )
+        if not self.sympy:
+            raise ValueError("sympy unavailable")
+        value = str(expression or "").strip()
+        if not value or len(value) > 1000:
+            raise ValueError("empty or oversized expression")
+        if re.search(r"__|['\"\[\]:;]|\b(?:lambda|import|exec|eval|open|globals|locals)\b", value, re.IGNORECASE):
+            raise ValueError("unsafe expression")
+        value = self._latex_to_sympy(value).replace("^", "**")
+        if not re.fullmatch(r"[A-Za-z0-9_+\-*/().,\s*]+", value):
+            raise ValueError("unsupported expression syntax")
+        identifiers = set(re.findall(r"[A-Za-z_]+", value))
+        functions = {"sin", "cos", "tan", "asin", "acos", "atan", "sinh", "cosh", "exp", "log", "sqrt", "Abs"}
+        constants = {"pi", "oo", "E", "I"}
+        if any(identifier not in functions | constants and (len(identifier) != 1 or not identifier.isalpha()) for identifier in identifiers):
+            raise ValueError("unsupported identifier")
+        local = {name: getattr(self.sympy, name) for name in functions if hasattr(self.sympy, name)}
+        local.update({"pi": self.sympy.pi, "oo": self.sympy.oo, "E": self.sympy.E, "I": self.sympy.I})
+        local.update({letter: self.sympy.Symbol(letter) for letter in "abcdefghijklmnopqrstuvwxyz"})
+        return self.sympy.sympify(value, locals=local)
 
     @staticmethod
     def _latex_to_sympy(expression: str) -> str:
-        # English prose extractors may include the sentence-final period.  It
-        # would turn an integer exponent such as ``x^3.`` into SymPy's ``3.0``.
-        value = expression.strip().replace("$", "").rstrip("。；;，,.!?？")
-        value = SympyTool._replace_fractions(value)
-        value = re.sub(r"\\sqrt\{([^{}]+)\}", r"sqrt(\1)", value)
-        function_names = {
-            "arctan": "atan",
-            "arcsin": "asin",
-            "arccos": "acos",
-            "sin": "sin",
-            "cos": "cos",
-            "tan": "tan",
-            "log": "log",
-            "ln": "log",
-            "exp": "exp",
-        }
-        value = re.sub(
-            r"\\(arctan|arcsin|arccos|sin|cos|tan|log|ln|exp)",
-            lambda m: f" {function_names[m.group(1)]}",
-            value,
-        )
-        value = (
-            value.replace(r"\left", "")
-            .replace(r"\right", "")
-            .replace(r"\!", "")
-            .replace(r"\pi", "pi")
-            .replace(r"\infty", "oo")
-            .replace(r"\,", "")
-        )
-        value = value.replace("^", "**").replace("{", "(").replace("}", ")")
-        value = re.sub(r"(?<=[xyzXYZ])(?=[xyzXYZ])", "*", value)
-        return re.sub(r"(?<![A-Za-z])e(?=\s*\*\*)", "E", value)
+        value = str(expression or "")
+        value = value.replace(r"\left", "").replace(r"\right", "")
+        value = value.replace(r"\,", "").replace(r"\;", " ").replace(r"\!", "")
+        value = value.replace(r"\cdot", "*").replace(r"\times", "*")
+        value = value.replace("×", "*").replace("÷", "/").replace("−", "-")
+        value = value.replace(r"\pi", "pi").replace(r"\infty", "oo")
+        value = re.sub(r"\\(?:operatorname|mathrm)\s*\{(sin|cos|tan|sinh|cosh|exp|log)\}", r"\1", value)
+        value = re.sub(r"\\(sin|cos|tan|sinh|cosh|exp|log|ln)(?![A-Za-z])", lambda match: "log" if match.group(1) == "ln" else match.group(1), value)
+        previous = None
+        while previous != value:
+            previous = value
+            value = re.sub(
+                r"\\(?:d?frac|tfrac)\s*\{([^{}]+)\}\s*\{([^{}]+)\}",
+                r"((\1)/(\2))",
+                value,
+            )
+            value = re.sub(r"\\sqrt\s*\{([^{}]+)\}", r"sqrt(\1)", value)
+            value = re.sub(r"([A-Za-z0-9)])\s*\^\s*\{([^{}]+)\}", r"\1**(\2)", value)
+        value = value.replace("{", "(").replace("}", ")")
+        value = re.sub(r"(?<=\d)(?=[A-Za-z(])|(?<=[A-Za-z)])(?=\d)|(?<=\))(?=[A-Za-z(])", "*", value)
+        return re.sub(r"\s+", " ", value).strip().strip("$")
 
-    @staticmethod
-    def _replace_fractions(value: str) -> str:
-        """Convert nested LaTex fractions without relying on a full TeX parser."""
-        marker = r"\frac"
-        while marker in value:
-            start = value.find(marker)
-            numerator = SympyTool._braced_group(value, start + len(marker))
-            if numerator is None:
-                break
-            numerator_text, after_numerator = numerator
-            denominator = SympyTool._braced_group(value, after_numerator)
-            if denominator is None:
-                break
-            denominator_text, after_denominator = denominator
-            replacement = f"({numerator_text})/({denominator_text})"
-            value = value[:start] + replacement + value[after_denominator:]
-        return value
-
-    @staticmethod
-    def _braced_group(value: str, start: int) -> Optional[tuple[str, int]]:
-        while start < len(value) and value[start].isspace():
-            start += 1
-        if start >= len(value) or value[start] != "{":
-            return None
-        depth = 0
-        for index in range(start, len(value)):
-            if value[index] == "{":
-                depth += 1
-            elif value[index] == "}":
-                depth -= 1
-                if depth == 0:
-                    return value[start + 1:index], index + 1
-        return None
-
-    @staticmethod
-    def _format(value: Any) -> str:
-        text = str(value).replace("**", "^")
-        text = re.sub(r"\blog\(", "ln(", text)
-        text = re.sub(r"\batan\(", "arctan(", text)
-        text = re.sub(r"\basin\(", "arcsin(", text)
-        text = re.sub(r"\bacos\(", "arccos(", text)
-        text = re.sub(r"\bexp\(x\)", "e^x", text)
-        text = re.sub(r"\bexp\(([^()]+)\)", r"e^(\1)", text)
-        return re.sub(r"(?<![A-Za-z])oo(?![A-Za-z])", "∞", text)
+    def _format(self, value: Any) -> str:
+        if not self.sympy:
+            return str(value)
+        try:
+            return self.sympy.latex(self.sympy.simplify(value))
+        except Exception:
+            return str(value)
 
     def _run(self, operation) -> Optional[str]:
         if not self.sympy:
