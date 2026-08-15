@@ -87,15 +87,21 @@ class CardRetriever:
         scored = self._score(spec)
 
         solve: list[tuple[int, KnowledgeCard]] = []
-        used_kinds: set[str] = set()
+        used_families: set[tuple[str, str]] = set()
+        theorem_count = 0
         for score, card in scored:
             if score < 9 or card.kind not in {"method", "theorem"}:
                 continue
-            if card.kind in used_kinds:
+            family = (
+                card.kind,
+                card.topics[0] if card.topics else card.id.split(".")[1],
+            )
+            if family in used_families or (card.kind == "theorem" and theorem_count >= 1):
                 continue
             solve.append((score, card))
-            used_kinds.add(card.kind)
-            if len(solve) == 2:
+            used_families.add(family)
+            theorem_count += card.kind == "theorem"
+            if len(solve) == 3:
                 break
 
         solve_ids = {card.id for _, card in solve}
@@ -105,7 +111,15 @@ class CardRetriever:
             if card.id not in solve_ids and card.kind in {"check", "method"}
         ]
         review_candidates.sort(key=lambda item: (item[0], item[1].id), reverse=True)
-        review = review_candidates[:1] if review_candidates and review_candidates[0][0] >= 9 else []
+        review: list[tuple[int, KnowledgeCard]] = []
+        review_kinds: set[str] = set()
+        for score, card in review_candidates:
+            if score < 9 or card.kind in review_kinds:
+                continue
+            review.append((score, card))
+            review_kinds.add(card.kind)
+            if len(review) == 2:
+                break
 
         return RetrievalBundle(
             tuple(card for _, card in solve),
@@ -151,6 +165,13 @@ class CardRetriever:
     def _score(self, spec: "ProblemSpec") -> list[tuple[int, KnowledgeCard]]:
         text = str(getattr(spec, "problem_text", "")).casefold()
         query_tokens = set(_tokens(text))
+        semantics = getattr(spec, "semantics", None)
+        named_theorems = {
+            item.casefold() for item in getattr(semantics, "named_theorems", ())
+        }
+        requested_methods = {
+            item.casefold() for item in getattr(semantics, "requested_methods", ())
+        }
         primary = getattr(spec.profile, "primary_subject", spec.profile.subject)
         secondary = getattr(spec.profile, "secondary_subject", "")
         confidence = getattr(spec.profile, "subject_confidence", "low")
@@ -168,6 +189,11 @@ class CardRetriever:
             score += min(9, overlap * 3 + phrase_overlap * 2)
             if topic in card.topics:
                 score += 5
+            searchable = " ".join((card.theorem_name, card.text, card.text_en)).casefold()
+            if any(name in searchable or searchable in name for name in named_theorems):
+                score += 12
+            if any(method in searchable or searchable in method for method in requested_methods):
+                score += 8
             if card.kind == "check" and proof and card.id == "check.proof.counterexample":
                 score += 7
             if card.kind == "check" and spec.profile.answer_shape == "choice" and card.id == "check.choice.polarity":
@@ -179,7 +205,17 @@ class CardRetriever:
             ):
                 score += 5
             if card.kind == "theorem":
-                named = bool(card.theorem_name and card.theorem_name.casefold() in text)
+                theorem_key = card.theorem_name.casefold()
+                named = bool(
+                    theorem_key
+                    and (
+                        theorem_key in text
+                        or any(
+                            name in searchable or searchable in name
+                            for name in named_theorems
+                        )
+                    )
+                )
                 if not named and not (confidence == "high" and overlap >= 2):
                     continue
             if confidence == "low" and overlap == 0 and card.kind != "check":

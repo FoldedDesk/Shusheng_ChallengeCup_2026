@@ -231,6 +231,189 @@
       "text_zh": "提交前逐项核对所求公式、数值、全部对象、单位、定义域、精度和必要论证是否均已出现。",
       "text_en": "Before submission, check that every requested formula, value, object, unit, domain, precision requirement, and necessary justification is present.",
       "provenance": "general answer-contract audit"
+    },
+    {
+      "id": "method.discrete.symmetry_counting",
+      "kind": "method",
+      "domains": ["离散数学"],
+      "topics": ["combinatorics"],
+      "keywords": ["容斥", "生成函数", "Burnside", "轨道", "对称", "inclusion-exclusion", "generating function", "orbit", "symmetry"],
+      "text_zh": "计数前先固定有序性与等价关系。容斥要写清各交集，生成函数要核对系数对象，Burnside 计数要逐类计算固定点并除以群阶；最后检查无对称或最小规模情形。",
+      "text_en": "Fix order and equivalence first. For inclusion-exclusion list intersections, for generating functions identify coefficients, and for Burnside count fixed points by conjugacy type and divide by the group order; check the smallest cases.",
+      "provenance": "standard enumerative combinatorics"
+    },
+    {
+      "id": "method.discrete.graph_certificates",
+      "kind": "method",
+      "domains": ["离散数学"],
+      "topics": ["graph"],
+      "keywords": ["生成树", "匹配", "平面图", "连通", "矩阵树", "spanning tree", "matching", "planar", "connected", "matrix-tree"],
+      "text_zh": "图论结论应配套证书：生成树用 Laplace 余子式，匹配核对 Hall 条件，平面图同时核对连通性与面数，极值结论给出达到等号的图；小图可直接枚举复核。",
+      "text_en": "Attach a certificate: a Laplacian cofactor for spanning trees, Hall conditions for matchings, connectivity and face counts for planar identities, and an attaining graph for extrema; enumerate small graphs when feasible.",
+      "provenance": "standard graph theory certificates"
+    },
+    {
+      "id": "method.numerical.iteration_audit",
+      "kind": "method",
+      "domains": ["数值分析"],
+      "topics": ["numerical_method"],
+      "keywords": ["牛顿法", "二分法", "迭代", "收敛阶", "Newton", "bisection", "iteration", "convergence order"],
+      "text_zh": "先写迭代映射和起点，再逐步代入；结论必须同时核对原方程残差、停止准则和收敛前提。Newton 法检查导数非零及吸引域，二分法检查端点异号和区间保持。",
+      "text_en": "State the iteration map and starting value, then substitute step by step. Check the original residual, stopping rule, and convergence hypotheses; for Newton verify a nonzero derivative and attraction, and for bisection preserve a sign-changing bracket.",
+      "provenance": "standard root-finding analysis"
+    },
+    {
+      "id": "method.numerical.quadrature_error",
+      "kind": "method",
+      "domains": ["数值分析"],
+      "topics": ["calculus"],
+      "keywords": ["求积", "Gauss", "Newton-Cotes", "截断误差", "代数精度", "quadrature", "truncation error", "degree of exactness"],
+      "text_zh": "数值求积须分别给出节点、权重、代数精度和误差符号约定。先用低次单项式核对精度，再用余项公式或精确积分减求积值复核误差。",
+      "text_en": "Give nodes, weights, degree of exactness, and the error sign convention separately. Check low-degree monomials, then verify the error by a remainder formula or exact integral minus quadrature value.",
+      "provenance": "standard quadrature analysis"
+    },
+    {
+      "id": "theorem.measure.dominated_convergence",
+      "kind": "theorem",
+      "domains": ["测度积分"],
+      "topics": ["calculus"],
+      "keywords": ["支配收敛", "控制函数", "几乎处处", "可积", "dominated convergence", "dominating function", "almost everywhere", "integrable"],
+      "theorem_name": "dominated convergence theorem",
+      "text_zh": "支配收敛只能在逐点几乎处处收敛且存在同一个可积控制函数时交换极限与积分；必须明确控制函数与参数无关，并检查积分空间和测度。",
+      "text_en": "Dominated convergence permits interchange only with almost-everywhere pointwise convergence and one parameter-independent integrable dominator; identify the measure space and verify domination explicitly.",
+      "provenance": "dominated convergence theorem"
+    },
+    {
+      "id": "theorem.measure.fubini_tonelli",
+      "kind": "theorem",
+      "domains": ["测度积分"],
+      "topics": ["calculus"],
+      "keywords": ["Fubini", "Tonelli", "重积分", "交换积分", "非负", "绝对可积", "iterated integral", "nonnegative", "absolutely integrable"],
+      "theorem_name": "Fubini theorem",
+      "text_zh": "Tonelli 适用于非负可测函数，Fubini 需要绝对可积；交换积分次序前必须先验证对应条件，不能从某个迭代积分有限反推绝对可积。",
+      "text_en": "Tonelli applies to nonnegative measurable functions, whereas Fubini requires absolute integrability. Verify the appropriate hypothesis before changing order; one finite iterated integral alone is insufficient.",
+      "provenance": "Fubini-Tonelli theorems"
+    },
+    {
+      "id": "method.measure.convergence_mode",
+      "kind": "method",
+      "domains": ["测度积分"],
+      "topics": ["proof"],
+      "keywords": ["依测度收敛", "几乎处处收敛", "L1收敛", "一致可积", "convergence in measure", "almost sure", "L1 convergence", "uniform integrability"],
+      "text_zh": "先写清收敛模式及测度空间是否有限，再使用蕴含关系；涉及 L1 收敛时检查范数，涉及期望极限时优先检查一致可积性，并主动寻找移动尖峰反例。",
+      "text_en": "State the convergence mode and whether the measure space is finite before using implications. Check norms for L1 convergence and uniform integrability for expectation limits; test moving-spike counterexamples.",
+      "provenance": "standard measure convergence taxonomy"
+    },
+    {
+      "id": "method.geometry.fundamental_forms",
+      "kind": "method",
+      "domains": ["微分几何"],
+      "topics": ["calculus"],
+      "keywords": ["第一基本形式", "第二基本形式", "Gauss曲率", "平均曲率", "参数曲面", "first fundamental form", "second fundamental form", "Gaussian curvature", "parametric surface"],
+      "text_zh": "参数曲面先算 X_u、X_v 并确认 EG-F^2>0；再统一法向计算第二基本形式。Gauss 曲率应核对 K=(LN-M^2)/(EG-F^2)，并检查换法向不改变 K。",
+      "text_en": "Compute X_u and X_v and verify EG-F^2>0 before fixing one normal for the second form. Check K=(LN-M^2)/(EG-F^2), which must be unchanged by reversing the normal.",
+      "provenance": "standard surface geometry"
+    },
+    {
+      "id": "theorem.geometry.gauss_bonnet",
+      "kind": "theorem",
+      "domains": ["微分几何"],
+      "topics": ["proof"],
+      "keywords": ["Gauss-Bonnet", "高斯博内", "测地曲率", "Euler示性数", "边界角", "geodesic curvature", "Euler characteristic", "corner angle"],
+      "theorem_name": "Gauss-Bonnet theorem",
+      "text_zh": "使用 Gauss-Bonnet 时必须明确曲面取向、边界方向、测地曲率符号、角点外角以及 Euler 示性数；有边界和无边界公式不能混用。",
+      "text_en": "For Gauss-Bonnet specify orientation, induced boundary direction, geodesic-curvature sign, corner exterior angles, and Euler characteristic; do not mix closed and boundary formulas.",
+      "provenance": "Gauss-Bonnet theorem"
+    },
+    {
+      "id": "method.probability.transforms",
+      "kind": "method",
+      "domains": ["概率论"],
+      "topics": ["probability"],
+      "keywords": ["分布", "密度", "变量变换", "次序统计量", "卷积", "distribution", "density", "change of variables", "order statistic", "convolution"],
+      "text_zh": "分布计算先确定支持集，再做变量变换并带 Jacobian；次序统计量可从联合密度或生存函数推导。最终检查密度非负、积分为 1，概率和期望满足边界情形。",
+      "text_en": "Determine support before applying a change of variables with its Jacobian; derive order statistics from joint densities or survival functions. Check nonnegativity, total mass one, and boundary cases for probabilities and expectations.",
+      "provenance": "standard probability transformations"
+    },
+    {
+      "id": "method.probability.markov_hitting",
+      "kind": "method",
+      "domains": ["概率论", "随机过程"],
+      "topics": ["probability"],
+      "keywords": ["Markov", "马尔可夫", "首达", "吸收", "平稳分布", "hitting", "absorbing", "stationary distribution"],
+      "text_zh": "首达概率写一步分析方程和全部边界值，期望首达时间写对应 Poisson 方程；平稳分布检查非负、总和 1 及 pi P=pi，并区分平稳性与极限分布。",
+      "text_en": "For hitting probabilities write first-step equations and every boundary value; for mean hitting times use the corresponding Poisson equation. Check nonnegativity, normalization, and pi P=pi, distinguishing stationarity from limiting behavior.",
+      "provenance": "standard Markov-chain analysis"
+    },
+    {
+      "id": "method.algebra.group_structure",
+      "kind": "method",
+      "domains": ["抽象代数"],
+      "topics": ["proof"],
+      "keywords": ["Sylow", "正规子群", "商群", "群作用", "共轭", "normal subgroup", "quotient group", "group action", "conjugacy"],
+      "text_zh": "群论结构题先用阶数、Lagrange 与 Sylow 数目限制候选，再检查正规性、作用核与轨道稳定子；给出同构类型时必须同时证明存在性和排他性。",
+      "text_en": "Use orders, Lagrange, and Sylow-number constraints before checking normality, action kernels, and orbit-stabilizer. An isomorphism classification needs both existence and exclusion of alternatives.",
+      "provenance": "standard finite group structure"
+    },
+    {
+      "id": "method.algebra.ring_field",
+      "kind": "method",
+      "domains": ["抽象代数"],
+      "topics": ["equation"],
+      "keywords": ["理想", "商环", "不可约", "域扩张", "最小多项式", "ideal", "quotient ring", "irreducible", "field extension", "minimal polynomial"],
+      "text_zh": "环与域题要写明基环或基域。商环先核对理想，扩张次数用塔式公式，最小多项式需同时证明消去性与不可约性；有限维数和商结构应互相校验。",
+      "text_en": "State the base ring or field. Verify idealhood before quotients, use the tower law for degrees, and prove both annihilation and irreducibility for a minimal polynomial; cross-check dimensions and quotient structure.",
+      "provenance": "standard ring and field theory"
+    },
+    {
+      "id": "check.proof.hypothesis_chain",
+      "kind": "check",
+      "domains": ["离散数学", "测度积分", "微分几何", "概率论", "抽象代数", "进阶数学"],
+      "topics": ["proof"],
+      "keywords": ["证明", "定理", "前提", "必要", "充分", "prove", "theorem", "hypothesis", "necessary", "sufficient"],
+      "text_zh": "把证明压缩为“假设 -> 引理前提 -> 引理结论 -> 目标”的链条；任何未验证箭头都视为风险。分别尝试否定结论、逆命题和边界情形，防止把必要条件当充分条件。",
+      "text_en": "Compress the proof into assumptions -> lemma hypotheses -> lemma conclusion -> target. Treat every unchecked arrow as a risk, and test negation, converse, and boundary cases to avoid confusing necessity with sufficiency.",
+      "provenance": "general proof verification protocol"
+    },
+    {
+      "id": "check.numerical.residual_order",
+      "kind": "check",
+      "domains": ["数值分析"],
+      "topics": ["numerical_method"],
+      "keywords": ["残差", "误差阶", "稳定域", "步长", "residual", "error order", "stability region", "step size"],
+      "text_zh": "把近似值代回原问题计算残差；把格式精度与数学误差分开。声称 p 阶时检查最低未消失项，声称稳定时检查给定步长对应的放大因子。",
+      "text_en": "Substitute the approximation into the original problem and compute a residual, separating display precision from mathematical error. Verify the first nonzero error term for order p and the amplification factor for stability.",
+      "provenance": "numerical verification protocol"
+    },
+    {
+      "id": "check.discrete.integrality_small_case",
+      "kind": "check",
+      "domains": ["离散数学"],
+      "topics": ["combinatorics", "graph"],
+      "keywords": ["计数", "整数", "递推", "最小情形", "count", "integer", "recurrence", "small case"],
+      "text_zh": "计数答案必须是非负整数；递推检查初值和索引偏移。用最小两个合法规模直接枚举，检查是否错误除以对称因子或遗漏退化对象。",
+      "text_en": "A count must be a nonnegative integer; verify recurrence initial values and index shifts. Enumerate the two smallest legal sizes to catch incorrect symmetry division or omitted degeneracies.",
+      "provenance": "discrete mathematics sanity checks"
+    },
+    {
+      "id": "check.probability.normalization_extremes",
+      "kind": "check",
+      "domains": ["概率论", "随机过程"],
+      "topics": ["probability"],
+      "keywords": ["概率", "密度", "归一化", "期望", "极端", "probability", "density", "normalization", "expectation", "extreme"],
+      "text_zh": "概率须在 [0,1]，密度或质量函数总量为 1；期望应落在变量支持集的凸包内。把参数取到确定事件、空事件或退化分布处检查公式极限。",
+      "text_en": "Probabilities lie in [0,1], densities and masses normalize to one, and expectations lie in the convex hull of the support. Test deterministic, impossible, and degenerate parameter limits.",
+      "provenance": "probability sanity checks"
+    },
+    {
+      "id": "check.algebra.invariants",
+      "kind": "check",
+      "domains": ["抽象代数", "高等代数"],
+      "topics": ["linear_algebra"],
+      "keywords": ["同构", "阶", "维数", "秩", "行列式", "isomorphism", "order", "dimension", "rank", "determinant"],
+      "text_zh": "同构或标准形结论要核对阶、维数、秩、指数、扭结部分和生成元关系等不变量；矩阵结论用迹、行列式和特征多项式交叉检查。",
+      "text_en": "Check order, dimension, rank, exponent, torsion, and generator relations for isomorphism or normal-form claims; cross-check matrix claims with trace, determinant, and characteristic polynomial.",
+      "provenance": "algebraic invariant checks"
     }
   ]
 }

@@ -11,11 +11,13 @@ from classifier.problem_spec import (
     build_problem_spec,
 )
 from classifier.problem_type import classify_problem_type, classify_task_kind
+from classifier.semantics import StatementSemantics, extract_statement_semantics
 from classifier.subject import SubjectClassification, classify_subject, classify_subjects
 
 __all__ = [
     "ProblemProfile",
     "SubjectClassification",
+    "StatementSemantics",
     "AnswerFrame",
     "AnswerPart",
     "AnswerContract",
@@ -30,4 +32,5 @@ __all__ = [
     "classify_profile",
     "classify_subject",
     "classify_subjects",
+    "extract_statement_semantics",
 ]

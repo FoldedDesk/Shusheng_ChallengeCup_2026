@@ -7,6 +7,7 @@ import re
 
 from classifier.choice import option_labels
 from classifier.profile import ProblemProfile, classify_profile
+from classifier.semantics import StatementSemantics, extract_statement_semantics
 from classifier.target import extract_target_clause
 
 
@@ -147,6 +148,7 @@ class AnswerContract:
 @dataclass(frozen=True)
 class ProblemSpec:
     profile: ProblemProfile
+    semantics: StatementSemantics
     goals: tuple[Goal, ...]
     constraints: tuple[str, ...]
     risk_flags: tuple[str, ...]
@@ -162,6 +164,7 @@ class ProblemSpec:
     def trace_content(self) -> dict:
         return {
             "profile": self.profile.trace_content(),
+            "semantics": self.semantics.trace_content(),
             "goal_count": len(self.goals),
             "goals": [{
                 "id": goal.id,
@@ -205,13 +208,21 @@ def build_problem_spec(problem: str) -> ProblemSpec:
     text = _strip_trailing_answer_instructions(original)
     profile = classify_profile(text)
     target = extract_target_clause(text) or text
+    semantics = extract_statement_semantics(
+        text,
+        target,
+        subject_confidence=profile.subject_confidence,
+    )
     requirements = _requirements(text, target, profile)
     kind = _goal_kind(profile)
     goal = Goal("g1", target[:1800], profile.answer_shape, kind, (), tuple(requirements))
-    constraints = tuple(_constraints(text))
-    risks = tuple(_risks(text, profile, requirements, constraints))
+    constraints = tuple(dict.fromkeys((*_constraints(text), *semantics.domains)))
+    risks = tuple(dict.fromkeys((
+        *_risks(text, profile, requirements, constraints),
+        *(f"semantic_{flag}" for flag in semantics.ambiguity_flags),
+    )))
     score = min(8, _risk_score(text, profile, risks))
-    primary, alternative = _methods(profile)
+    primary, alternative = _methods(profile, semantics)
     frame = _answer_frame(text, target, profile, requirements)
     mode = "proof" if profile.task_kind in {"proof", "derivation", "explanation"} else (
         "answer_with_support" if any(item.category == "support" for item in requirements) else "answer_only"
@@ -226,6 +237,7 @@ def build_problem_spec(problem: str) -> ProblemSpec:
     tool_whole = _tool_whole_possible(text, profile, requirements)
     return ProblemSpec(
         profile=profile,
+        semantics=semantics,
         goals=(goal,),
         constraints=constraints,
         risk_flags=risks,
@@ -276,6 +288,8 @@ def _requirements(text: str, target: str, profile: ProblemProfile) -> list[Requi
         r"(?:证明|论证|推导)须|须[^。；;\n]{0,40}(?:证明|论证|推导)|"
         r"(?:要求|必须|须|需|应当)[^。；;\n]{0,160}(?:证明|论证|推导|验证|核对|检查|说明)|"
         r"证明.*(?:所有|唯一)|justify|give (?:a )?proof|show your work|"
+        r"\bwith\s+(?:a\s+)?(?:complete\s+|rigorous\s+)?"
+        r"(?:proof|derivation|argument|justification)\b|"
         r"(?:complete|rigorous)\s+(?:proof|derivation|argument|normalization|calculation|justification)|"
         r"(?:the\s+)?(?:proof|derivation|argument|normalization|calculation|justification)\s+"
         r"(?:must|should|is required)",
@@ -365,7 +379,10 @@ def _answer_frame(
     return AnswerFrame("math", question_kind="math")
 
 
-def _methods(profile: ProblemProfile) -> tuple[str, str]:
+def _methods(
+    profile: ProblemProfile,
+    semantics: StatementSemantics | None = None,
+) -> tuple[str, str]:
     by_topic = {
         "numerical_method": ("derive the requested iteration and compute with the stated data", "independent residual and error check"),
         "calculus": ("definition or standard theorem with domain checks", "symbolic differentiation, substitution, or boundary check"),
@@ -380,7 +397,9 @@ def _methods(profile: ProblemProfile) -> tuple[str, str]:
         "choice": ("evaluate every option from definitions", "independent option-by-option falsification"),
     }
     if profile.topic in by_topic and profile.topic not in {"proof"}:
-        return by_topic[profile.topic]
+        selected = by_topic[profile.topic]
+    else:
+        selected = None
     by_subject = {
         "离散数学": ("use an invariant, recurrence, bijection, or double count with all cases explicit", "verify by a different count and the smallest nontrivial cases"),
         "数值分析": ("derive the requested scheme and verify consistency, stability, and error assumptions", "residual, order-condition, and boundary-of-stability check"),
@@ -398,12 +417,26 @@ def _methods(profile: ProblemProfile) -> tuple[str, str]:
         "线性回归": ("derive from the design matrix and error covariance assumptions", "normal equations, bias, and covariance check"),
         "拓扑学": ("work from the definitions and state every separation or compactness hypothesis", "test converse implications and standard counterexamples"),
     }
-    if profile.primary_subject in by_subject:
-        return by_subject[profile.primary_subject]
-    return by_topic.get(
-        profile.topic,
-        ("direct derivation from the statement", "independent substitution or boundary check"),
-    )
+    if selected is None and profile.primary_subject in by_subject:
+        selected = by_subject[profile.primary_subject]
+    if selected is None:
+        selected = by_topic.get(
+            profile.topic,
+            ("direct derivation from the statement", "independent substitution or boundary check"),
+        )
+    if semantics and semantics.requested_methods:
+        required = ", ".join(semantics.requested_methods)
+        return (
+            f"apply the explicitly requested method ({required}) and show its defining formula",
+            f"audit the requested method ({required}) by an independent residual, invariant, or boundary check",
+        )
+    if semantics and semantics.named_theorems:
+        named = ", ".join(semantics.named_theorems)
+        return (
+            f"apply {named} only after checking every hypothesis",
+            f"independently test the hypotheses and conclusion of {named}, including boundary cases",
+        )
+    return selected
 
 
 def _constraints(text: str) -> list[str]:

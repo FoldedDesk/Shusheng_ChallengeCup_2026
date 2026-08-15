@@ -34,6 +34,7 @@ class CheckResult:
     status: str
     source: str = "local"
     detail: str = ""
+    decisive: bool = False
 
     def trace_content(self) -> dict:
         return {
@@ -41,6 +42,7 @@ class CheckResult:
             "status": self.status,
             "source": self.source,
             "detail": self.detail,
+            "decisive": self.decisive,
         }
 
 
@@ -83,7 +85,11 @@ class CandidateAssessment:
 
     @property
     def passed_check_count(self) -> int:
-        return sum(item.status == "pass" for item in self.math_checks)
+        return sum(item.status == "pass" and item.decisive for item in self.math_checks)
+
+    @property
+    def sanity_check_count(self) -> int:
+        return sum(item.status == "pass" and not item.decisive for item in self.math_checks)
 
 
 def assess_candidate(
@@ -162,13 +168,14 @@ def assess_candidate(
     else:
         tier = "degraded"
 
-    pass_count = sum(item.status == "pass" for item in checks)
+    pass_count = sum(item.status == "pass" and item.decisive for item in checks)
     correctness_tier = "certified" if tool_status == "pass" else (
         "checked" if pass_count else "unverified"
     )
     score = {"complete": 30, "degraded": 5, "rejected": -50}[tier]
     score += {"pass": 20, "partial_pass": 8, "unknown": 0, "conflict": -30}[tool_status]
     score += pass_count * 6
+    score += min(2, sum(item.status == "pass" and not item.decisive for item in checks))
     score -= sum(item.status == "unknown" for item in checks)
     score += 4 if explicit_answer else 0
     if proof_like and len(value) >= 80 and _has_proof_support(value):
@@ -258,7 +265,7 @@ def candidate_consistency_reasons(answer: str, spec=None) -> tuple[str, ...]:
 
 def _numeric_identity_conflict(value: str) -> bool:
     text = str(value or "")
-    delimiters = "\n,，;；:：$"
+    delimiters = "\n,，;；:：$="
     depths: list[int] = []
     depth = 0
     for character in text:
@@ -279,8 +286,12 @@ def _numeric_identity_conflict(value: str) -> bool:
             if text[position] in delimiters and depths[position] == equality_depth
         ]
         right_boundary = min(right_positions) if right_positions else len(text)
-        left = text[left_boundary + 1:equality.start()].strip(" \\()[]")
-        right = text[equality.end():right_boundary].strip(" \\()[]。.!?？")
+        left = _normalize_numeric_syntax(
+            text[left_boundary + 1:equality.start()].strip(" \\()[]")
+        )
+        right = _normalize_numeric_syntax(
+            text[equality.end():right_boundary].strip(" \\()[]。.!?？")
+        )
         numeric_syntax = r"[-+]?\d[\d\s()+\-*/^.]*"
         if not re.fullmatch(numeric_syntax, left) or not re.fullmatch(numeric_syntax, right):
             continue
@@ -293,6 +304,19 @@ def _numeric_identity_conflict(value: str) -> bool:
         ):
             return True
     return False
+
+
+def _normalize_numeric_syntax(value: str) -> str:
+    text = str(value or "")
+    text = re.sub(r"\\(?:left|right)", "", text)
+    text = re.sub(
+        r"\\(?:d?frac|tfrac)\s*\{\s*([-+]?\d+)\s*\}\s*\{\s*([-+]?\d+)\s*\}",
+        r"(\1)/(\2)",
+        text,
+    )
+    text = re.sub(r"\\(?:times|cdot)(?![A-Za-z])|[×·]", "*", text)
+    text = re.sub(r"\\div(?![A-Za-z])|÷", "/", text)
+    return text.replace("{", "(").replace("}", ")")
 
 
 def _named_scalar_revision_conflict(value: str) -> bool:

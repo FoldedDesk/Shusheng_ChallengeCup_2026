@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from math import gcd
+from itertools import combinations
 import re
 from typing import Optional
 
@@ -33,6 +34,10 @@ class DeterministicMathTool:
             self._intercept_gls,
             self._poisson_disk_arc,
             self._torus_cell_attachment,
+            self._nilpotent_jordan_partition,
+            self._uniform_scale_umvu,
+            self._sobolev_energy_minimization,
+            self._linear_program_2d_vertices,
         )
         results: list[ToolResult] = []
         for compiler in compilers:
@@ -167,12 +172,12 @@ class DeterministicMathTool:
         result = self.symbolic._format(value)
         support = (
             rf"Set t={scale_name}{variable_name}. The integral becomes "
-            rf"\\int_0^\\infty g(t/{scale_name})/"
-            rf"({self.symbolic._format(constant)}+{self.symbolic._format(quadratic)}t^2)\\,dt, "
+            rf"\int_0^\infty g(t/{scale_name})/"
+            rf"({self.symbolic._format(constant)}+{self.symbolic._format(quadratic)}\,t^2)\,dt, "
             rf"where g(0)={self.symbolic._format(value_at_zero)}. Since "
-            rf"g'/g={self.symbolic._format(logarithmic_derivative)}\\le 0, its absolute value "
+            rf"g'/g={self.symbolic._format(logarithmic_derivative)}\le 0, its absolute value "
             rf"is dominated by g(0)/({self.symbolic._format(constant)}+"
-            rf"{self.symbolic._format(quadratic)}t^2), which is integrable. Dominated "
+            rf"{self.symbolic._format(quadratic)}\,t^2), which is integrable. Dominated "
             rf"convergence therefore gives {result}."
         )
         return make_tool_result(
@@ -251,11 +256,11 @@ class DeterministicMathTool:
         support = (
             rf"For the first fundamental form, E={self.symbolic._format(e_metric)}, "
             rf"F={self.symbolic._format(f_metric)}, G={self.symbolic._format(g_metric)}. "
-            rf"With N=X_u\\times X_v (not normalized), set "
-            rf"\\tilde e=X_{{uu}}\\cdot N={self.symbolic._format(second_uu)}, "
-            rf"\\tilde f=X_{{uv}}\\cdot N={self.symbolic._format(second_uv)}, "
-            rf"\\tilde g=X_{{vv}}\\cdot N={self.symbolic._format(second_vv)}. Then "
-            rf"K=(\\tilde e\\tilde g-\\tilde f^2)/(EG-F^2)^2={result}. "
+            rf"With N=X_u\times X_v (not normalized), set "
+            rf"\tilde e=X_{{uu}}\cdot N={self.symbolic._format(second_uu)}, "
+            rf"\tilde f=X_{{uv}}\cdot N={self.symbolic._format(second_uv)}, "
+            rf"\tilde g=X_{{vv}}\cdot N={self.symbolic._format(second_vv)}. Then "
+            rf"K=(\tilde e\tilde g-\tilde f^2)/(EG-F^2)^2={result}. "
             rf"Replacing N by -N changes all three tilded coefficients' signs and leaves K unchanged."
         )
         return make_tool_result(
@@ -412,8 +417,8 @@ class DeterministicMathTool:
         result = self.symbolic._format(expectation)
         support = (
             rf"The {spacing_count} normalized spacings have the Dirichlet(1,...,1) law. "
-            rf"Inclusion-exclusion gives P(M>t)=\\sum_{{k=1}}^{{{spacing_count}}}"
-            rf"(-1)^{{k+1}}\\binom{{{spacing_count}}}k(1-kt)_+^{{{spacing_count - 1}}}. "
+            rf"Inclusion-exclusion gives P(M>t)=\sum_{{k=1}}^{{{spacing_count}}}"
+            rf"(-1)^{{k+1}}\binom{{{spacing_count}}}k(1-kt)_+^{{{spacing_count - 1}}}. "
             rf"Integrating the tail yields E[M]=H_{{{spacing_count}}}/{spacing_count}; "
             rf"multiplication by the interval length {self.symbolic._format(upper - lower)} "
             rf"gives {result}."
@@ -778,11 +783,11 @@ class DeterministicMathTool:
         result = rf"\widehat{{\beta}}_{{GLS}}={formatted}"
         support = (
             rf"For X=1, the GLS normal equation is "
-            rf"(\\sum_i d_i^{{-1}})\\widehat{{\\beta}}="
-            rf"\\sum_i d_i^{{-1}}y_i. Here the denominator is "
+            rf"(\sum_i d_i^{{-1}})\widehat{{\beta}}="
+            rf"\sum_i d_i^{{-1}}y_i. Here the denominator is "
             rf"{self.symbolic._format(denominator)} and the numerator is "
             rf"{self.symbolic._format(numerator)}, so {result}. Substitution makes "
-            rf"\\sum_i(y_i-\\widehat{{\\beta}})/d_i=0."
+            rf"\sum_i(y_i-\widehat{{\beta}})/d_i=0."
         )
         return make_tool_result(
             problem=text,
@@ -905,6 +910,472 @@ class DeterministicMathTool:
             requirements=("result_present",),
         )
 
+    def _nilpotent_jordan_partition(self, text: str) -> Optional[ToolResult]:
+        """Recover a nilpotent Jordan partition from a complete rank sequence."""
+        if not re.search(r"幂零|nilpotent", text, re.IGNORECASE):
+            return None
+        if not re.search(r"Jordan|若尔当", text, re.IGNORECASE):
+            return None
+
+        dimension = self._vector_space_dimension(text)
+        nilpotency = re.search(
+            r"(?P<op>[A-Za-z])\s*\^\s*\{?\s*(?P<power>\d+)\s*\}?\s*=\s*0",
+            text,
+            re.IGNORECASE,
+        )
+        if dimension is None or nilpotency is None:
+            return None
+        operator = nilpotency.group("op")
+        max_size = int(nilpotency.group("power"))
+        if not (1 <= max_size <= 30 and dimension <= 500):
+            return None
+
+        rank_pattern = re.compile(
+            rf"(?:\\operatorname\s*\{{\s*rank\s*\}}|\\?rank|秩)\s*"
+            rf"{re.escape(operator)}(?:\s*\^\s*\{{?\s*(\d+)\s*\}}?)?\s*=\s*(\d+)",
+            re.IGNORECASE,
+        )
+        ranks = {0: dimension, max_size: 0}
+        for match in rank_pattern.finditer(text):
+            power = int(match.group(1) or 1)
+            rank = int(match.group(2))
+            if power in ranks and ranks[power] != rank:
+                return None
+            ranks[power] = rank
+        if set(ranks) != set(range(max_size + 1)):
+            return None
+        rank_sequence = [ranks[index] for index in range(max_size + 1)]
+        if any(
+            not (0 <= rank_sequence[index + 1] <= rank_sequence[index])
+            for index in range(max_size)
+        ):
+            return None
+
+        exact_counts: dict[int, int] = {}
+        for size in range(1, max_size + 1):
+            next_rank = rank_sequence[size + 1] if size < max_size else 0
+            count = rank_sequence[size - 1] - 2 * rank_sequence[size] + next_rank
+            if count < 0:
+                return None
+            exact_counts[size] = count
+        blocks = tuple(
+            size
+            for size in range(max_size, 0, -1)
+            for _ in range(exact_counts[size])
+        )
+        if not blocks or sum(blocks) != dimension:
+            return None
+        for power in range(max_size + 1):
+            reconstructed = sum(max(size - power, 0) for size in blocks)
+            if reconstructed != rank_sequence[power]:
+                return None
+
+        result = "(" + ",".join(str(size) for size in blocks) + ")"
+        ranks_text = ", ".join(
+            rf"r_{{{power}}}={rank_sequence[power]}"
+            for power in range(max_size + 1)
+        ) + rf", r_{{{max_size + 1}}}=0"
+        counts_text = ", ".join(
+            rf"c_{{{size}}}=r_{{{size - 1}}}-2r_{{{size}}}+r_{{{size + 1}}}"
+            rf"={exact_counts[size]}"
+            for size in range(1, max_size + 1)
+        )
+        if re.search(r"[\u4e00-\u9fff]", text):
+            support = (
+                rf"令 r_j=\operatorname{{rank}}({operator}^j)，则 {ranks_text}。"
+                rf"大小恰为 j 的 Jordan 块数为 c_j=r_{{j-1}}-2r_j+r_{{j+1}}；"
+                rf"代入得 {counts_text}，故分拆为 {result}。"
+                rf"按 \sum\max(s-j,0) 回代各次秩均与题设一致。"
+            )
+        else:
+            support = (
+                rf"Let r_j=\operatorname{{rank}}({operator}^j); then {ranks_text}. "
+                rf"The number of Jordan blocks of exact size j is "
+                rf"c_j=r_{{j-1}}-2r_j+r_{{j+1}}; hence {counts_text}, giving {result}. "
+                rf"Recomputing every rank as \sum\max(s-j,0) matches the statement."
+            )
+        return make_tool_result(
+            problem=text,
+            operation="nilpotent_jordan_partition",
+            result=result,
+            result_kind="partition",
+            method="nilpotent_rank_second_differences",
+            whole=True,
+            written_support=True,
+            checks=(
+                "complete_rank_sequence",
+                "nonnegative_second_differences",
+                "dimension_reconstruction",
+                "all_power_ranks_reconstructed",
+            ),
+            support=support,
+            answer_shapes=("expression",),
+            requirements=("result_present",),
+        )
+
+    def _sobolev_energy_minimization(self, text: str) -> Optional[ToolResult]:
+        if not re.search(r"H\s*_\s*\{?0\}?\s*\^\s*\{?1\}?|H_0\^1", text):
+            return None
+        if not re.search(r"最小值|极小|minimi[sz]e|minimum", text, re.IGNORECASE):
+            return None
+        space = re.search(
+            r"H\s*_\s*\{?0\}?\s*\^\s*\{?1\}?\s*\(\s*0\s*[,，]\s*([^)$]+)\)",
+            text,
+        )
+        fragments = self._math_fragments(text)
+        constraint_pattern = re.compile(
+            r"\\int\s*_\s*\{?\s*0\s*\}?\s*\^\s*"
+            r"(?:\{\s*([^{}]+?)\s*\}|([^()\s]+?))\s*"
+            r"y\s*(?:\(\s*x\s*\))?\s*(?:\\,)?\s*d\s*x\s*=\s*([^$，,。；;\s]+)\s*",
+            re.IGNORECASE,
+        )
+        objective_pattern = re.compile(
+            r"\\int\s*_\s*\{?\s*0\s*\}?\s*\^\s*"
+            r"(?:\{\s*([^{}]+?)\s*\}|([^()\s]+?))\s*"
+            r"\(?\s*\(?y\s*(?:'|′)\s*\)?\s*\^\s*\{?2\}?\s*\)?\s*"
+            r"(?:\\,)?\s*d\s*x\s*",
+            re.IGNORECASE,
+        )
+        constraint = next(
+            (match for fragment in fragments if (match := constraint_pattern.fullmatch(fragment))),
+            None,
+        )
+        objective = next(
+            (match for fragment in fragments if (match := objective_pattern.fullmatch(fragment))),
+            None,
+        )
+        if not space or not constraint or not objective:
+            return None
+        try:
+            length = self._formula(space.group(1))
+            constraint_upper = self._formula(constraint.group(1) or constraint.group(2))
+            objective_upper = self._formula(objective.group(1) or objective.group(2))
+            mass = self._formula(constraint.group(3))
+            if any(value.free_symbols for value in (length, constraint_upper, objective_upper, mass)):
+                return None
+            if self.sp.simplify(length - constraint_upper) != 0:
+                return None
+            if self.sp.simplify(length - objective_upper) != 0:
+                return None
+            if float(self.sp.N(length)) <= 0:
+                return None
+        except Exception:
+            return None
+        coefficient = self.sp.simplify(6 * mass / length**3)
+        minimum = self.sp.simplify(12 * mass**2 / length**3)
+        x = self.sp.Symbol("x")
+        minimizer = self.sp.simplify(coefficient * x * (length - x))
+        if self.sp.simplify(self.sp.integrate(minimizer, (x, 0, length)) - mass) != 0:
+            return None
+        if self.sp.simplify(
+            self.sp.integrate(self.sp.diff(minimizer, x) ** 2, (x, 0, length)) - minimum
+        ) != 0:
+            return None
+        result = self.symbolic._format(minimum)
+        minimizer_text = self.symbolic._format(minimizer)
+        if re.search(r"[\u4e00-\u9fff]", text):
+            support = (
+                rf"取 y_*(x)={minimizer_text}，则 y_*\in H_0^1(0,{self.symbolic._format(length)}) "
+                rf"且 \int_0^{{{self.symbolic._format(length)}}}y_*\,dx="
+                rf"{self.symbolic._format(mass)}。对任意可行 y 写 h=y-y_*；"
+                rf"由 h 的零边界与 \int h=0，分部积分得 \int y_*'h'=0。因而 "
+                rf"\int(y')^2=\int(y_*')^2+\int(h')^2\ge {result}。"
+                rf"等号迫使 h'=0，再由零边界得 h=0，故最小值为 {result} 且极小元唯一。"
+            )
+        else:
+            support = (
+                rf"Set y_*(x)={minimizer_text}; it has zero boundary values and integral "
+                rf"{self.symbolic._format(mass)}. For any feasible y write h=y-y_*. "
+                rf"Integration by parts and \int h=0 give \int y_*'h'=0, so "
+                rf"\int(y')^2=\int(y_*')^2+\int(h')^2\ge {result}. Equality forces h'=0 "
+                rf"and the boundary values force h=0, proving the unique global minimizer."
+            )
+        return make_tool_result(
+            problem=text,
+            operation="sobolev_energy_minimization",
+            result=result,
+            result_kind="scalar",
+            method="euler_lagrange_candidate_and_positive_remainder",
+            whole=True,
+            written_support=True,
+            checks=(
+                "matching_interval_bounds",
+                "constraint_integral_recomputed",
+                "minimum_energy_recomputed",
+                "positive_remainder_and_unique_equality_case",
+            ),
+            support=support,
+            answer_shapes=("number", "expression"),
+            requirements=("result_present", "numeric_result"),
+        )
+
+    def _linear_program_2d_vertices(self, text: str) -> Optional[ToolResult]:
+        fragment = next(
+            (
+                item for item in self._math_fragments(text)
+                if re.search(r"\\(?:max|min)\s*\\\{", item, re.IGNORECASE)
+            ),
+            "",
+        )
+        match = re.fullmatch(
+            r"\s*\\(max|min)\s*\\\{(.+)\\\}\s*",
+            fragment,
+            re.IGNORECASE | re.DOTALL,
+        )
+        if not match:
+            return None
+        sense = match.group(1).casefold()
+        body = match.group(2)
+        objective_raw, separator, constraints_raw = body.partition(":")
+        if not separator:
+            objective_raw, separator, constraints_raw = body.partition("：")
+        if not separator:
+            return None
+        try:
+            objective = self._formula(objective_raw)
+        except Exception:
+            return None
+        variables = tuple(sorted(objective.free_symbols, key=lambda item: item.name))
+        if len(variables) != 2:
+            return None
+        try:
+            if self.sp.Poly(objective, *variables).total_degree() > 1:
+                return None
+        except Exception:
+            return None
+
+        relations: list[tuple[object, str]] = []
+        for raw in self._split_top_level(constraints_raw):
+            relation = re.fullmatch(
+                r"\s*(.+?)\s*(\\leq?|\\geq?|<=|>=)\s*(.+?)\s*",
+                raw,
+                re.DOTALL,
+            )
+            if not relation:
+                return None
+            left_raw, operator, right_raw = relation.groups()
+            try:
+                expression = self.sp.expand(self._formula(left_raw) - self._formula(right_raw))
+                polynomial = self.sp.Poly(expression, *variables)
+                if polynomial.total_degree() > 1 or expression.free_symbols - set(variables):
+                    return None
+            except Exception:
+                return None
+            normalized_operator = "le" if "le" in operator or operator == "<=" else "ge"
+            relations.append((expression, normalized_operator))
+        if not 3 <= len(relations) <= 20:
+            return None
+
+        normalized = [expression if operator == "le" else -expression for expression, operator in relations]
+        for variable in variables:
+            nonnegative = any(self.sp.simplify(expression + variable) == 0 for expression in normalized)
+            bounded_above = False
+            for expression in normalized:
+                polynomial = self.sp.Poly(expression, *variables)
+                coefficient = self.sp.simplify(polynomial.coeff_monomial(variable))
+                other_coefficients = [
+                    self.sp.simplify(polynomial.coeff_monomial(other))
+                    for other in variables if other != variable
+                ]
+                constant = self.sp.simplify(polynomial.coeff_monomial(1))
+                if (
+                    coefficient.is_positive is True
+                    and all(item.is_nonnegative is True for item in other_coefficients)
+                    and constant.is_negative is True
+                ):
+                    bounded_above = True
+                    break
+            if not nonnegative or not bounded_above:
+                return None
+
+        vertices: list[tuple] = []
+        for (left, _), (right, _) in combinations(relations, 2):
+            try:
+                solutions = self.sp.solve((left, right), variables, dict=True)
+            except Exception:
+                continue
+            for solution in solutions:
+                if set(solution) != set(variables):
+                    continue
+                point = tuple(self.sp.simplify(solution[variable]) for variable in variables)
+                if any(value.free_symbols or value.is_real is False for value in point):
+                    continue
+                substitution = dict(zip(variables, point))
+                feasible = True
+                for expression, operator in relations:
+                    numeric = float(self.sp.N(expression.subs(substitution), 30))
+                    if (operator == "le" and numeric > 1e-10) or (
+                        operator == "ge" and numeric < -1e-10
+                    ):
+                        feasible = False
+                        break
+                if feasible and not any(
+                    all(self.sp.simplify(a - b) == 0 for a, b in zip(point, existing))
+                    for existing in vertices
+                ):
+                    vertices.append(point)
+        if not vertices:
+            return None
+        values = [self.sp.simplify(objective.subs(dict(zip(variables, point)))) for point in vertices]
+        numeric_values = [float(self.sp.N(value, 30)) for value in values]
+        optimum_numeric = max(numeric_values) if sense == "max" else min(numeric_values)
+        optimum_indices = [
+            index for index, value in enumerate(numeric_values)
+            if abs(value - optimum_numeric) <= 1e-10
+        ]
+        if len(optimum_indices) != 1:
+            return None
+        optimum_index = optimum_indices[0]
+        optimum_point = vertices[optimum_index]
+        optimum_value = values[optimum_index]
+        point_text = "(" + ",".join(self.symbolic._format(item) for item in optimum_point) + ")"
+        value_text = self.symbolic._format(optimum_value)
+        variable_tuple = "(" + ",".join(str(variable) for variable in variables) + ")"
+        result = rf"{variable_tuple}={point_text},\quad \{sense}={value_text}"
+        audit = "; ".join(
+            rf"({','.join(self.symbolic._format(item) for item in point)})\mapsto"
+            rf"{self.symbolic._format(value)}"
+            for point, value in zip(vertices, values)
+        )
+        if re.search(r"[\u4e00-\u9fff]", text):
+            support = (
+                rf"枚举全部两两活跃约束并代回所有不等式，恰得可行顶点及目标值：{audit}。"
+                rf"逐项精确比较表明唯一最优点为 {point_text}，目标值 {value_text}；"
+                rf"非负约束与含正系数的上界约束同时给出可行域有界性，故顶点检验完备。"
+            )
+        else:
+            support = (
+                rf"Enumerating every pair of active constraints and substituting into all "
+                rf"inequalities gives the feasible vertex/value list {audit}. Exact comparison "
+                rf"makes {point_text} the unique optimum with value {value_text}; nonnegativity "
+                rf"and the positive-coefficient upper bounds certify boundedness."
+            )
+        return make_tool_result(
+            problem=text,
+            operation="linear_program_2d_vertices",
+            result=result,
+            result_kind="optimizer",
+            method="all_active_constraint_pairs_and_exact_objective_comparison",
+            whole=True,
+            written_support=True,
+            checks=(
+                "linear_objective_and_constraints",
+                "bounded_first_quadrant_region",
+                "all_boundary_pairs_enumerated",
+                "all_vertices_feasibility_substituted",
+                "exact_unique_objective_comparison",
+            ),
+            support=support,
+            answer_shapes=("expression",),
+            requirements=("result_present",),
+        )
+
+    def _uniform_scale_umvu(self, text: str) -> Optional[ToolResult]:
+        """Certify the UMVU estimator of the endpoint of U(0, theta)."""
+        if not re.search(r"UMVU|一致最小方差无偏", text, re.IGNORECASE):
+            return None
+        if not re.search(r"独立同分布|独立服从|\bi\.?i\.?d\.?(?:\b|\s)", text, re.IGNORECASE):
+            return None
+        theta_target = re.search(
+            r"(?:求|find|determine)[^。.!?\n]{0,100}?\\theta[^。.!?\n]{0,60}?UMVU|"
+            r"UMVU[^。.!?\n]{0,80}?(?:of|for|估计量)[^。.!?\n]{0,30}?\\theta",
+            text,
+            re.IGNORECASE,
+        )
+        if not theta_target or re.search(r"\\theta\s*\^", theta_target.group(0)):
+            return None
+        if not re.search(
+            r"U\s*\(\s*0\s*[,，]\s*\\?theta\s*\)|"
+            r"(?:uniform|均匀分布).{0,30}(?:0\s*[,，]\s*\\?theta)",
+            text,
+            re.IGNORECASE,
+        ):
+            return None
+        sample = re.search(
+            r"X\s*_\s*\{?\s*1\s*\}?\s*[,，].{0,60}?"
+            r"X\s*_\s*\{?\s*(\d+)\s*\}?",
+            text,
+            re.IGNORECASE,
+        )
+        if sample is None:
+            sample = re.search(
+                r"(?:sample\s+size|样本量)\s*(?:is|为|=)?\s*(\d+)",
+                text,
+                re.IGNORECASE,
+            )
+        if sample is None:
+            return None
+        count = int(sample.group(1))
+        if not 1 <= count <= 100000:
+            return None
+        maximum = re.search(
+            r"(?P<name>[A-Za-z])\s*=\s*\\?max\s*"
+            r"(?:_\s*\{?[A-Za-z]\}?)?\s*X|"
+            r"(?P<name_zh>[A-Za-z])\s*=\s*最大(?:值|次序统计量)",
+            text,
+            re.IGNORECASE,
+        )
+        maximum_name = (
+            maximum.group("name") or maximum.group("name_zh")
+            if maximum is not None else rf"X_{{({count})}}"
+        )
+        coefficient = self.sp.Rational(count + 1, count)
+        formatted = self.symbolic._format(coefficient)
+        result = rf"\widehat{{\theta}}={formatted}{maximum_name}"
+        if re.search(r"[\u4e00-\u9fff]", text):
+            support = (
+                rf"似然为 \theta^{{-{count}}}\mathbf{{1}}_{{0\le {maximum_name}\le\theta}}，"
+                rf"故 {maximum_name} 充分。若 E_\theta g({maximum_name})=0 对所有 \theta>0 成立，"
+                rf"则 {count}\theta^{{-{count}}}\int_0^\theta g(m)m^{{{count - 1}}}\,dm=0；"
+                rf"对 \theta 求导得 g(\theta)=0（几乎处处），故 {maximum_name} 完全。"
+                rf"又 E_\theta {maximum_name}={count}\theta/{count + 1}，所以 {result} 无偏；"
+                rf"由 Lehmann--Scheffe 定理它是 UMVU。"
+            )
+        else:
+            support = (
+                rf"The likelihood is \theta^{{-{count}}}\mathbf{{1}}_{{0\le {maximum_name}\le\theta}}, "
+                rf"so {maximum_name} is sufficient. If E_\theta g({maximum_name})=0 for every "
+                rf"\theta>0, differentiating \int_0^\theta g(m)m^{{{count - 1}}}\,dm=0 gives "
+                rf"g(\theta)=0 almost everywhere, proving completeness. Since "
+                rf"E_\theta {maximum_name}={count}\theta/{count + 1}, {result} is unbiased and "
+                rf"Lehmann--Scheffe makes it UMVU."
+            )
+        return make_tool_result(
+            problem=text,
+            operation="uniform_scale_umvu",
+            result=result,
+            result_kind="estimator",
+            method="factorization_completeness_differentiation_and_unbiasing",
+            whole=True,
+            written_support=True,
+            checks=(
+                "sample_size_parsed",
+                "factorization_sufficiency",
+                "integral_completeness_argument",
+                "maximum_expectation",
+            ),
+            support=support,
+            answer_shapes=("number", "expression"),
+            requirements=("result_present",),
+        )
+
+    def _vector_space_dimension(self, text: str) -> Optional[int]:
+        patterns = (
+            r"([零一二两三四五六七八九十百\d]+)\s*维(?:复|实)?向量空间",
+            r"(?:dim(?:ension)?\s*(?:of\s*)?(?:V)?\s*(?:is|=)?|"
+            r"([零一二两三四五六七八九十百\d]+)[- ]dimensional)\s*(\d+)?",
+            r"\\dim\s*(?:\([^)]*\)|[A-Za-z])\s*=\s*(\d+)",
+        )
+        for pattern in patterns:
+            match = re.search(pattern, text, re.IGNORECASE)
+            if not match:
+                continue
+            token = next((group for group in match.groups() if group), "")
+            value = self._small_integer(token)
+            if value is not None and value > 0:
+                return value
+        return None
+
     def _forcing_exponents(self, expression, variable) -> tuple:
         rewritten = self.sp.expand(expression.rewrite(self.sp.exp))
         exponents = []
@@ -973,6 +1444,7 @@ class DeterministicMathTool:
 
     def _formula(self, value: str):
         prepared = str(value or "").strip().strip("$ ")
+        prepared = re.sub(r"\\(?:[,;:!]|\s)", " ", prepared)
         prepared = re.sub(
             r"\\(sin|cos|tan|sinh|cosh|exp|log|ln)", r" \1 ", prepared
         )

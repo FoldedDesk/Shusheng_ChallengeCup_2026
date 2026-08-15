@@ -23,6 +23,7 @@ from reasoning.candidate_selector import (
 )
 from reasoning.finalizer import ExtractionResult, Finalizer
 from reasoning.math_equivalence import equivalent_answers
+from reasoning.subject_protocols import subject_protocol
 from tools.deterministic_math_tool import DeterministicMathTool
 from tools.sympy_tool import SympyTool
 from tools.tool_contract import ToolResult, problem_fingerprint
@@ -193,6 +194,7 @@ class SubmissionAgent:
         second_best = choose_candidate(second_candidates)
         conflict = self._conflict(first_best, second_best, spec)
         second_usable = self._complete_after_transport(second_best, second_truncated)
+        weak_consensus = self._weak_consensus(first_best, second_best, spec)
         no_complete = not (first_usable or second_usable)
         needs_recovery = bool(
             no_complete
@@ -210,16 +212,18 @@ class SubmissionAgent:
                 "second_usable": second_usable,
                 "second_truncated": second_truncated,
                 "conflict": conflict,
+                "weak_consensus": weak_consensus,
                 "needs_recovery": needs_recovery,
             },
         })
 
         adjudicated: CandidateAssessment | None = None
         decision = ""
+        adjudication_stage = ""
         if (
             budget.allow_repair
             and call_count < budget.max_calls
-            and (conflict or needs_recovery)
+            and (conflict or needs_recovery or weak_consensus)
             and self._remaining_seconds(started_at) >= budget.repair_min_remaining_seconds
         ):
             if conflict and first_best is not None and second_best is not None:
@@ -227,6 +231,13 @@ class SubmissionAgent:
                     statement, spec, evidence, first_best, second_best
                 )
                 stage = "arbitration"
+                third_tokens = budget.repair_tokens
+                third_thinking = False
+            elif weak_consensus and first_best is not None and second_best is not None:
+                third_request = self._consensus_audit_request(
+                    statement, spec, evidence, first_best, second_best
+                )
+                stage = "consensus_audit"
                 third_tokens = budget.repair_tokens
                 third_thinking = False
             else:
@@ -261,7 +272,8 @@ class SubmissionAgent:
                 third_candidates,
                 self._truncated(third_result, third_raw),
             )
-            if stage == "arbitration":
+            if stage in {"arbitration", "consensus_audit"}:
+                adjudication_stage = stage
                 decision, adjudicated = self._apply_arbitration(
                     third_raw,
                     third_result,
@@ -269,6 +281,7 @@ class SubmissionAgent:
                     first_best,
                     second_best,
                     spec,
+                    evidence,
                 )
             else:
                 candidates.extend(third_candidates)
@@ -306,6 +319,8 @@ class SubmissionAgent:
                     route=(
                         "certified_goal_fallback"
                         if certified_fallback
+                        else "consensus_audited"
+                        if adjudicated and adjudication_stage == "consensus_audit"
                         else "arbitrated" if adjudicated else "ranked_candidates"
                     ),
                     model_calls=call_count,
@@ -456,7 +471,13 @@ class SubmissionAgent:
                 continue
             seen.add(value)
             checks = tuple(
-                CheckResult(check.name, check.status, "sympy", check.detail)
+                CheckResult(
+                    check.name,
+                    check.status,
+                    "sympy",
+                    check.detail,
+                    check.decisive,
+                )
                 for check in self.sympy.verify_candidate(spec.problem_text, value, spec)
             )
             assessments.append(assess_candidate(
@@ -488,7 +509,13 @@ class SubmissionAgent:
     ) -> CandidateAssessment:
         normalized = self._normalize_candidate(value, spec)
         checks = tuple(
-            CheckResult(check.name, check.status, "sympy", check.detail)
+            CheckResult(
+                check.name,
+                check.status,
+                "sympy",
+                check.detail,
+                check.decisive,
+            )
             for check in self.sympy.verify_candidate(spec.problem_text, normalized, spec)
         )
         return assess_candidate(
@@ -646,9 +673,25 @@ class SubmissionAgent:
         contract = result.contract
         if not result.goal_result_eligible or contract is None:
             return False
+        requested = {
+            requirement.name
+            for goal in spec.goals
+            for requirement in goal.result_requirements
+            if requirement.strict
+        }
         return bool(
-            not contract.allowed_answer_shapes
-            or spec.profile.answer_shape in contract.allowed_answer_shapes
+            len(spec.goals) == 1
+            and len(spec.goals) <= contract.max_goals
+            and (
+                spec.profile.task_kind in contract.allowed_task_kinds
+                or result.supported_submission_eligible
+            )
+            and set(contract.required_requirements) <= requested
+            and requested <= set(contract.allowed_requirements)
+            and (
+                not contract.allowed_answer_shapes
+                or spec.profile.answer_shape in contract.allowed_answer_shapes
+            )
         )
 
     def _primary_request(
@@ -663,7 +706,10 @@ class SubmissionAgent:
             spec,
             role="Solve from first principles.",
             method=f"Suggested route, only if applicable: {spec.primary_method}.",
-            context=cards.solve_context(),
+            context=self._join_context(
+                subject_protocol(spec, review=False),
+                cards.solve_context(),
+            ),
             evidence=evidence,
         )
 
@@ -680,10 +726,15 @@ class SubmissionAgent:
             role=(
                 "Solve independently in a fresh context. Use a genuinely different "
                 "derivation or invariant and actively search for counterexamples, "
-                "missing cases, sign errors, and theorem-hypothesis failures."
+                "missing cases, sign errors, and theorem-hypothesis failures. Do not "
+                f"reuse the primary route ({spec.primary_method}) unless no valid "
+                "alternative exists."
             ),
             method=f"Independent route, only if applicable: {spec.alternative_method}.",
-            context=cards.review_context(),
+            context=self._join_context(
+                subject_protocol(spec, review=True),
+                cards.review_context(),
+            ),
             evidence=evidence,
         )
 
@@ -703,7 +754,10 @@ class SubmissionAgent:
                 "Recover the mathematics compactly and put a checked complete FINAL line first."
             ),
             method="Prefer a short direct derivation and one decisive check.",
-            context=cards.review_context(),
+            context=self._join_context(
+                subject_protocol(spec, review=True),
+                cards.review_context(),
+            ),
             evidence=evidence,
         )
         excerpts = [self._draft_excerpt(item) for item in drafts if str(item or "").strip()]
@@ -746,6 +800,12 @@ class SubmissionAgent:
             support,
             method,
         ]
+        semantic_context = spec.semantics.prompt_context(spec.profile.language)
+        if semantic_context:
+            sections.append(
+                "Conservative statement parse (use only as a checklist; the original problem "
+                "overrides it on any conflict):\n" + semantic_context
+            )
         if context:
             sections.append("General reference facts (verify applicability):\n" + context)
         tool_context = self._evidence_prompt(evidence)
@@ -780,9 +840,38 @@ class SubmissionAgent:
             "DECISION: A, B, CORRECTED, or UNRESOLVED\n"
             "CHECK: the decisive mathematical check\n\n"
             f"Required content: {obligations}.\n\n"
+            f"Subject audit protocol:\n{subject_protocol(spec, review=True) or 'general recomputation'}\n\n"
             f"Problem:\n{problem}\n\n"
             f"Candidate A:\n{self._bounded(first.answer, 3500)}\n\n"
             f"Candidate B:\n{self._bounded(second.answer, 3500)}\n\n"
+            f"Local check evidence:\n{self._evidence_prompt(evidence) or 'none'}"
+        )
+
+    def _consensus_audit_request(
+        self,
+        problem: str,
+        spec: ProblemSpec,
+        evidence: tuple[ToolEvidence, ...],
+        first: CandidateAssessment,
+        second: CandidateAssessment,
+    ) -> str:
+        obligations = "; ".join(
+            part.description for part in spec.answer_contract.parts if part.strict
+        )
+        return (
+            "Two nominally independent drafts reach the same conclusion but lack an "
+            "objective certificate and may share one hidden mistake. Audit them from the "
+            "original statement. Locate the first unsupported implication, theorem-hypothesis "
+            "gap, omitted case, or sign error; if none exists, rebuild the argument compactly. "
+            "Output exactly these labelled sections:\n"
+            "FINAL: the complete audited answer, including the proof when required\n"
+            "DECISION: A, B, CORRECTED, or UNRESOLVED\n"
+            "CHECK: one reproducible falsification attempt or decisive theorem-hypothesis audit\n\n"
+            f"Required content: {obligations}.\n\n"
+            f"Subject audit protocol:\n{subject_protocol(spec, review=True) or 'general recomputation'}\n\n"
+            f"Problem:\n{problem}\n\n"
+            f"Draft A:\n{self._bounded(first.answer, 4500)}\n\n"
+            f"Draft B:\n{self._bounded(second.answer, 4500)}\n\n"
             f"Local check evidence:\n{self._evidence_prompt(evidence) or 'none'}"
         )
 
@@ -794,6 +883,7 @@ class SubmissionAgent:
         first: CandidateAssessment | None,
         second: CandidateAssessment | None,
         spec: ProblemSpec,
+        evidence: tuple[ToolEvidence, ...] = (),
     ) -> tuple[str, CandidateAssessment | None]:
         if self._truncated(result, raw):
             return "truncated", None
@@ -810,16 +900,43 @@ class SubmissionAgent:
         submitted = choose_candidate(third_candidates)
         if decision == "A" and self._is_result_usable(first):
             if submitted is not None and self._same_conclusion(submitted, first, spec):
+                if (
+                    spec.answer_contract.mode != "answer_only"
+                    and self._is_complete(submitted)
+                ):
+                    return decision, submitted
                 return decision, first if self._is_complete(first) else submitted
             return "final_mismatches_A", None
         if decision == "B" and self._is_result_usable(second):
             if submitted is not None and self._same_conclusion(submitted, second, spec):
+                if (
+                    spec.answer_contract.mode != "answer_only"
+                    and self._is_complete(submitted)
+                ):
+                    return decision, submitted
                 return decision, second if self._is_complete(second) else submitted
             return "final_mismatches_B", None
         if decision == "CORRECTED":
             corrected = choose_candidate(third_candidates)
             if corrected is not None and corrected.validation_tier == "complete":
                 return decision, corrected
+            if (
+                corrected is not None
+                and corrected.validation_tier == "degraded"
+                and spec.profile.task_kind not in {"proof", "derivation", "explanation"}
+            ):
+                rebuilt = self._assess_value(
+                    f"FINAL: {corrected.answer}\nBy direct verification, {check_match.group(1)}",
+                    source="arbitration",
+                    spec=spec,
+                    evidence=evidence,
+                    extraction_method="arbitration_final_plus_check",
+                    explicit=True,
+                    method_id="arbitration_check",
+                    independence_group="model_c",
+                )
+                if rebuilt.validation_tier == "complete" and not rebuilt.failed_check:
+                    return decision, rebuilt
         return decision, None
 
     @staticmethod
@@ -847,6 +964,52 @@ class SubmissionAgent:
             right_numbers = re.findall(r"(?<![A-Za-z])[-+]?\d+(?:\.\d+)?", right)
             return bool(left_numbers and right_numbers and left_numbers != right_numbers)
         return True
+
+    @staticmethod
+    def _weak_consensus(
+        first: CandidateAssessment | None,
+        second: CandidateAssessment | None,
+        spec: ProblemSpec,
+    ) -> bool:
+        if not SubmissionAgent._is_complete(first) or not SubmissionAgent._is_complete(second):
+            return False
+        if SubmissionAgent._conflict(first, second, spec):
+            return False
+        if SubmissionAgent._objectively_checked(first) or SubmissionAgent._objectively_checked(second):
+            return False
+        task = spec.profile.task_kind
+        if task not in {"proof", "derivation", "explanation", "construction"}:
+            return False
+        sensitive = bool(
+            task == "construction"
+            or spec.risk_score >= 6
+            or spec.profile.subject_confidence == "low"
+        )
+        if not sensitive:
+            return False
+        left_methods = SubmissionAgent._reasoning_families(first.answer)
+        right_methods = SubmissionAgent._reasoning_families(second.answer)
+        return not (left_methods and right_methods and left_methods.isdisjoint(right_methods))
+
+    @staticmethod
+    def _reasoning_families(value: str) -> set[str]:
+        patterns = {
+            "contradiction": r"反设|矛盾|contradiction|suppose not",
+            "induction": r"归纳|induction|inductive",
+            "counting": r"双计数|容斥|生成函数|bijection|double count|inclusion|generating function",
+            "linear_algebra": r"矩阵|行列式|特征值|秩|matrix|determinant|eigen|rank",
+            "calculus": r"求导|积分|极限|Taylor|differentiat|integrat|limit|series expansion",
+            "probabilistic": r"条件概率|期望|鞅|conditioning|expectation|martingale",
+            "algebraic": r"同态|商|理想|多项式|homomorphism|quotient|ideal|polynomial",
+            "topological": r"紧致|连通|开覆盖|同伦|compact|connected|open cover|homotopy",
+            "energy": r"能量|变分|energy|variational",
+            "direct": r"代入|直接计算|由定义|substitut|direct calculation|from the definition",
+        }
+        text = str(value or "")
+        return {
+            family for family, pattern in patterns.items()
+            if re.search(pattern, text, re.IGNORECASE)
+        }
 
     @staticmethod
     def _conclusion_polarity(value: str) -> str:
@@ -1157,6 +1320,10 @@ class SubmissionAgent:
     def _bounded(value: str, limit: int) -> str:
         text = str(value or "")
         return text if len(text) <= limit else text[:limit] + "\n[content shortened]"
+
+    @staticmethod
+    def _join_context(*parts: str) -> str:
+        return "\n".join(str(part).strip() for part in parts if str(part).strip())
 
     @staticmethod
     def _draft_excerpt(value: str) -> str:
