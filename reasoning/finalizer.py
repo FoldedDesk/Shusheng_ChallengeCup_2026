@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 import re
 
-from tools.latex_parser import normalize_latex
+from tools.latex_parser import find_matching_brace, normalize_latex
 
 
 @dataclass(frozen=True)
@@ -27,11 +27,16 @@ class Finalizer:
         re.IGNORECASE,
     )
     _PLACEHOLDER = re.compile(
-        r"^(?:最终答案|完整答案|完整结论|答案|final(?:\s+answer)?|answer|check\s+format(?:ting)?|format(?:ting)?|(?:final\s+)?(?:conclusion|response|done)|[.。…`'\"，,]+)$",
+        r"^(?:(?:最终答案|完整答案|完整结论|答案|final(?:\s+answer)?|answer|"
+        r"check\s+format(?:ting)?|format(?:ting)?|(?:final\s+)?(?:conclusion|response|done))"
+        r"\s*[.。!?！:：…]*|[.。…`'\"，,!?！:：]+)$",
         re.IGNORECASE,
     )
     _META = re.compile(
-        r"(?:<think\b|thinking process|(?im:^\s*(?:analysis|drafting)\s*[:：])|check formatting|check spacing|"
+        r"(?:<think\b|thinking process|(?im:^\s*(?:analysis|drafting)\s*[:：])|"
+        r"(?im:^\s*(?:\*{1,3}|_{1,3})?\s*(?:output\s+)?language\s*[:：])|"
+        r"(?im:^\s*(?:\*{1,3}|_{1,3})?\s*drafting(?:\s+the)?\s+final(?:\s+(?:answer|line))?\s*[:：])|"
+        r"check formatting|check spacing|"
         r"system prompt|prompt instruction|final answer should|最后一行必须|思考过程|分析过程|推理过程|"
         r"格式检查|检查格式|提示词|(?im:^\s*plan\s*[:：])|\bi\s+(?:plan|intend)\s+to\b|(?im:^\s*(?:structure|count\s+lines?|draft(?:\s+\d+)?)\s*:)|(?:final answer )?content for (?:the )?first line|final answer content|\bi (?:need|will|should)\b|\bthe (?:user|instruction|prompt)\b|"
         r"\b(?:check\s+(?:the\s+)?line\s+count|line\s+count)\b|(?im:^\s*line\s+\d+\s*:)|"
@@ -101,7 +106,10 @@ class Finalizer:
         if valid_explicit:
             labelled = [
                 result for result in valid_explicit
-                if result.method in {"label", "label_boxed", "bracket_label"}
+                if result.method in {
+                    "label", "label_boxed", "bracket_label",
+                    "label_next_line", "label_next_line_boxed",
+                }
             ]
             # The public prompt deliberately places FINAL before supporting
             # checks. A later unlabelled box is commonly an intermediate value.
@@ -130,7 +138,7 @@ class Finalizer:
         has_meta = Finalizer.contains_meta(text) if raw_has_meta is None else raw_has_meta
         fragments: list[tuple[int, ExtractionResult]] = []
         label_pattern = re.compile(
-            r"(?im)^\s*(?:\*{1,3}|_{1,3})?\s*(?:"
+            r"(?im)^\s*(?:`{1,3})?\s*(?:\*{1,3}|_{1,3})?\s*(?:"
             r"【\s*(?:最终答案|答案|结论)\s*】\s*[:：为=]?|"
             r"(?:the\s+)?(?:final(?:\s+answer)?|answer|conclusion)\s*(?:is|equals|[:：=])|"
             r"(?:最终\s*)?答案\s*[:：为=]|结论\s*[:：为=])"
@@ -141,6 +149,22 @@ class Finalizer:
             value = Finalizer._trim_explicit_line(value)
             boxed = Finalizer._last_boxed(value)
             method = "label_boxed" if boxed is not None else "label"
+            value = boxed if boxed is not None else value
+            fragments.append((
+                match.start(),
+                Finalizer._result(value, method, raw_has_meta=has_meta, explicit=True),
+            ))
+        next_line_pattern = re.compile(
+            r"(?im)^\s*(?:\*{1,3}|_{1,3})?\s*(?:"
+            r"【\s*(?:最终答案|答案|结论)\s*】|"
+            r"(?:the\s+)?(?:final(?:\s+answer)?|answer|conclusion)|"
+            r"(?:最终\s*)?答案|结论)\s*[:：为=]?\s*"
+            r"(?:\*{1,3}|_{1,3})?\s*$\n[ \t]*([^\n]+)"
+        )
+        for match in next_line_pattern.finditer(text):
+            value = Finalizer._trim_explicit_line(match.group(1).strip())
+            boxed = Finalizer._last_boxed(value)
+            method = "label_next_line_boxed" if boxed is not None else "label_next_line"
             value = boxed if boxed is not None else value
             fragments.append((
                 match.start(),
@@ -181,6 +205,8 @@ class Finalizer:
     def _trim_explicit_line(value: str) -> str:
         """Keep a labelled conclusion before an inline proof or self-check marker."""
         text = str(value or "").strip()
+        if text.endswith("`") and "`" not in text[:-1]:
+            text = text[:-1].rstrip()
         marker = re.search(
             r"\s+(?:\*{0,2})?(?:证明|论证|推导|论证过程|推导过程|严格论证|"
             r"但再核对一次|不过再核对一次|"
@@ -262,6 +288,65 @@ class Finalizer:
         return tuple(blocks)
 
     @staticmethod
+    def extract_terminal_supported_submissions(candidate: str) -> tuple[str, ...]:
+        """Recover a clean proof suffix when its conclusion is written last.
+
+        Some recovery responses emit an internal-analysis preamble, then a
+        self-contained ``Proof: ...`` block, and only then the final labelled
+        conclusion. The ordinary tagged extractor correctly isolates the
+        conclusion but cannot include support that precedes it. This narrow
+        suffix parser starts only at an explicit proof/derivation marker and
+        still rejects meta text or malformed structure.
+        """
+        lines = str(candidate or "").strip().splitlines()
+        if len(lines) < 3:
+            return ()
+        conclusion = re.compile(
+            r"^\s*(?:\*{1,3}|_{1,3})?\s*(?:"
+            r"【\s*(?:最终答案|答案|结论)\s*】\s*[:：为=]?|"
+            r"(?:the\s+)?(?:final(?:\s+answer)?|answer|conclusion)"
+            r"\s*(?:is|equals|[:：=])|"
+            r"(?:最终\s*)?答案\s*[:：为=]|结论\s*[:：为=])",
+            re.IGNORECASE,
+        )
+        support = re.compile(
+            r"^\s*(?:\*{1,3}|_{1,3})?\s*(?:"
+            r"proof|argument|justification|derivation|solution|"
+            r"证明|论证|推导|解答)\s*[:：]",
+            re.IGNORECASE,
+        )
+        blocks: list[str] = []
+        for conclusion_index in reversed(range(len(lines))):
+            if not conclusion.match(lines[conclusion_index]):
+                continue
+            support_index = next(
+                (
+                    index
+                    for index in reversed(range(conclusion_index))
+                    if support.match(lines[index])
+                ),
+                None,
+            )
+            if support_index is None:
+                continue
+            block_lines = lines[support_index:conclusion_index + 1]
+            if any(
+                Finalizer._proof_meta_boundary(line)
+                for line in block_lines[1:]
+            ):
+                continue
+            cleaned = Finalizer._clean("\n".join(block_lines).strip())
+            if (
+                len(cleaned) >= 80
+                and not Finalizer.contains_meta(cleaned)
+                and not Finalizer.validate_structure(cleaned)
+            ):
+                blocks.append(cleaned)
+            # Only the last labelled conclusion can be authoritative.
+            break
+        return tuple(blocks)
+
+    @staticmethod
     def _trim_incomplete_suffix(value: str) -> str:
         """Drop only trailing lines whose delimiters or sentence are visibly cut off."""
         recoverable = {
@@ -295,10 +380,11 @@ class Finalizer:
     @staticmethod
     def _proof_meta_boundary(line: str) -> bool:
         return bool(re.match(
-            r"^\s*(?:[-*]\s*)?(?:thinking process|analysis|wait\b|okay\b|"
+            r"^\s*(?:[-*]{1,3}\s*)?(?:thinking process|analysis|wait\b|okay\b|"
             r"i\s+(?:need|will|should|can|must)\b|i['’]ll\s+(?:write|provide|output|include)\b|check\b|one\s+(?:detail|more|adjustment)\b|"
             r"final\s+(?:check|plan|polish)\b|double\s+check\b|revised\s+(?:body|draft|proof)\b|plan\s*:|"
             r"count\s+lines?\s*:|check\s+(?:the\s+)?line\s+count\b|line\s+\d+\s*:|draft(?:\s+\d+)?\s*:|"
+            r"(?:output\s+)?language\s*:|drafting(?:\s+the)?\s+final(?:\s+(?:answer|line))?\s*:|"
             r"refin(?:e|ing)\b|need\s+to\b|the\s+prompt\b|(?:this\s+)?looks?\s+(?:compliant|solid|concise|complete)\b|"
             r"covers?\s+all\s+(?:the\s+)?requirements\b|"
             r"is\s+there\s+any\s+risk\b|so\s+it\s+is\s+fine\b|g\d+\s*(?:\[|[:：])|必查字段|"
@@ -332,8 +418,11 @@ class Finalizer:
         if re.search(r"完整答案|<\s*完整答案\s*>|\b(?:adjudicated|corrected|complete) (?:final )?answer\b", value, re.IGNORECASE):
             reasons.append("placeholder")
         if re.search(
-            r"\[\s*(?:(?:explanation|proof|reasoning|derivation|answer|content)(?:\s+text)?|"
-            r"insert\s+[^\]]+|(?:解释|证明|推理|推导|答案|内容)(?:文本)?)\s*\]",
+            r"\[\s*(?:(?:explanation|proof|reasoning|derivation|answer|content|conclusion)"
+            r"(?:\s+text)?(?:\s*(?:and|&|/|\+|,)\s*(?:explanation|proof|reasoning|"
+            r"derivation|answer|content|conclusion)(?:\s+text)?){0,3}|"
+            r"insert\s+[^\]]+|(?:解释|证明|推理|推导|答案|内容|结论)(?:文本)?"
+            r"(?:\s*(?:和|与|及|、|/|\+)\s*(?:解释|证明|推理|推导|答案|内容|结论)(?:文本)?){0,3})\s*\]",
             value,
             re.IGNORECASE,
         ):
@@ -342,6 +431,20 @@ class Finalizer:
             reasons.append("placeholder")
         if re.search(r"(?:证明|结论|依据|推导)\s*[:：]\s*(?:\.{2,}|…+)", value, re.IGNORECASE):
             reasons.append("placeholder")
+        if re.fullmatch(
+            r"(?:step|stage|part|case|proof|derivation|solution|answer|"
+            r"步骤\s*[一二三四五六七八九十\d]*|"
+            r"第\s*[一二三四五六七八九十\d]+\s*步)"
+            r"\s*(?:\d+)?\s*[:：.、-]*\s*(?:\.{2,}|…+)",
+            value,
+            re.IGNORECASE,
+        ):
+            reasons.append("placeholder")
+        if re.search(
+            r"(?<![,，A-Za-z0-9])(?:\.{3,}|…{2,})(?![,，A-Za-z0-9])",
+            value,
+        ):
+            reasons.append("omitted_fragment")
         if re.search(
             r"\b(?:or similar|or equivalent|or something(?: similar)?|maybe|perhaps|probably)\b|"
             r"(?:或|及)(?:其他)?类似(?:答案|形式|结果)?|诸如此类",
@@ -349,6 +452,27 @@ class Finalizer:
             re.IGNORECASE,
         ):
             reasons.append("uncertain_fragment")
+        if re.search(
+            r"^\s*(?:often|usually|typically|presumably|apparently|"
+            r"perhaps|maybe)\b|"
+            r"^\s*(?:通常(?:是|为)?|大概|或许|也许|似乎|看起来)",
+            value,
+            re.IGNORECASE,
+        ) or value.rstrip().endswith(("?", "？")):
+            reasons.append("uncertain_fragment")
+        if re.fullmatch(
+            r"\s*(?:the\s+)?(?:set|family|class|collection|value|result|"
+            r"answer|number|form)\s+of\s+(?:such|these|those)"
+            r"(?:\s+[A-Za-z][A-Za-z'-]*){0,5}\s*[.。]?\s*",
+            value,
+            re.IGNORECASE,
+        ) or re.fullmatch(
+            r"\s*(?:(?:满足)?(?:上述|前述|这些|此类)条件的|(?:上述|前述|如上)的?)"
+            r"[\u4e00-\u9fff]{0,12}(?:集合|全体|族|值|形式|结果|答案|结论)?"
+            r"\s*[.。]?\s*",
+            value,
+        ):
+            reasons.append("referential_fragment")
         if re.search(r"\b(?:this|that) (?:looks|seems) like\b|\bspecific test case\b|\blooks like noise\b", value, re.IGNORECASE):
             reasons.append("meta_text")
         if re.search(r"\bthis (?:phrasing|wording|instruction|prompt)\b", value, re.IGNORECASE):
@@ -388,6 +512,21 @@ class Finalizer:
             reasons.append("unclosed_quote")
         if re.search(r"[,，:：;；=+*/^\\]\s*$", value):
             reasons.append("trailing_fragment")
+        if re.search(
+            r"(?:[,，;；。]\s*(?:对应|等于|趋于|得到|可得|说明|证明|推出)|"
+            r"(?:答案|结果|值|概率|系数|极限|解|结论)\s*(?:分别)?\s*为)\s*$",
+            value,
+        ):
+            reasons.append("truncated_sentence")
+        if re.search(
+            r"(?:^|[\s,，;；。:：\-–—])(?:若|如果|当|因为|由于|由|则|且|并|或|"
+            r"因此|所以|故|从而|可得|"
+            r"if|when|because|since|therefore|hence|then|and|or|where|with|by)"
+            r"\s*[:：\-–—]?\s*$",
+            value,
+            re.IGNORECASE,
+        ):
+            reasons.append("truncated_sentence")
         last_line = next((line.strip() for line in reversed(value.splitlines()) if line.strip()), "")
         if (
             last_line
@@ -423,6 +562,10 @@ class Finalizer:
         if fenced:
             value = fenced.group(1).strip()
         value = normalize_latex(value).strip().strip('"“”')
+        # Remove balanced Markdown emphasis without touching exponent syntax
+        # such as ``x**2`` or identifier underscores.
+        value = re.sub(r"(?<!\*)\*\*([^*\n]+)\*\*(?!\*)", r"\1", value)
+        value = re.sub(r"(?<!_)__([^_\n]+)__(?!_)", r"\1", value)
         # Models occasionally put a complete display inside ``\boxed{}``,
         # leaving ``$...$.`` as the extracted payload.  Strip only a balanced
         # wrapper around the entire answer; internal math delimiters are data.
@@ -441,24 +584,20 @@ class Finalizer:
 
     @staticmethod
     def _boxed_values(text: str) -> list[tuple[int, str, bool]]:
-        marker = r"\boxed{"
+        marker = re.compile(r"\\boxed\s*\{")
         values: list[tuple[int, str, bool]] = []
         offset = 0
         while True:
-            position = text.find(marker, offset)
-            if position < 0:
+            match = marker.search(text, offset)
+            if match is None:
                 break
-            start = position + len(marker)
-            depth = 1
-            for index in range(start, len(text)):
-                if text[index] == "{":
-                    depth += 1
-                elif text[index] == "}":
-                    depth -= 1
-                    if depth == 0:
-                        values.append((position, text[start:index].strip(), True))
-                        offset = index + 1
-                        break
+            position = match.start()
+            brace = match.end() - 1
+            start = brace + 1
+            end = find_matching_brace(text, brace)
+            if end >= 0:
+                values.append((position, text[start:end].strip(), True))
+                offset = end + 1
             else:
                 values.append((position, text[start:].strip(), False))
                 offset = len(text)

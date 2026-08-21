@@ -40,48 +40,36 @@ class StatementSemantics:
         }
 
     def prompt_context(self, language: str) -> str:
-        """Render compact hints; the original statement remains authoritative."""
+        """Render only high-confidence facts that are explicit in the statement."""
         labels = {
             "zh": {
-                "target": "目标",
-                "variables": "变量",
                 "domains": "定义域/对象域",
                 "quantifiers": "量词",
-                "relations": "需保持的关系",
                 "initial_data": "初值",
                 "boundary_data": "边界条件",
                 "methods": "指定方法",
                 "theorems": "题面点名的定理",
-                "assumptions": "显式假设",
                 "precision": "精度",
                 "unit": "单位",
             },
             "en": {
-                "target": "Target",
-                "variables": "Variables",
                 "domains": "Domains",
                 "quantifiers": "Quantifiers",
-                "relations": "Relations to preserve",
                 "initial_data": "Initial data",
                 "boundary_data": "Boundary data",
                 "methods": "Required methods",
                 "theorems": "Theorems named in the statement",
-                "assumptions": "Explicit assumptions",
                 "precision": "Precision",
                 "unit": "Unit",
             },
         }["en" if language == "en" else "zh"]
         values = (
-            ("target", (self.target,)),
-            ("variables", self.variables),
             ("domains", self.domains),
             ("quantifiers", self.quantifiers),
-            ("relations", self.relations),
             ("initial_data", self.initial_data),
             ("boundary_data", self.boundary_data),
             ("methods", self.requested_methods),
             ("theorems", self.named_theorems),
-            ("assumptions", self.assumptions),
             ("precision", (self.precision,) if self.precision else ()),
             ("unit", (self.unit,) if self.unit else ()),
         )

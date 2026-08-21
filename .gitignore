@@ -12,10 +12,17 @@ judge/
 /sample_outputs_*/
 # Local benchmark construction, replay, and answer-key verification helpers.
 /scripts/audit_unseen_hard*.py
+/scripts/audit_local_tool_coverage.py
 /scripts/build_judge1_style_hard112.py
 /scripts/evaluate_answer_integrity.py
 /scripts/evaluate_judge_replay.py
 /scripts/verify_unseen_hard*.py
+# Rejected local experiments: these matcher-heavy modules are intentionally
+# excluded from the runtime and must never enter a competition submission.
+/tools/exact_olympiad_tool.py
+/tools/standard_textbook_tool.py
+/tools/concept_fact_tool.py
+/tools/safe_computation.py
 # Development notes and local benchmark reports are not runtime dependencies.
 /changelogs/
 /pr/

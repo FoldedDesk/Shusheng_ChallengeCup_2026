@@ -24,6 +24,7 @@ class KnowledgeCard:
     domains: tuple[str, ...] = ()
     theorem_name: str = ""
     provenance: str = ""
+    exclude_keywords: tuple[str, ...] = ()
 
     @property
     def effective_domains(self) -> tuple[str, ...]:
@@ -79,18 +80,28 @@ class CardRetriever:
         self.knowledge_path = knowledge_path or Path(__file__).parent / "knowledge" / "cards.json"
         self.cards = tuple(self._load_cards())
 
-    def retrieve(self, spec: "ProblemSpec") -> RetrievalBundle:
+    def retrieve(
+        self,
+        spec: "ProblemSpec",
+        *,
+        subject_override: str = "",
+    ) -> RetrievalBundle:
         language = getattr(spec.answer_contract, "language", spec.profile.language)
         primary = getattr(spec.profile, "primary_subject", spec.profile.subject)
         secondary = getattr(spec.profile, "secondary_subject", "")
         confidence = getattr(spec.profile, "subject_confidence", "low")
-        scored = self._score(spec)
+        scored = self._score(spec, subject_override=subject_override)
+        if subject_override:
+            primary = subject_override
+            if confidence == "low":
+                confidence = "medium"
 
         solve: list[tuple[int, KnowledgeCard]] = []
         used_families: set[tuple[str, str]] = set()
         theorem_count = 0
         for score, card in scored:
-            if score < 9 or card.kind not in {"method", "theorem"}:
+            minimum_score = 8 if card.kind == "theorem" else 9
+            if score < minimum_score or card.kind not in {"method", "theorem"}:
                 continue
             family = (
                 card.kind,
@@ -159,10 +170,20 @@ class CardRetriever:
                 domains=domains,
                 theorem_name=str(raw.get("theorem_name", "")).strip(),
                 provenance=str(raw.get("provenance", "")).strip(),
+                exclude_keywords=tuple(
+                    str(item).casefold()
+                    for item in raw.get("exclude_keywords", [])
+                    if str(item).strip()
+                ),
             ))
         return cards
 
-    def _score(self, spec: "ProblemSpec") -> list[tuple[int, KnowledgeCard]]:
+    def _score(
+        self,
+        spec: "ProblemSpec",
+        *,
+        subject_override: str = "",
+    ) -> list[tuple[int, KnowledgeCard]]:
         text = str(getattr(spec, "problem_text", "")).casefold()
         query_tokens = set(_tokens(text))
         semantics = getattr(spec, "semantics", None)
@@ -172,15 +193,40 @@ class CardRetriever:
         requested_methods = {
             item.casefold() for item in getattr(semantics, "requested_methods", ())
         }
-        primary = getattr(spec.profile, "primary_subject", spec.profile.subject)
+        primary = subject_override or getattr(
+            spec.profile, "primary_subject", spec.profile.subject
+        )
         secondary = getattr(spec.profile, "secondary_subject", "")
         confidence = getattr(spec.profile, "subject_confidence", "low")
+        if subject_override and confidence == "low":
+            confidence = "medium"
         topic = getattr(spec.profile, "topic", "general")
         proof = getattr(spec.profile, "task_kind", "") in {"proof", "derivation", "explanation"}
         scored: list[tuple[int, KnowledgeCard]] = []
         for card in self.cards:
-            overlap = len(query_tokens.intersection(card.keywords))
-            phrase_overlap = sum(1 for keyword in card.keywords if " " in keyword and keyword in text)
+            theorem_key = card.theorem_name.casefold()
+            explicitly_named = bool(
+                theorem_key
+                and (
+                    theorem_key in text
+                    or any(
+                        name in theorem_key or theorem_key in name
+                        for name in named_theorems
+                    )
+                )
+            )
+            if not explicitly_named and any(
+                _keyword_occurs(keyword, text)
+                for keyword in card.exclude_keywords
+            ):
+                continue
+            matched_keywords = {
+                keyword
+                for keyword in card.keywords
+                if keyword in query_tokens or _keyword_occurs(keyword, text)
+            }
+            overlap = len(matched_keywords)
+            phrase_overlap = sum(1 for keyword in matched_keywords if " " in keyword)
             score = 0
             if primary in card.effective_domains:
                 score += {"high": 10, "medium": 7, "low": 2}.get(confidence, 0)
@@ -194,6 +240,29 @@ class CardRetriever:
                 score += 12
             if any(method in searchable or searchable in method for method in requested_methods):
                 score += 8
+            method_named = any(
+                method in searchable or searchable in method
+                for method in requested_methods
+            )
+            if (
+                card.kind == "method"
+                and card.id.startswith("method.olympiad.")
+                and card.topics
+                and topic not in card.topics
+                and not method_named
+            ):
+                # Object words such as triangle, sequence, or integer are
+                # often only carriers of another problem type.  A specialized
+                # olympiad protocol is admitted only by its matching topic.
+                continue
+            if card.kind == "method" and not (
+                overlap or topic in card.topics or method_named
+            ):
+                # Subject membership alone is too broad: it previously mixed
+                # unrelated sequence, graph, and counting advice into the same
+                # prompt.  A method needs a lexical, topical, or named-method
+                # connection to this statement.
+                continue
             if card.kind == "check" and proof and card.id == "check.proof.counterexample":
                 score += 7
             if card.kind == "check" and spec.profile.answer_shape == "choice" and card.id == "check.choice.polarity":
@@ -205,18 +274,35 @@ class CardRetriever:
             ):
                 score += 5
             if card.kind == "theorem":
-                theorem_key = card.theorem_name.casefold()
-                named = bool(
-                    theorem_key
+                precise_keyword_match = any(
+                    " " in keyword
+                    or len(re.findall(r"[\u4e00-\u9fff]", keyword)) >= 4
+                    for keyword in matched_keywords
+                )
+                named = explicitly_named or bool(any(
+                    name in searchable or searchable in name
+                    for name in named_theorems
+                ))
+                precise_subject_match = bool(
+                    (primary in card.effective_domains or secondary in card.effective_domains)
                     and (
-                        theorem_key in text
-                        or any(
-                            name in searchable or searchable in name
-                            for name in named_theorems
+                        precise_keyword_match
+                        or
+                        (
+                            confidence == "high"
+                            and (
+                                overlap >= 2
+                                or phrase_overlap >= 1
+                                or precise_keyword_match
+                            )
+                        )
+                        or (
+                            confidence == "medium"
+                            and overlap >= 3
                         )
                     )
                 )
-                if not named and not (confidence == "high" and overlap >= 2):
+                if not named and not precise_subject_match:
                     continue
             if confidence == "low" and overlap == 0 and card.kind != "check":
                 continue
@@ -233,3 +319,16 @@ def _tokens(value: str) -> tuple[str, ...]:
         grams.extend(phrase[index:index + 2] for index in range(max(1, len(phrase) - 1)))
         grams.append(phrase)
     return tuple(dict.fromkeys((*latin, *grams)))
+
+
+def _keyword_occurs(keyword: str, text: str) -> bool:
+    """Match public mathematical terms without short-substring accidents."""
+    value = keyword.strip().casefold()
+    if not value:
+        return False
+    if re.search(r"[\u4e00-\u9fff]", value):
+        chinese_length = len(re.findall(r"[\u4e00-\u9fff]", value))
+        return chinese_length >= 2 and value in text
+    if len(value) < 3:
+        return False
+    return bool(re.search(rf"(?<![a-z0-9_]){re.escape(value)}(?![a-z0-9_])", text))

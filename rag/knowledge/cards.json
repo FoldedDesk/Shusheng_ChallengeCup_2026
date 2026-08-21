@@ -5,11 +5,71 @@
       "id": "method.discrete.counting",
       "kind": "method",
       "domains": ["离散数学"],
-      "topics": ["combinatorics"],
+      "topics": ["combinatorics", "olympiad_combinatorics"],
       "keywords": ["计数", "排列", "组合", "counting", "permutation", "combination"],
       "text_zh": "先精确定义计数对象及有序性、重复和对称；再选择分类、递推、双计数、容斥或生成函数，并用最小规模实例核对。",
       "text_en": "Define the counted objects, order, repetition, and symmetry before choosing cases, recurrence, double counting, inclusion-exclusion, or generating functions; check the smallest legal instances.",
       "provenance": "standard combinatorial method"
+    },
+    {
+      "id": "method.olympiad.functional-equation",
+      "kind": "method",
+      "domains": ["高等代数"],
+      "topics": ["olympiad_functional_equation"],
+      "keywords": ["函数方程", "求所有函数", "functional equation", "find all functions"],
+      "text_zh": "函数方程先代入使参数为 0、相等、互为相反数等特殊值，确定常数项、奇偶性、单射或满射；再把所得恒等式组合成可解的代数或加法结构，最后代回验证并证明没有遗漏。连续、单调、可测等正则性只能在题目明确给出时使用。",
+      "text_en": "For a functional equation, first use zero, equal, and opposite inputs to determine constants, parity, injectivity, or surjectivity. Combine the resulting identities into an algebraic or additive structure, then substitute back and prove exhaustiveness. Use continuity, monotonicity, or measurability only when stated.",
+      "provenance": "standard olympiad functional-equation method"
+    },
+    {
+      "id": "method.olympiad.euclidean-geometry",
+      "kind": "method",
+      "domains": ["欧氏几何"],
+      "topics": ["olympiad_geometry"],
+      "keywords": ["三角形", "共圆", "切线", "triangle", "cyclic", "tangent"],
+      "text_zh": "欧氏几何先记录共线、共圆、平行、垂直和定比分点等不变量，再选择角追、相似、幂定理、坐标或复数中的一种主路线。坐标化时固定自由度并逐项验证退化条件；结论必须回译到题目所求的角、长度或共点关系。",
+      "text_en": "Record collinearity, cyclicity, parallelism, perpendicularity, and ratios before choosing one main route: angle chasing, similarity, power of a point, coordinates, or complex geometry. Fix coordinate freedoms, exclude degeneracies, and translate the computation back to the requested geometric relation.",
+      "provenance": "standard olympiad Euclidean-geometry method"
+    },
+    {
+      "id": "method.olympiad.number-theory",
+      "kind": "method",
+      "domains": ["数论"],
+      "topics": ["olympiad_number_theory"],
+      "keywords": ["整数解", "整除", "同余", "integer solutions", "divisibility", "congruence"],
+      "text_zh": "数论题先做因式分解、奇偶性、最大公约数和低模数筛选，再按素因子赋值、下降、夹逼或构造完成充分性。求所有解时要把必要条件转成有限参数族，逐族代回并证明穷尽。",
+      "text_en": "Start with factorization, parity, gcd structure, and small-modulus filters, then use valuations, descent, bounds, or construction for sufficiency. For all-solution problems, reduce the necessary conditions to exhaustive parameter families and substitute every family back.",
+      "provenance": "standard olympiad number-theory method"
+    },
+    {
+      "id": "method.olympiad.inequality",
+      "kind": "method",
+      "domains": ["高等代数"],
+      "topics": ["olympiad_inequality"],
+      "keywords": ["不等式", "最佳常数", "最大值", "inequality", "best constant", "maximum value"],
+      "text_zh": "不等式或最值题先确定定义域、齐次性和预期等号条件，再选归一化、配方、凸性、柯西、切线法或 uvw 等一条可闭合路线。最优常数必须同时证明普遍界并给出达到或逼近该界的例子。",
+      "text_en": "Determine the domain, homogeneity, and expected equality cases before selecting one closed route such as normalization, completing squares, convexity, Cauchy, tangent lines, or uvw. A best constant needs both a universal bound and an attaining or limiting example.",
+      "provenance": "standard olympiad inequality method"
+    },
+    {
+      "id": "method.olympiad.polynomial",
+      "kind": "method",
+      "domains": ["高等代数"],
+      "topics": ["olympiad_polynomial"],
+      "keywords": ["多项式", "根", "韦达", "polynomial", "roots", "vieta"],
+      "text_zh": "多项式题先比较次数、首项和特殊点，再按因式定理、韦达关系、有限差分或插值处理。涉及全部根时必须记录重数与所在域；由若干取值推出恒等式前要先证明零点数超过次数。",
+      "text_en": "Compare degrees, leading terms, and special values before using the factor theorem, Vieta relations, finite differences, or interpolation. Track multiplicities and the root domain, and prove that the number of zeros exceeds the degree before promoting sampled equalities to an identity.",
+      "provenance": "standard olympiad polynomial method"
+    },
+    {
+      "id": "method.olympiad.sequence",
+      "kind": "method",
+      "domains": ["离散数学", "数学分析"],
+      "topics": ["olympiad_sequence"],
+      "keywords": ["递推数列", "递归数列", "sequence", "recurrence relation"],
+      "text_zh": "递推数列先核对初值和下标，从小项寻找不变量、单调性、周期或可线性化代换；归纳证明时同时验证递推式的定义域。若求极限，先证明收敛再把极限代入，不能只解不动点方程。",
+      "text_en": "Check initial values and indices, then inspect small terms for invariants, monotonicity, periodicity, or a linearizing substitution. Verify the recurrence domain in induction. For a limit, prove convergence before solving the fixed-point equation.",
+      "provenance": "standard olympiad recurrence method"
     },
     {
       "id": "method.graph.structure",
@@ -41,6 +101,17 @@
       "text_zh": "交换极限与积分前应明确使用单调收敛、Fatou 引理或支配收敛，并逐一核对非负性、单调性、几乎处处收敛和可积支配函数等对应前提。",
       "text_en": "Before interchanging limits and integrals, name the monotone, Fatou, or dominated convergence result and verify its corresponding nonnegativity, monotonicity, almost-everywhere convergence, and integrable domination hypotheses.",
       "provenance": "standard measure convergence theorems"
+    },
+    {
+      "id": "theorem.measure.integrability",
+      "kind": "theorem",
+      "domains": ["测度积分"],
+      "topics": [],
+      "keywords": ["勒贝格可积", "可积性", "绝对可积", "Lebesgue integrable", "integrability", "absolutely integrable"],
+      "theorem_name": "Lebesgue integrability criterion",
+      "text_zh": "实值函数在可测集上勒贝格可积，当且仅当它可测且绝对值的积分有限。紧区间上的连续函数必可积；仅有有界性并不保证可测或可积。不要把黎曼可积的间断点判据当成任意函数勒贝格可积的充分必要条件。逐项判断时应分别核对可测性与绝对积分有限性。",
+      "text_en": "A real-valued function on a measurable set is Lebesgue integrable exactly when it is measurable and its absolute integral is finite. Continuity on a compact interval implies integrability, whereas boundedness alone does not imply measurability or integrability. Do not use the discontinuity-set criterion for Riemann integrability as a criterion for arbitrary Lebesgue integrability; check measurability and the absolute integral separately.",
+      "provenance": "standard definition of Lebesgue integrability"
     },
     {
       "id": "method.geometry.invariants",
@@ -155,7 +226,7 @@
     {
       "id": "method.optimization.certificates",
       "kind": "method",
-      "domains": ["运筹学"],
+      "domains": ["运筹学", "进阶数学", "高等代数"],
       "topics": ["optimization"],
       "keywords": ["最优", "线性规划", "对偶", "KKT", "optimal", "linear programming", "dual"],
       "text_zh": "先写可行域和目标，再给出最优性证书：凸性与 KKT、原对偶可行解、交换论证或动态规划；同时验证可达性。",
@@ -186,11 +257,161 @@
       "id": "method.number-theory.local-global",
       "kind": "method",
       "domains": ["数论", "进阶数学"],
-      "topics": ["equation"],
+      "topics": ["equation", "olympiad_number_theory"],
       "keywords": ["整除", "同余", "素数", "整数解", "divisibility", "congruence", "prime", "integer solution"],
       "text_zh": "先分解并按素因子或赋值分析必要条件，再用构造、下降或同余证明充分性；所有整数候选必须代回且证明穷尽。",
       "text_en": "Factor and derive local prime or valuation conditions, then prove sufficiency by construction, descent, or congruences; substitute every integer candidate and prove exhaustiveness.",
       "provenance": "standard number theory method"
+    },
+    {
+      "id": "theorem.algebra.dihedral_structure",
+      "kind": "theorem",
+      "domains": ["抽象代数"],
+      "topics": [],
+      "keywords": ["二面体群", "群的中心", "交换子群", "导出子群", "dihedral group", "center of the group", "commutator subgroup", "derived subgroup"],
+      "theorem_name": "structure of a finite dihedral group",
+      "text_zh": "对正 n 边形的二面体群，先确认记号表示阶为 2n 还是阶为 n。在表示 <r,s | r^n=s^2=1, srs=r^(-1)> 下，元素为 r^k 或 sr^k，反射均为二阶；中心在 n 为奇数时平凡、在 n 为偶数时为 {1,r^(n/2)}，导出子群由 r^2 生成。子群问题应由这些关系直接核对。",
+      "text_en": "For the symmetry group of a regular n-gon, first determine whether the notation denotes order 2n or order n. With presentation <r,s | r^n=s^2=1, srs=r^{-1}>, every element is r^k or sr^k, reflections have order two, the center is trivial for odd n and {1,r^{n/2}} for even n, and the derived subgroup is generated by r^2. Check subgroup claims from these relations.",
+      "provenance": "standard finite dihedral group structure"
+    },
+    {
+      "id": "theorem.topology.heine_borel",
+      "kind": "theorem",
+      "domains": ["拓扑学", "数学分析"],
+      "topics": [],
+      "keywords": ["实数集上紧集", "闭集且有界", "有限子覆盖", "compact subset of real numbers", "closed and bounded", "finite subcover"],
+      "theorem_name": "Heine-Borel theorem",
+      "text_zh": "在 R^n 中，紧致等价于闭且有界；在任意拓扑空间中，紧致的定义是每个开覆盖都有有限子覆盖。闭集或有界集单独都不够，且闭有界刻画不能无条件搬到任意拓扑空间。",
+      "text_en": "In R^n, compactness is equivalent to being closed and bounded. In an arbitrary topological space, compactness means that every open cover has a finite subcover. Closedness or boundedness alone is insufficient, and the Euclidean characterization must not be exported without hypotheses.",
+      "provenance": "Heine-Borel theorem and definition of compactness"
+    },
+    {
+      "id": "theorem.functional.cauchy_completeness",
+      "kind": "theorem",
+      "domains": ["泛函分析", "数学分析"],
+      "topics": [],
+      "keywords": ["Cauchy数列", "完备度量空间", "柯西数列", "Cauchy sequence", "complete metric space"],
+      "theorem_name": "Cauchy convergence criterion in complete metric spaces",
+      "text_zh": "任意收敛数列都是 Cauchy 数列，任意 Cauchy 数列都必有界；度量空间完备的定义正是其中每个 Cauchy 数列都收敛。有界数列一般不必是 Cauchy 数列。",
+      "text_en": "Every convergent sequence is Cauchy, every Cauchy sequence is bounded, and completeness of a metric space means exactly that every Cauchy sequence converges there. A bounded sequence need not be Cauchy.",
+      "provenance": "standard Cauchy sequence facts"
+    },
+    {
+      "id": "theorem.numerical.condition_number",
+      "kind": "theorem",
+      "domains": ["数值分析", "高等代数"],
+      "topics": [],
+      "keywords": ["矩阵的条件数", "条件数定义", "matrix condition number", "condition number definition"],
+      "theorem_name": "matrix condition number",
+      "text_zh": "对可逆矩阵和任一相容矩阵范数，条件数定义为 kappa(A)=||A|| ||A^(-1)||；不可逆矩阵的条件数为无穷。下标必须在两个范数中保持一致，定义中没有额外平方根。",
+      "text_en": "For an invertible matrix and any consistent matrix norm, kappa(A)=||A|| ||A^{-1}||; a singular matrix has infinite condition number. Use the same norm in both factors and do not insert an extra square root.",
+      "provenance": "standard matrix condition number definition"
+    },
+    {
+      "id": "theorem.numerical.central_difference",
+      "kind": "theorem",
+      "domains": ["数值分析"],
+      "topics": [],
+      "keywords": ["中心差分公式", "一阶导数", "central difference formula", "first derivative"],
+      "theorem_name": "centered first-difference formula",
+      "text_zh": "光滑函数的一阶导数中心差分为 f'(x) approximately [f(x+h)-f(x-h)]/(2h)，截断误差为 O(h^2)。数值作答应先按题给步长代入，再报告与精度相符的近似值。",
+      "text_en": "For a smooth function, the centered approximation to the first derivative is [f(x+h)-f(x-h)]/(2h), with truncation error O(h^2). Substitute the stated step size before rounding to an appropriate precision.",
+      "provenance": "standard centered finite-difference formula"
+    },
+    {
+      "id": "method.pde.discretization",
+      "kind": "method",
+      "domains": ["偏微分方程", "数值分析"],
+      "topics": [],
+      "keywords": ["离散化处理", "逼近解", "有限差分法", "有限元法", "discretization", "approximate solution", "finite difference method", "finite element method"],
+      "text_zh": "椭圆型边值问题的常用离散化包括有限差分、有限元和有限体积。有限差分直接离散微分算子，有限元从弱形式离散；作答时应给出题目要求的方法名称，而不是把解析解法当作离散化。",
+      "text_en": "Standard discretizations for elliptic boundary-value problems include finite differences, finite elements, and finite volumes. Finite differences discretize the differential operator, while finite elements discretize a weak form; report the requested numerical method rather than an analytic solution technique.",
+      "provenance": "standard PDE discretization methods"
+    },
+    {
+      "id": "theorem.pde.formal_adjoint",
+      "kind": "theorem",
+      "domains": ["偏微分方程", "泛函分析"],
+      "topics": [],
+      "keywords": ["伴随算子", "形式伴随", "散度型算子", "adjoint operator", "formal adjoint", "divergence-form operator"],
+      "theorem_name": "formal adjoint of a differential operator",
+      "text_zh": "在光滑紧支撑函数上由分部积分求形式伴随：散度型二阶项的系数要转置，partial_i(a_ij partial_j u) 变为 partial_j(a_ij partial_i v)；一阶项 b_j partial_j u 变为 -partial_j(b_j v)，实值零阶乘法项保持为 cv。紧支撑消去边界项。",
+      "text_en": "On C_c^infinity, compute the formal adjoint by integration by parts: transpose the coefficients of a divergence-form second-order term, send partial_i(a_ij partial_j u) to partial_j(a_ij partial_i v), send b_j partial_j u to -partial_j(b_j v), and retain a real zeroth-order term cv. Compact support removes boundary terms.",
+      "provenance": "integration-by-parts formula for formal adjoints"
+    },
+    {
+      "id": "method.analysis.fourier_transform",
+      "kind": "method",
+      "domains": ["数学分析", "非基础及进阶课程"],
+      "topics": [],
+      "keywords": ["Fourier变换", "Fourier 变换", "傅里叶变换", "Fourier transform", "frequency domain"],
+      "text_zh": "傅里叶变换先写清归一化约定，再利用线性、平移与已知变换对。若 f-hat(xi)=integral_R f(x) exp(-i x xi) dx，则平移 g(x+a) 带来因子 exp(i a xi)；分别变换各项并检查偶实函数的共轭对称性。",
+      "text_en": "State the Fourier-transform normalization, then use linearity, translation, and standard transform pairs. Under f-hat(xi)=integral f(x)e^{-ix xi} dx, translating to g(x+a) contributes e^{ia xi}; transform every summand and check conjugate symmetry for real functions.",
+      "provenance": "standard Fourier transform properties"
+    },
+    {
+      "id": "method.discrete.lempel_ziv",
+      "kind": "method",
+      "domains": ["离散数学"],
+      "topics": [],
+      "keywords": ["Lempel-Ziv", "短语分解", "phrase decomposition", "Lempel-Ziv encoding"],
+      "text_zh": "Lempel-Ziv 题必须先确认采用 LZ76、LZ78 还是 LZW 约定。按指定约定从左到右取最短新短语或最长已知前缀加下一符号，逐条维护字典，并把索引位宽和字符编码分开记录后再拼接。",
+      "text_en": "First identify whether the convention is LZ76, LZ78, or LZW. Parse left to right using the shortest new phrase or the longest known prefix plus the next symbol as specified, update the dictionary after every phrase, and keep index widths separate from symbol codes before concatenation.",
+      "provenance": "standard Lempel-Ziv parsing protocol"
+    },
+    {
+      "id": "theorem.probability.normal_parameters",
+      "kind": "theorem",
+      "domains": ["概率论", "统计推断"],
+      "topics": [],
+      "keywords": ["正态分布的两个参数", "正态分布参数", "normal distribution parameters", "parameters of a normal distribution"],
+      "theorem_name": "normal distribution parameters",
+      "text_zh": "正态分布 N(mu,sigma^2) 由均值 mu 与方差 sigma^2 唯一确定；标准差 sigma 是方差的正平方根。题目若问分布参数，应按采用的记号区分方差参数 sigma^2 与标准差 sigma。",
+      "text_en": "A normal distribution N(mu,sigma^2) is determined by its mean mu and variance sigma^2; the standard deviation sigma is the positive square root of the variance. Distinguish the variance parameter from the standard deviation according to the notation used.",
+      "provenance": "standard normal distribution parametrization"
+    },
+    {
+      "id": "theorem.statistics.descriptive",
+      "kind": "theorem",
+      "domains": ["统计推断"],
+      "topics": [],
+      "keywords": ["数据分散程度", "标准差", "统计图形", "直方图", "箱线图", "data dispersion", "standard deviation", "histogram", "box plot"],
+      "theorem_name": "basic descriptive statistics",
+      "text_zh": "方差、标准差、极差和四分位距描述离散程度；标准差与原数据同量纲。直方图最适合快速查看大型单变量数值数据的分布形状，箱线图突出中位数、四分位数和离群点，散点图用于两个变量关系，折线图常用于有序或时间数据。",
+      "text_en": "Variance, standard deviation, range, and interquartile range describe dispersion, with standard deviation in the original units. A histogram quickly shows the distribution of a large univariate numerical data set; a box plot emphasizes quartiles and outliers, a scatter plot relates two variables, and a line plot is mainly for ordered or time data.",
+      "provenance": "standard descriptive statistics definitions"
+    },
+    {
+      "id": "theorem.statistics.time_series",
+      "kind": "theorem",
+      "domains": ["统计推断"],
+      "topics": [],
+      "keywords": ["时间序列构成要素", "时间数列", "季节调整", "长期趋势", "季节变动", "time series components", "seasonal adjustment", "long-term trend", "seasonal variation"],
+      "theorem_name": "classical time-series decomposition",
+      "text_zh": "经典时间序列分解包含长期趋势、季节变动、循环变动和不规则或随机变动。有些教材把不规则变动与随机变动作为同一剩余成分的两个名称，有些题目会按其给定分类分别列出；判断选项时应遵循题面术语而不要漏项。季节调整常用移动平均估计趋势季节项，也可用时间序列分解或 X-11 一类分解程序。",
+      "text_en": "Classical decomposition includes trend, seasonal, cyclical, and irregular or random variation. Some conventions use irregular and random for the same residual component, while an explicitly stated taxonomy may list them separately; follow the terminology in the question without omitting a listed component. Seasonal adjustment commonly uses moving averages and decomposition procedures such as X-11.",
+      "provenance": "standard classical time-series decomposition"
+    },
+    {
+      "id": "theorem.regression.heteroscedasticity",
+      "kind": "theorem",
+      "domains": ["线性回归", "统计推断"],
+      "topics": [],
+      "keywords": ["异方差性", "参数估计量的方差", "普通最小二乘", "heteroscedasticity", "variance of parameter estimates", "ordinary least squares"],
+      "theorem_name": "OLS under heteroscedasticity",
+      "text_zh": "在线性模型的外生性条件下，异方差不会使 OLS 系数估计有偏，但会使其不再是最有效的线性无偏估计，并使通常的同方差方差公式失效；真实方差可能相对传统估计更大或更小，不能笼统断言每个系数方差必增大。应使用稳健标准误或合适的 GLS。",
+      "text_en": "Under exogeneity, heteroscedasticity does not bias OLS coefficients, but OLS is no longer generally efficient and the homoscedastic variance formula is invalid. The true variance can be above or below the conventional estimate, so it is not correct to claim that every coefficient variance must increase; use robust standard errors or suitable GLS.",
+      "provenance": "standard OLS heteroscedasticity result"
+    },
+    {
+      "id": "method.regression.selection",
+      "kind": "method",
+      "domains": ["线性回归", "统计推断"],
+      "topics": [],
+      "keywords": ["逐步回归", "变量应被剔除", "非线性回归", "参数估计", "stepwise regression", "remove a variable", "nonlinear regression", "parameter estimation"],
+      "text_zh": "逐步回归每次加入或删除变量后都要重新检查已有变量的显著性、整体检验和调整拟合指标；新变量造成旧变量不显著时可触发剔除。非线性回归通常以非线性最小二乘估计参数，数值上可用 Gauss-Newton 或 Newton 类迭代；最大似然只有在给定概率误差模型后才是统一表述。",
+      "text_en": "After every addition or deletion in stepwise regression, recheck existing-variable significance, the model test, and adjusted fit criteria; a newly added variable can make an old one removable. Nonlinear regression commonly uses nonlinear least squares, computed by Gauss-Newton or Newton-type iterations; maximum likelihood is a general formulation only after specifying an error distribution.",
+      "provenance": "standard regression model-selection and estimation methods"
     },
     {
       "id": "check.boundary",
@@ -251,6 +472,47 @@
       "text_zh": "图论结论应配套证书：生成树用 Laplace 余子式，匹配核对 Hall 条件，平面图同时核对连通性与面数，极值结论给出达到等号的图；小图可直接枚举复核。",
       "text_en": "Attach a certificate: a Laplacian cofactor for spanning trees, Hall conditions for matchings, connectivity and face counts for planar identities, and an attaining graph for extrema; enumerate small graphs when feasible.",
       "provenance": "standard graph theory certificates"
+    },
+    {
+      "id": "method.discrete.finite_game_invariant",
+      "kind": "method",
+      "domains": ["离散数学"],
+      "topics": ["finite_game"],
+      "keywords": ["博弈", "轮流", "先手", "后手", "必胜策略", "不能行动", "finite game", "take turns", "first player", "second player", "winning strategy", "no legal move"],
+      "exclude_keywords": ["掷骰子", "抛硬币", "随机", "概率", "roll a die", "toss a coin", "random", "probability"],
+      "text_zh": "有限确定性轮流博弈先明确状态、合法动作和终止规则，再从终局逆推必败态与必胜态；寻找奇偶性、模类或配对不变量时，必须证明策略对对手的每个合法回应都封闭。给出策略后核对终止性，并直接枚举最小若干状态以排除周期偏移。若动作含随机性，不能套用此协议。",
+      "text_en": "For a finite deterministic alternating game, define states, legal moves, and terminal payoffs, then work backward to losing and winning states. Any parity, residue, or pairing invariant must be closed under every legal reply. After giving a strategy, prove termination and enumerate the smallest states to catch an offset. Do not use this protocol for random moves.",
+      "provenance": "standard finite impartial-game verification method"
+    },
+    {
+      "id": "method.discrete.tiling_coloring",
+      "kind": "method",
+      "domains": ["离散数学"],
+      "topics": ["tiling"],
+      "keywords": ["铺砌", "覆盖", "棋盘", "方格", "多米诺", "骨牌", "染色不变量", "tiling", "tile", "board", "grid", "domino", "coloring invariant"],
+      "text_zh": "棋盘铺砌先把每种砖在候选染色下的颜色贡献写成向量，再比较区域的颜色总量；普通黑白染色不够时尝试周期染色、带权染色或跨割边计数。不可铺要给出被每次放置保持而目标区域违反的不变量；可铺或最优值还必须给出完整构造，并核对边界与旋转。",
+      "text_en": "For a board tiling, record each tile's contribution vector under a candidate coloring and compare it with the region total. If checkerboard parity is insufficient, try periodic or weighted colorings or counts across cuts. Impossibility needs an invariant preserved by every placement and violated by the region; possibility or optimality also needs a complete construction with boundaries and rotations checked.",
+      "provenance": "standard coloring and cut-invariant tiling method"
+    },
+    {
+      "id": "method.discrete.extremal_two_sided",
+      "kind": "method",
+      "domains": ["离散数学"],
+      "topics": ["extremal_combinatorics"],
+      "keywords": ["最大可能", "最小可能", "至多", "至少", "极值图", "达到上界", "达到下界", "maximum possible", "minimum possible", "at most", "at least", "extremal graph", "attain the bound"],
+      "text_zh": "离散极值题必须闭合两个方向：先用度数和、双计数、鸽巢或删点递推证明所有对象的上界或下界，再给出满足全部限制且达到该界的构造。若取整，单独检查整除和奇偶余项；若声称唯一，再证明等号条件强迫该结构。",
+      "text_en": "Close both directions of a discrete extremal problem: prove a universal upper or lower bound by degree sums, double counting, pigeonhole, or deletion recurrence, and separately construct an object satisfying every condition that attains it. Audit divisibility and parity remainders after rounding; claim uniqueness only when equality conditions force the structure.",
+      "provenance": "standard extremal-combinatorics bound and construction method"
+    },
+    {
+      "id": "method.discrete.state_recurrence",
+      "kind": "method",
+      "domains": ["离散数学"],
+      "topics": ["state_recurrence"],
+      "keywords": ["按状态", "末尾状态", "递推计数", "状态转移", "不含连续", "避免子串", "state recurrence", "ending state", "state transition", "avoid consecutive", "forbidden substring"],
+      "text_zh": "受局部限制的串、路径或排列先选足以决定下一步合法性的最小状态，写出完整转移和初始向量，再由转移矩阵或递推求目标总数。状态必须互斥且穷尽；用直接枚举的最小两个非平凡规模核对初值、下标和最终求和，避免把某个末态数误当总数。",
+      "text_en": "For strings, paths, or arrangements with local restrictions, choose the smallest state that determines legal continuations, write every transition and the initial vector, then obtain the requested total from the recurrence or transfer matrix. States must be disjoint and exhaustive; directly enumerate the two smallest nontrivial sizes to check initialization, indexing, and the final sum rather than confusing one terminal-state count with the total.",
+      "provenance": "standard finite-state recurrence method"
     },
     {
       "id": "method.numerical.iteration_audit",
@@ -364,6 +626,261 @@
       "text_zh": "环与域题要写明基环或基域。商环先核对理想，扩张次数用塔式公式，最小多项式需同时证明消去性与不可约性；有限维数和商结构应互相校验。",
       "text_en": "State the base ring or field. Verify idealhood before quotients, use the tower law for degrees, and prove both annihilation and irreducibility for a minimal polynomial; cross-check dimensions and quotient structure.",
       "provenance": "standard ring and field theory"
+    },
+    {
+      "id": "method.topology.cellular_homology",
+      "kind": "method",
+      "domains": ["拓扑学"],
+      "topics": ["cellular_homology"],
+      "keywords": ["CW复形", "胞腔链复形", "胞腔边界", "附着映射", "同调群", "Smith标准形", "CW complex", "cellular chain complex", "cellular boundary", "attaching word", "homology group", "Smith normal form"],
+      "text_zh": "适用门槛：题面给出有限 CW 复形及胞腔附着信息，并要求胞腔同调。按维数写出 C_k 和由附着映射次数得到的整数边界矩阵，核对 d_{k-1}d_k=0，再对相关矩阵作 Smith 标准形以读出 ker(d_k)/im(d_{k+1}) 的自由秩和扭结因子；低维结果可用基本群阿贝尔化独立核验。",
+      "text_en": "Applicability gate: the statement gives a finite CW complex with attaching data and asks for cellular homology. Write each C_k and the integer boundary matrices from attaching degrees, verify d_{k-1}d_k=0, then use Smith normal form to determine the free rank and torsion factors of ker(d_k)/im(d_{k+1}); independently check low-dimensional results by abelianizing the fundamental group.",
+      "provenance": "cellular chain complexes and Smith normal form"
+    },
+    {
+      "id": "method.numerical.chebyshev_minimax",
+      "kind": "method",
+      "domains": ["数值分析"],
+      "topics": ["chebyshev_minimax"],
+      "keywords": ["切比雪夫", "极小极大多项式", "首一多项式", "交错极值", "上确界范数", "Chebyshev", "minimax polynomial", "monic polynomial", "equioscillation", "sup norm"],
+      "text_zh": "适用门槛：目标是在实区间上、给定次数与首项或归一化约束下最小化一致范数。先把区间仿射映到 [-1,1]，按约束缩放相应 Chebyshev 多项式，再把变量映回；必须逐项核对次数、首项系数或归一化条件，并用足够多个等幅交错极值点证明最优性和唯一性。",
+      "text_en": "Applicability gate: minimize a uniform norm on a real interval under an explicit degree and leading-coefficient or normalization constraint. Affinely map the interval to [-1,1], scale the appropriate Chebyshev polynomial to satisfy the stated constraint, and map back. Verify degree and normalization explicitly, then prove optimality and uniqueness using the required number of equal-magnitude alternating extrema.",
+      "provenance": "Chebyshev alternation method for constrained minimax polynomials"
+    },
+    {
+      "id": "method.combinatorics.latin_square",
+      "kind": "method",
+      "domains": ["离散数学"],
+      "topics": ["latin_square"],
+      "keywords": ["拉丁方", "行列排列", "符号排列", "对角线限制", "Latin square", "row permutation", "column permutation", "diagonal constraint", "normalizing a row", "restoring labels"],
+      "text_zh": "适用门槛：数组的每行、每列都要求每个符号恰出现一次，并可能附加对角线等限制。先利用行、列、符号置换固定一行或一列，明确哪些对称仍保留附加限制；随后用结构分类或精确回溯穷尽标准化对象，最后按轨道稳定子恢复标签，并用小阶直接枚举核对对称因子。",
+      "text_en": "Applicability gate: every symbol occurs exactly once in each row and column, possibly with extra diagonal constraints. Normalize a row or column using row, column, and symbol permutations while recording which symmetries preserve the extra constraints. Exhaust the normalized structural cases or use exact backtracking, restore labels by orbit-stabilizer, and verify the symmetry factor by direct enumeration at small orders.",
+      "provenance": "Latin-square normalization and orbit counting"
+    },
+    {
+      "id": "method.graph.nowhere_zero_flow",
+      "kind": "method",
+      "domains": ["离散数学"],
+      "topics": ["nowhere_zero_flow"],
+      "keywords": ["无处零流", "无处为零流", "流多项式", "圈空间", "循环空间", "nowhere-zero flow", "flow polynomial", "cycle space", "conservation at every vertex"],
+      "text_zh": "适用门槛：有限图的边取有限群或有限域中的值，要求每个顶点满足流守恒且每一条边非零。先定向并求关联矩阵的核或圈空间坐标；再对各边坐标为零的事件做包含排除，或使用流多项式的删除-收缩。必须单独检查桥、多个连通分支、自环和平行边，并用小域精确枚举核验。",
+      "text_en": "Applicability gate: edges of a finite graph take values in a finite group or field, conservation holds at every vertex, and every edge must be nonzero. Orient the graph and parameterize the incidence-kernel or cycle space, then exclude zero edge coordinates by inclusion-exclusion or flow-polynomial deletion-contraction. Check bridges, components, loops, and parallel edges separately, and verify a small-field instance by exact enumeration.",
+      "provenance": "cycle-space enumeration and the flow polynomial"
+    },
+    {
+      "id": "theorem.numerical.chebyshev_minimax",
+      "kind": "theorem",
+      "domains": ["数值分析"],
+      "topics": ["numerical_method"],
+      "keywords": ["切比雪夫", "极小极大", "交错极值", "上确界范数", "Chebyshev", "minimax", "equioscillation", "sup norm"],
+      "exclude_keywords": ["插值", "interpolation"],
+      "theorem_name": "Chebyshev equioscillation theorem",
+      "text_zh": "切比雪夫极小极大结论必须先核对约束。特别地，若 0 不在 [a,b] 内，在次数不超过 m 且 p(0)=1 的多项式中最小化 [a,b] 上的上确界范数，则令 x(lambda)=(2lambda-a-b)/(b-a)，候选为 T_m(x(lambda))/T_m(x(0))。最后要验证次数、归一化 p(0)=1，以及 m+1 个等幅交错极值点；约束不同不能直接套此式。",
+      "text_en": "Check the constraints before applying Chebyshev minimax theory. In the specific problem of minimizing the sup norm on [a,b] over degree-at-most-m polynomials with p(0)=1 and 0 outside [a,b], set x(lambda)=(2lambda-a-b)/(b-a) and use T_m(x(lambda))/T_m(x(0)). Verify degree, p(0)=1, and m+1 alternating equal-magnitude extrema; do not reuse this formula under different constraints.",
+      "provenance": "Chebyshev equioscillation theorem"
+    },
+    {
+      "id": "theorem.discrete.best_euler",
+      "kind": "theorem",
+      "domains": ["离散数学"],
+      "topics": ["graph"],
+      "keywords": ["有向欧拉回路", "欧拉有向图", "入度等于出度", "BEST定理", "Euler circuit", "Eulerian digraph", "arborescence", "BEST theorem"],
+      "theorem_name": "BEST theorem",
+      "text_zh": "BEST 定理适用于强连通欧拉有向多重图。固定根和计数约定后，欧拉回路数由指向该根的有向生成树数乘以所有顶点的 (出度-1)! 之积给出。必须说明是否固定起始边、是否把循环移位视为相同，并用有向矩阵树定理核对生成树因子。",
+      "text_en": "The BEST theorem applies to strongly connected Eulerian directed multigraphs. After fixing the root and counting convention, the circuit count is the number of in-arborescences rooted there times the product of (outdegree-1)! over vertices. State whether the initial edge is fixed and whether cyclic shifts are identified, and verify the arborescence factor with the directed matrix-tree theorem.",
+      "provenance": "BEST theorem and directed matrix-tree theorem"
+    },
+    {
+      "id": "theorem.discrete.flow_space",
+      "kind": "theorem",
+      "domains": ["离散数学", "抽象代数"],
+      "topics": ["graph"],
+      "keywords": ["无处为零流", "有限阿贝尔群", "流多项式", "循环空间", "nowhere-zero flow", "finite abelian group", "flow polynomial", "cycle space"],
+      "theorem_name": "finite-group flow theorem",
+      "text_zh": "在选定边定向后，有限阿贝尔群 A 上的流是关联矩阵核中的元素；有 c 个连通分支的图，其全部 A-流共有 |A|^(|E|-|V|+c) 个。要求无处为零时必须排除各坐标为零的子空间，可用删除-收缩或包含排除计算；结果只依赖 |A|，但桥会使无处为零流数为 0。",
+      "text_en": "After orienting the edges, flows over a finite abelian group A form the kernel of the incidence map; a graph with c components has |A|^(|E|-|V|+c) total A-flows. Nowhere-zero flows require excluding coordinate hyperplanes by deletion-contraction or inclusion-exclusion; the count depends only on |A|, and any bridge forces it to zero.",
+      "provenance": "finite abelian group flows and the flow polynomial"
+    },
+    {
+      "id": "theorem.algebra.irreducible_count",
+      "kind": "theorem",
+      "domains": ["抽象代数"],
+      "topics": ["equation"],
+      "keywords": ["首一不可约多项式", "有限域", "次数恰为", "Mobius反演", "monic irreducible polynomial", "finite field", "degree exactly", "Mobius inversion"],
+      "theorem_name": "finite-field irreducible polynomial count",
+      "text_zh": "有限域 F_q 上次数恰为 n 的首一不可约多项式个数为 N_q(n)=(1/n) sum_{d|n} mu(d) q^(n/d)。它来自 q^n=sum_{d|n} d N_q(d) 的 Mobius 反演。使用前要核对题目是否要求首一、是否排除常数项为零或另加系数条件；有附加条件时不能直接把 N_q(n) 当答案。",
+      "text_en": "The number of monic irreducible polynomials of exact degree n over F_q is N_q(n)=(1/n) sum_{d|n} mu(d) q^(n/d), obtained by Mobius inversion from q^n=sum_{d|n} d N_q(d). Check whether monicity, nonzero constant term, or extra coefficient restrictions are imposed; extra restrictions require additional work.",
+      "provenance": "finite-field factorization and Mobius inversion"
+    },
+    {
+      "id": "theorem.functional.weighted_shift_spectrum",
+      "kind": "theorem",
+      "domains": ["泛函分析"],
+      "topics": ["linear_algebra"],
+      "keywords": ["单边加权移位", "加权移位算子", "谱半径", "周期权", "unilateral weighted shift", "weighted shift operator", "spectral radius", "periodic weights"],
+      "theorem_name": "unilateral weighted-shift spectrum theorem",
+      "text_zh": "对有界单边加权移位 W，先由 r(W)=lim_n ||W^n||^(1/n) 计算谱半径，其中 ||W^n|| 是连续 n 个权重乘积绝对值的上确界；其谱是以 0 为中心、半径 r(W) 的闭圆盘。周期权重时半径化为一个周期内权重绝对值乘积的几何平均。不要把算子范数 max|w_k| 与谱半径混淆。",
+      "text_en": "For a bounded unilateral weighted shift W, compute r(W)=lim_n ||W^n||^(1/n), where ||W^n|| is the supremum of absolute products of n consecutive weights; the spectrum is the closed disk centered at zero with radius r(W). For periodic weights this radius is the geometric mean of the absolute weights over one period. Do not confuse max|w_k|, the operator norm, with the spectral radius.",
+      "provenance": "spectral theory of unilateral weighted shifts"
+    },
+    {
+      "id": "theorem.probability.uniform_spacings",
+      "kind": "theorem",
+      "domains": ["概率论"],
+      "topics": ["probability"],
+      "keywords": ["均匀次序统计量", "最大间距", "随机间距", "单位区间均匀", "uniform order statistics", "maximum spacing", "random spacings", "uniform on the unit interval"],
+      "theorem_name": "uniform spacings theorem",
+      "text_zh": "若 n 个点独立均匀分布于 [0,1]，连同两端点产生的 n+1 个间距服从 Dirichlet(1,...,1)。因此最大间距 M 的分布可由单纯形上的包含排除得到：P(M<=x)=sum_k (-1)^k C(n+1,k)(1-kx)_+^n，且 E[M]=H_{n+1}/(n+1)。点数、间距数和是否包含端点必须先核对。",
+      "text_en": "For n iid uniform points on [0,1], the n+1 spacings including the endpoints have the Dirichlet(1,...,1) law. Inclusion-exclusion on the simplex gives P(M<=x)=sum_k (-1)^k C(n+1,k)(1-kx)_+^n for the maximum spacing, and E[M]=H_{n+1}/(n+1). Check the number of points, number of gaps, and endpoint convention first.",
+      "provenance": "uniform order statistics and Dirichlet spacings"
+    },
+    {
+      "id": "theorem.stochastic.birth_death_hitting",
+      "kind": "theorem",
+      "domains": ["随机过程", "概率论"],
+      "topics": ["probability"],
+      "keywords": ["出生死亡链", "赌徒破产", "先到达", "吸收边界", "birth-death chain", "gambler's ruin", "hit before", "absorbing boundaries"],
+      "theorem_name": "birth-death hitting probability formula",
+      "text_zh": "有限出生死亡链先写调和方程 h_i=p_i h_{i+1}+q_i h_{i-1}+(1-p_i-q_i)h_i 及全部吸收边界值。常系数且边界为 0,N 时，若 p!=q，则从 i 先到 N 的概率为 (1-(q/p)^i)/(1-(q/p)^N)；p=q 时为 i/N。方向、起点和所问的是概率还是期望首达时间不能混淆。",
+      "text_en": "For a finite birth-death chain, first write the harmonic equations h_i=p_i h_{i+1}+q_i h_{i-1}+(1-p_i-q_i)h_i and all absorbing boundary values. With constant p,q and boundaries 0,N, the probability from i of hitting N first is (1-(q/p)^i)/(1-(q/p)^N) for p!=q and i/N for p=q. Check direction, starting state, and whether probability or mean hitting time is requested.",
+      "provenance": "first-step analysis for birth-death chains"
+    },
+    {
+      "id": "theorem.geometry.graph_curvature",
+      "kind": "theorem",
+      "domains": ["微分几何"],
+      "topics": ["calculus"],
+      "keywords": ["图形曲面", "高斯曲率", "z=f(x,y)", "偏导数", "graph surface", "Gaussian curvature", "z=f(x,y)", "partial derivatives"],
+      "theorem_name": "Gaussian curvature of a graph",
+      "text_zh": "对正则图形曲面 z=f(x,y)，高斯曲率为 K=(f_xx f_yy-f_xy^2)/(1+f_x^2+f_y^2)^2。代入指定点前应先算一、二阶偏导并检查分母；若题面给的是参数曲面而不是图形曲面，应改用两基本形式，不能强行套此式。",
+      "text_en": "For a regular graph surface z=f(x,y), K=(f_xx f_yy-f_xy^2)/(1+f_x^2+f_y^2)^2. Compute first and second derivatives before evaluating at the requested point. A general parametric surface instead requires the two fundamental forms, so this graph formula must not be forced onto it.",
+      "provenance": "Gaussian curvature formula for graph surfaces"
+    },
+    {
+      "id": "theorem.complex.residue_integral",
+      "kind": "theorem",
+      "domains": ["复分析"],
+      "topics": ["calculus"],
+      "keywords": ["围道积分", "留数", "极点", "正向曲线", "contour integral", "residue", "pole", "positively oriented"],
+      "theorem_name": "residue theorem",
+      "text_zh": "对不穿过奇点的正向闭曲线，围道积分等于 2 pi i 乘曲线内部留数之和；曲线外奇点不计，反向时整体变号。m 阶极点 z0 的留数为 1/(m-1)! 乘 d^(m-1)/dz^(m-1)[(z-z0)^m f(z)] 在 z0 的值。必须先判定每个奇点的位置与阶数。",
+      "text_en": "For a positively oriented closed contour avoiding singularities, the integral is 2 pi i times the sum of residues inside; exterior poles do not contribute and reversed orientation changes the sign. At a pole z0 of order m, the residue is 1/(m-1)! times the (m-1)-st derivative of (z-z0)^m f(z) at z0. Locate and classify every singularity first.",
+      "provenance": "Cauchy residue theorem"
+    },
+    {
+      "id": "theorem.regression.gls",
+      "kind": "theorem",
+      "domains": ["线性回归", "统计推断"],
+      "topics": ["linear_algebra"],
+      "keywords": ["广义最小二乘", "协方差矩阵", "异方差", "线性无偏估计", "generalized least squares", "covariance matrix", "heteroscedastic", "linear unbiased estimator"],
+      "theorem_name": "generalized least squares formula",
+      "text_zh": "在线性模型 y=X beta+epsilon、Cov(epsilon)=Sigma 且 Sigma 正定时，GLS 估计为 (X^T Sigma^{-1}X)^{-1}X^T Sigma^{-1}y，协方差为 (X^T Sigma^{-1}X)^{-1}。只有截距时化为 (1^T Sigma^{-1}y)/(1^T Sigma^{-1}1)。要核对题面给的是方差、标准差还是精度权重。",
+      "text_en": "In y=X beta+epsilon with positive-definite Cov(epsilon)=Sigma, the GLS estimator is (X^T Sigma^{-1}X)^{-1}X^T Sigma^{-1}y with covariance (X^T Sigma^{-1}X)^{-1}. For an intercept only it becomes (1^T Sigma^{-1}y)/(1^T Sigma^{-1}1). Check whether the statement gives variances, standard deviations, or precision weights.",
+      "provenance": "Gauss-Markov generalized least squares"
+    },
+    {
+      "id": "theorem.pde.poisson_disk",
+      "kind": "theorem",
+      "domains": ["偏微分方程", "复分析"],
+      "topics": ["calculus"],
+      "keywords": ["圆盘Dirichlet问题", "Poisson核", "边界数据", "调和延拓", "disk Dirichlet problem", "Poisson kernel", "boundary data", "harmonic extension"],
+      "theorem_name": "Poisson integral formula for the disk",
+      "text_zh": "单位圆盘内边界数据 g 的 Poisson 延拓为 u(r,theta)=(1/(2 pi)) integral_0^(2 pi) [(1-r^2)/(1-2r cos(theta-t)+r^2)]g(t)dt。核非负且积分为 2 pi，所以先用常数边界检验归一化；分段边界还要正确处理弧段、端点和角度周期。",
+      "text_en": "For boundary data g on the unit disk, its Poisson extension is u(r,theta)=(1/(2 pi)) integral_0^(2 pi) [(1-r^2)/(1-2r cos(theta-t)+r^2)]g(t)dt. The kernel is nonnegative and integrates to 2 pi, so test normalization on constant data; for piecewise data track arcs, endpoints, and angular periodicity.",
+      "provenance": "Poisson integral formula for the unit disk"
+    },
+    {
+      "id": "theorem.topology.cell_attachment",
+      "kind": "theorem",
+      "domains": ["拓扑学"],
+      "topics": ["proof"],
+      "keywords": ["粘贴二维胞腔", "附着映射", "基本群", "正规闭包", "attach a 2-cell", "attaching map", "fundamental group", "normal closure"],
+      "theorem_name": "fundamental group after attaching a 2-cell",
+      "text_zh": "沿闭路 f:S^1->X 粘贴一个二维胞腔后，van Kampen 定理给出 pi_1(X union_f D^2)=pi_1(X)/<<[f]>>，即商去附着词的正规闭包。计算 H_1 时再阿贝尔化，并用整数关系矩阵的 Smith 标准形区分自由部分和扭结；基本群商与只加一条交换关系不能混同。",
+      "text_en": "After attaching a 2-cell along f:S^1->X, van Kampen gives pi_1(X union_f D^2)=pi_1(X)/<<[f]>>, the quotient by the normal closure of the attaching word. For H_1, abelianize and use Smith normal form of the integer relation matrix to separate free and torsion parts; do not replace the fundamental-group quotient by a merely abelian relation.",
+      "provenance": "Seifert-van Kampen theorem and cellular homology"
+    },
+    {
+      "id": "method.graph.directed_euler_circuits",
+      "kind": "method",
+      "domains": ["离散数学"],
+      "topics": ["directed_euler_circuits"],
+      "keywords": ["有向欧拉回路", "有向欧拉闭迹", "固定首弧", "BEST定理", "directed Eulerian circuit", "fixed first arc", "BEST theorem"],
+      "text_zh": "有向欧拉图先固定计数约定：是否固定起点、首弧，以及是否按循环旋转视为同一闭迹。BEST 定理把计数分成指向根的有向生成树数与各顶点出弧排列因子；生成树数用有向矩阵树定理核对，并以最小有向环检验旋转归一化，不能把有标号边与无标号边混用。",
+      "text_en": "For a directed Eulerian graph, first fix whether the start vertex and first arc are fixed and whether cyclic rotations are identified. The BEST theorem factors the count into rooted in-arborescences and local exit-order factorials. Check the arborescence factor by the directed matrix-tree theorem and test rotation normalization on a directed cycle; do not mix labelled and unlabelled arcs.",
+      "provenance": "BEST theorem and directed matrix-tree theorem"
+    },
+    {
+      "id": "method.combinatorics.plane_rooted_trees",
+      "kind": "method",
+      "domains": ["离散数学"],
+      "topics": ["plane_rooted_tree_enumeration"],
+      "keywords": ["平面有根树", "有序有根树", "出度剖面", "Lukasiewicz词", "ordered plane rooted tree", "out-degree profile", "Lukasiewicz word"],
+      "text_zh": "设 n_i 是出度为 i 的顶点数，先核对 sum n_i=n 与 sum i*n_i=n-1。把树按先序遍历编码为含 n_i 个字母 i-1 的 Lukasiewicz 词；循环引理给出满足所有真前缀和非负且总和为 -1 的唯一合法循环移位，因此计数为 (1/n)·n!/(prod n_i!)。必须同时检查 n_i 非负整数及两个度数约束。",
+      "text_en": "Let n_i count vertices of out-degree i and first verify sum n_i=n and sum i*n_i=n-1. Preorder traversal gives a Lukasiewicz word with n_i copies of i-1. The cycle lemma selects one rotation whose proper prefix sums are nonnegative and whose total is -1, yielding (1/n) n!/(prod n_i!). Check integrality and both degree constraints.",
+      "provenance": "Lukasiewicz coding and the cycle lemma"
+    },
+    {
+      "id": "method.complex.lacunary_natural_boundary",
+      "kind": "method",
+      "domains": ["复分析"],
+      "topics": ["lacunary_natural_boundary"],
+      "keywords": ["稀疏幂级数", "空隙幂级数", "自然边界", "解析延拓", "lacunary power series", "natural boundary", "analytic continuation", "Hadamard gap"],
+      "text_zh": "稀疏幂级数先由 Cauchy-Hadamard 公式计算收敛半径，再单独核对所给空隙条件。若指数满足 Hadamard 型比例空隙且有效系数达到该半径，空隙定理可推出收敛圆周为自然边界；若题目要求显式论证，应说明边界奇点为何在圆周上稠密，从而排除穿过任何开弧的解析延拓。不要只由收敛半径推出自然边界。",
+      "text_en": "For a lacunary power series, compute the radius first by Cauchy-Hadamard and separately verify the stated gap hypothesis. Under a Hadamard-type ratio gap with coefficients attaining that radius, the gap theorem makes the convergence circle a natural boundary. If an explicit argument is requested, explain why boundary singularities are dense and hence continuation through every open arc is impossible. Radius alone does not imply a natural boundary.",
+      "provenance": "Cauchy-Hadamard and Hadamard/Fabry gap theorems"
+    },
+    {
+      "id": "method.numerical.runge_kutta_stability",
+      "kind": "method",
+      "domains": ["数值分析"],
+      "topics": ["runge_kutta_stability"],
+      "keywords": ["SDIRK", "Butcher表", "稳定函数", "阶条件", "L-稳定", "Butcher tableau", "stability function", "order condition", "L-stability"],
+      "text_zh": "对 Butcher 数组 (A,b,c)，先核对 c=A1 和题目所需阶条件；测试方程 y'=lambda y 给出 R(z)=1+z b^T(I-zA)^{-1}1。A-稳定需检查左半平面内 |R(z)|<=1，L-稳定还必须满足 lim_{z->infinity}R(z)=0。参数解要同时满足阶条件、分母非退化和相应稳定性条件。",
+      "text_en": "For a Butcher array (A,b,c), verify c=A1 and the required order conditions. Applied to y'=lambda y, the method has R(z)=1+z b^T(I-zA)^{-1}1. A-stability requires |R(z)|<=1 in the left half-plane, and L-stability additionally requires lim_{z->infinity}R(z)=0. A parameter choice must satisfy order, nondegeneracy, and stability simultaneously.",
+      "provenance": "Runge-Kutta order and stability theory"
+    },
+    {
+      "id": "theorem.numerical.linear_multistep_stability",
+      "kind": "theorem",
+      "domains": ["数值分析"],
+      "topics": ["numerical_method"],
+      "keywords": ["线性多步法", "向后差分公式", "BDF", "BDF1", "BDF2", "BDF3", "BDF4", "BDF5", "BDF6", "根条件", "绝对稳定域", "A-稳定", "linear multistep", "backward differentiation formula", "root condition", "absolute stability", "A-stability"],
+      "theorem_name": "linear multistep absolute stability and BDF A-stability",
+      "text_zh": "线性多步法应用于 y'=lambda y 后应检查特征方程 rho(xi)-z sigma(xi)=0：零稳定只检查 z=0 的根条件，绝对稳定则要求给定 z 下全部根满足 |xi|<=1，且单位圆上的根为单根。根轨迹 z=rho(e^{i theta})/sigma(e^{i theta}) 只给边界，必须用一个已知小步长测试点确定稳定侧，不能仅凭边界朝向断言稳定域有界。BDF1、BDF2 是 A-稳定的；三至六阶 BDF 仅为扇形稳定而非 A-稳定。",
+      "text_en": "For a linear multistep method on y'=lambda y, check rho(xi)-z sigma(xi)=0. Zero-stability tests only the root condition at z=0; absolute stability requires every root for the given z to satisfy |xi|<=1, with simple unit-circle roots. The locus z=rho(e^{i theta})/sigma(e^{i theta}) is only the boundary, so determine the stable side using a known small-step test point instead of declaring the region bounded from its orientation. BDF1 and BDF2 are A-stable; BDF methods of orders three through six are only sector-stable, not A-stable.",
+      "provenance": "standard Dahlquist linear-multistep stability theory"
+    },
+    {
+      "id": "method.geometry.spherical_triangle_area",
+      "kind": "method",
+      "domains": ["微分几何"],
+      "topics": ["spherical_triangle_area"],
+      "keywords": ["球面三角形", "球面余弦定理", "Girard定理", "球面盈量", "spherical triangle", "spherical law of cosines", "Girard theorem", "spherical excess"],
+      "text_zh": "半径 R 的球面上先把测地边长归一化为中心角 A=a/R、B=b/R、C=c/R；用球面余弦定理由三边求内角 alpha,beta,gamma，再由 Girard 公式 Area=R^2(alpha+beta+gamma-pi)。检查三角形存在条件、反三角函数分支及面积位于允许范围。",
+      "text_en": "On a sphere of radius R, normalize geodesic side lengths to central angles A=a/R, B=b/R, C=c/R. Use the spherical cosine law to recover alpha,beta,gamma, then Girard gives Area=R^2(alpha+beta+gamma-pi). Check existence, inverse-trigonometric branches, and the admissible area range.",
+      "provenance": "spherical cosine law and Girard's theorem"
+    },
+    {
+      "id": "method.complex.weierstrass_sine_product",
+      "kind": "method",
+      "domains": ["复分析"],
+      "topics": ["weierstrass_sine_product"],
+      "keywords": ["正弦无穷乘积", "双曲正弦乘积", "纯虚代换", "Weierstrass sine product", "hyperbolic sine product", "imaginary substitution"],
+      "exclude_keywords": ["Weierstrass approximation theorem", "魏尔斯特拉斯逼近定理"],
+      "text_zh": "从 sin(pi z)=pi z·prod_{n>=1}(1-z^2/n^2) 出发，作纯虚代换 z=iu/pi，并用 sin(iu)=i sinh(u)，得到 sinh(u)=u·prod_{n>=1}(1+u^2/(pi^2 n^2))。要核对常数因子、正负号、零点和 u->0 时的归一化。",
+      "text_en": "Start from sin(pi z)=pi z prod_{n>=1}(1-z^2/n^2), substitute z=iu/pi, and use sin(iu)=i sinh(u) to obtain sinh(u)=u prod_{n>=1}(1+u^2/(pi^2 n^2)). Check the constant, signs, zeros, and normalization as u->0.",
+      "provenance": "Weierstrass product for sine"
+    },
+    {
+      "id": "method.pde.polyharmonic_fundamental_solution",
+      "kind": "method",
+      "domains": ["偏微分方程"],
+      "topics": ["two_dimensional_polyharmonic_fundamental_solution"],
+      "keywords": ["多调和基本解", "双调和基本解", "径向基本解", "小圆通量", "polyharmonic fundamental solution", "biharmonic fundamental solution", "radial fundamental solution", "flux normalization"],
+      "text_zh": "二维多调和算子 Delta^m 的径向基本解先在 r>0 上用径向 Laplacian 递推确定 r^{2m-2}log r 型候选及低阶多项式歧义；分布常数不能只由点外方程决定，必须在小圆上积分分部或计算通量，使 Delta^m Phi=delta_0。最后核对 m=1 的对数基本解和尺度量纲。",
+      "text_en": "For Delta^m in two dimensions, use the radial Laplacian recurrence away from zero to obtain a candidate of type r^{2m-2} log r, modulo lower-order polyharmonic terms. The distributional constant is not fixed by the punctured equation: integrate by parts or compute the small-circle flux so Delta^m Phi=delta_0. Check the m=1 logarithmic case and scaling.",
+      "provenance": "radial polyharmonic fundamental-solution construction"
     },
     {
       "id": "check.proof.hypothesis_chain",

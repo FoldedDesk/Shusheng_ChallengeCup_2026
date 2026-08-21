@@ -3,6 +3,32 @@ from __future__ import annotations
 import re
 
 
+def find_matching_brace(text: str, open_pos: int) -> int:
+    """Return the matching unescaped closing brace, or -1 if malformed."""
+    if not (0 <= open_pos < len(text)) or text[open_pos] != "{":
+        return -1
+    depth = 0
+    for index in range(open_pos, len(text)):
+        if text[index] not in "{}":
+            continue
+        backslashes = 0
+        cursor = index - 1
+        while cursor >= 0 and text[cursor] == "\\":
+            backslashes += 1
+            cursor -= 1
+        if backslashes % 2:
+            continue
+        if text[index] == "{":
+            depth += 1
+        else:
+            depth -= 1
+            if depth == 0:
+                return index
+            if depth < 0:
+                return -1
+    return -1
+
+
 def normalize_latex(text: str) -> str:
     """Apply only safe display normalization; this is not a full TeX parser."""
     value = text.strip()

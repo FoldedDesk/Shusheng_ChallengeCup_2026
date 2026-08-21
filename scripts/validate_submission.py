@@ -44,6 +44,7 @@ PROBLEM_TEXT_SIGNAL = re.compile(
     r"求|计算|证明|确定|分类|设|已知|\\boxed|\$)",
     re.IGNORECASE,
 )
+PROBLEM_DIGEST_LITERAL = re.compile(r"^[0-9a-f]{40,128}$", re.IGNORECASE)
 ANSWER_BEARING_KNOWLEDGE = re.compile(
     r"最终答案|标准答案|参考答案|题号|隐藏测试|评测题|"
     r"\b(?:final answer is|expected answer|answer key|hidden test|judge replay|question id)\b",
@@ -120,6 +121,11 @@ def _looks_like_long_problem(value: str) -> bool:
         len(compact) >= LONG_PROBLEM_TEXT_MIN_CHARS
         and bool(PROBLEM_TEXT_SIGNAL.search(compact))
     )
+
+
+def _looks_like_problem_identifier(value: str) -> bool:
+    compact = re.sub(r"\s+", " ", str(value or "")).strip()
+    return bool(_looks_like_long_problem(compact) or PROBLEM_DIGEST_LITERAL.fullmatch(compact))
 
 
 def _contains_forbidden_path(value: str) -> bool:
@@ -203,6 +209,9 @@ class _ComplianceScanner(ast.NodeVisitor):
 
     def _long_problem_literal(self, node: ast.AST) -> bool:
         return any(_looks_like_long_problem(value) for value, _ in _literal_strings(node))
+
+    def _problem_identifier_literal(self, node: ast.AST) -> bool:
+        return any(_looks_like_problem_identifier(value) for value, _ in _literal_strings(node))
 
     def _visit_function(self, node: ast.FunctionDef | ast.AsyncFunctionDef) -> None:
         all_arguments = (
@@ -365,9 +374,9 @@ class _ComplianceScanner(ast.NodeVisitor):
             return
         for key in value.keys:
             key_text = _string_literal(key)
-            if not key_text or not _looks_like_long_problem(key_text):
+            if not key_text or not _looks_like_problem_identifier(key_text):
                 continue
-            self._report(node, "literal answer mapping keyed by a complete problem statement")
+            self._report(node, "literal answer mapping keyed by a problem statement or digest")
             return
 
     def visit_Compare(self, node: ast.Compare) -> None:
@@ -377,11 +386,11 @@ class _ComplianceScanner(ast.NodeVisitor):
             if not equality:
                 continue
             if (
-                self._uses_problem(left) and self._long_problem_literal(right)
+                self._uses_problem(left) and self._problem_identifier_literal(right)
             ) or (
-                self._uses_problem(right) and self._long_problem_literal(left)
+                self._uses_problem(right) and self._problem_identifier_literal(left)
             ):
-                self._report(node, "complete problem statement compared against runtime problem text")
+                self._report(node, "problem-derived value compared against a statement or digest literal")
                 break
         self.generic_visit(node)
 

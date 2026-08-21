@@ -111,7 +111,7 @@ _PROTOCOLS = {
         ),
         (
             "Compare order, dimension, rank, exponent, torsion, and quotient invariants.",
-            "Check normality, idealhood, irreducibility, and theorem hypotheses from definitions.",
+            "Check polynomial irreducibility by exact roots, gcds, or factorization over the stated base field; recompose every claimed factorization.",
             "Attempt a small counterexample over a different base ring or field.",
         ),
     ),
@@ -138,7 +138,8 @@ _PROTOCOLS = {
         (
             "Differentiate and substitute into the original differential equation.",
             "Evaluate every initial or boundary condition exactly.",
-            "Check uniqueness hypotheses and singular points of the coefficients.",
+            "Check uniqueness hypotheses and singular points; for a one-sided interval request, state both the full maximal interval containing the initial point and the requested side.",
+            "For equilibrium classification, state the eigenvalues, their signs, the phase type, and explicitly whether it is stable or unstable.",
         ),
     ),
     "偏微分方程": SubjectProtocol(
@@ -157,12 +158,12 @@ _PROTOCOLS = {
     "泛函分析": SubjectProtocol(
         "functional_analysis",
         (
-            "Specify every space, norm, operator domain, scalar field, and topology before invoking an operator theorem.",
-            "Separate boundedness, compactness, self-adjointness, spectrum, and norm attainment; prove the exact property requested.",
-            "For a sharp norm or constant, give both an upper bound and an attaining vector or extremizing sequence.",
+            "Specify the metric or normed spaces, completeness assumptions, operator domains, scalar field, and topology before invoking a theorem.",
+            "For metric-space questions work directly with Cauchy sequences and limits; for operator questions separate boundedness, compactness, spectrum, and norm attainment.",
+            "Prove the exact requested implication, and for a sharp norm or constant give both an upper bound and an attaining vector or extremizing sequence.",
         ),
         (
-            "Check domains, density, completeness, and inner-product conventions in every adjoint or spectral step.",
+            "Check metric, domains, density, completeness, and inner-product conventions before using a completeness or operator theorem.",
             "Substitute a proposed eigenfunction or extremizer and recompute its norm ratio.",
             "Test standard noncompact or nonreflexive counterexamples when a converse is claimed.",
         ),
@@ -261,9 +262,73 @@ _PROTOCOLS = {
 }
 
 
-def subject_protocol(spec, *, review: bool = False) -> str:
-    subject = getattr(spec.profile, "primary_subject", spec.profile.subject)
-    protocol = _PROTOCOLS.get(subject)
+_EXTRA_PROTOCOLS = {
+    "数论": SubjectProtocol(
+        "number_theory",
+        (
+            "Translate divisibility, congruence, valuation, and coprimality conditions exactly before manipulating them.",
+            "Use one structural route such as modular arithmetic, descent, factorization, valuations, or orders, with every exceptional prime separated.",
+            "Prove exhaustiveness and substitute every proposed integer family into the original condition.",
+        ),
+        (
+            "Check small and boundary integers without treating them as a proof of the general case.",
+            "Recompute residues and valuations at every exceptional prime and verify all divisibility directions.",
+            "Test whether cancellation, division, or an order argument silently assumes coprimality.",
+        ),
+    ),
+    "欧氏几何": SubjectProtocol(
+        "euclidean_geometry",
+        (
+            "Record incidence, order, cyclicity, tangency, and directed-angle conventions before adding auxiliary points.",
+            "Choose one coherent route: angle chase, similarity, power, coordinates, vectors, inversion, or projective structure.",
+            "Derive the requested relation and check degeneracy and orientation explicitly.",
+        ),
+        (
+            "Verify every claimed collinearity, cyclic quadrilateral, ratio, and angle orientation from the stated configuration.",
+            "Recompute the decisive identity in coordinates or through a second geometric invariant.",
+            "Check limiting, symmetric, and near-degenerate configurations for hidden assumptions.",
+        ),
+    ),
+    "进阶数学": SubjectProtocol(
+        "general_advanced",
+        (
+            "Identify the exact objects, quantifiers, and requested conclusion before selecting a field-specific theorem.",
+            "Commit to one derivation from definitions and make every theorem hypothesis and exceptional case explicit.",
+            "End with the requested object or conclusion and one concrete falsification check.",
+        ),
+        (
+            "Recompute one decisive equality, invariant, boundary case, or counterexample from the original statement.",
+            "Check domains, quantifiers, equality cases, normalization, and all excluded cases.",
+            "Reject an argument that only cites authority or repeats the proposed conclusion.",
+        ),
+    ),
+}
+
+
+def subject_protocol(
+    spec,
+    *,
+    review: bool = False,
+    subject_override: str = "",
+) -> str:
+    subject = subject_override or getattr(
+        spec.profile, "primary_subject", spec.profile.subject
+    )
+    protocol = _PROTOCOLS.get(subject) or _EXTRA_PROTOCOLS.get(subject)
+    if protocol is None:
+        topic = str(getattr(spec.profile, "topic", ""))
+        topic_subject = {
+            "olympiad_combinatorics": "离散数学",
+            "olympiad_sequence": "离散数学",
+            "combinatorics": "离散数学",
+            "graph": "离散数学",
+            "olympiad_number_theory": "数论",
+            "olympiad_geometry": "欧氏几何",
+            "olympiad_functional_equation": "高等代数",
+            "olympiad_inequality": "高等代数",
+            "olympiad_polynomial": "高等代数",
+        }.get(topic, "")
+        protocol = _PROTOCOLS.get(topic_subject) or _EXTRA_PROTOCOLS.get(topic_subject)
     if protocol is None:
         return ""
     return protocol.render(review=review, language=spec.profile.language)

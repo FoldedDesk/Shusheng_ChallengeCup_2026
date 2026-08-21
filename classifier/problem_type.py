@@ -130,7 +130,22 @@ def classify_problem_type(problem: str) -> str:
         re.IGNORECASE,
     ):
         return "choice"
-    if re.search(r"填空|填入|fill (?:in|the blank)", text, re.IGNORECASE):
+    if re.search(
+        r"^\s*(?:\d+[.．、]\s*)?(?:判断|判断题)\s*[:：.]?",
+        text,
+        re.IGNORECASE,
+    ):
+        # Parentheses after a true/false statement are an answer slot, not a
+        # generic fill blank.  Keep the calculation task kind so answer-shape
+        # classification can apply its judgement contract.
+        return "calculation"
+    if re.search(
+        r"填空|填入|fill (?:in|the blank)|"
+        r"(?:\(\s*(?:\\(?:quad|qquad|;|,|\s))?\s*\)|（\s*）)|"
+        r"(?<![A-Za-z0-9])_{3,}(?![A-Za-z0-9])|□+",
+        text,
+        re.IGNORECASE,
+    ):
         return "fill_blank"
     if re.search(
         r"^\s*(?:请|试)?\s*(?:构造|给出[^。！？!?\n]{0,20}构造)|"
