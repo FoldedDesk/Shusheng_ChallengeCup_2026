@@ -16,6 +16,7 @@ judge/
 /scripts/build_judge1_style_hard112.py
 /scripts/evaluate_answer_integrity.py
 /scripts/evaluate_judge_replay.py
+/scripts/generate_silver_references.py
 /scripts/verify_unseen_hard*.py
 # Rejected local experiments: these matcher-heavy modules are intentionally
 # excluded from the runtime and must never enter a competition submission.

@@ -122,9 +122,10 @@ class SubmissionAgent:
         # Local replay diagnostics only.  Production traces intentionally omit
         # candidate text under PLATFORM_CONSTRAINTS.md.
         self.local_candidate_diagnostics = False
-        # Local single-variable P1 experiment. Production remains on the
-        # established prompt until a frozen replay shows a positive net gain.
-        self.compact_primary_prompt = False
+        # Development replays show a positive net accuracy change and lower
+        # elapsed time from the compact obligation-first protocol. Local
+        # runners may still disable it for matched ablations.
+        self.compact_primary_prompt = True
         # Local ablation only.  The production path keeps MOG disabled until
         # a matched replay shows that hidden thinking improves route quality.
         self.mog_route_thinking = False
@@ -480,24 +481,23 @@ class SubmissionAgent:
         )
         trace.append({
             "step": "primary_recovery_admission",
-                "content": {
-                    "admitted": recovery_admitted,
-                    "mode": recovery_stage or "none",
-                    "first_usable": first_usable,
-                    "first_truncated": first_truncated,
-                },
-            })
+            "content": {
+                "admitted": recovery_admitted,
+                "mode": recovery_stage or "none",
+                "first_usable": first_usable,
+                "first_truncated": first_truncated,
+            },
+        })
         if recovery_admitted:
             recovery_raw, recovery_result = self._call(
                 recovery_request,
                 stage=recovery_stage,
                 max_tokens=recovery_tokens,
                 temperature=0.1,
-                # This stage either completes the already-produced draft or
-                # emits a short clean answer after a transport failure.  It
-                # deliberately does not start another hidden reasoning pass;
-                # doing so both wastes the continuation context and can hit
-                # the output limit again before the requested final marker.
+                # This stage completes an existing draft or emits a short
+                # clean answer after transport failure.  A paired replay found
+                # that starting hidden reasoning here added truncations and
+                # regressed answers, so every finish recovery stays compact.
                 thinking_mode=False,
                 trace=trace,
                 prior_response=prior_response,

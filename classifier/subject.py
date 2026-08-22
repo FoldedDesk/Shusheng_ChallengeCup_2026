@@ -58,6 +58,25 @@ _SIGNALS = (
     ),
     _Signal("离散数学", "graph-flow", r"无处(?:为)?零流|流多项式|(?:圈|循环)空间|\b(?:nowhere[- ]zero flows?|flow polynomial|cycle space)\b", 10),
     _Signal("离散数学", "combinatorics", r"排列|置换|对换|不动点|组合|计数|容斥|鸽巢|生成函数|递推计数|染色|二进制串|(?:字符串|序列)(?:数|[^。；;\n]{0,40}(?:个数|计数|递推))|\b(?:combinatorics?|permutations?|involutions?|transpositions?|fixed points?|combinations?|counting|inclusion[- ]exclusion|pigeonhole|generating function|colorings?|binary strings?)\b", 6),
+    _Signal(
+        "离散数学",
+        "finite-combinatorial-objects",
+        r"圆桌|字母排列|项链|手镯|布尔变量|满足赋值|格路径|集合族|反链|标号树|无标号组|"
+        r"\b(?:circular tables?|arrangements? of (?:the )?letters|"
+        r"necklaces?|bracelets?|boolean variables?|satisfying assignments?|"
+        r"monotone lattice paths?|set famil(?:y|ies)|antichains?|labeled trees?|"
+        r"unlabeled groups?)\b",
+        8,
+    ),
+    _Signal(
+        "离散数学",
+        "explicit-recurrence-sequence",
+        r"(?:数列|序列)[^。；;\n]{0,100}(?:定义为|满足)[^。；;\n]{0,180}"
+        r"[A-Za-z]_?\{?n\s*\+\s*\d+\}?\s*=|"
+        r"\bsequence\b[^.;\n]{0,100}\bdefined by\b[^.;\n]{0,180}"
+        r"[A-Za-z]_?\{?n\s*\+\s*\d+\}?\s*=",
+        8,
+    ),
     _Signal("离散数学", "finite-games", r"(?![^。；;\n]{0,180}(?:随机|概率|骰子|硬币|掷|抛|random|probability|dice?|coin|roll|toss))(?:博弈|游戏|玩家|两人|双方)[^。；;\n]{0,100}(?:轮流|先手|后手|必胜|策略|不能行动)|(?![^。；;\n]{0,180}(?:随机|概率|骰子|硬币|掷|抛|random|probability|dice?|coin|roll|toss))(?:轮流|先手|后手)[^。；;\n]{0,100}(?:取走|移动|操作|获胜|策略)|\b(?:finite game|impartial game|winning strategy)\b", 7),
     _Signal("离散数学", "logic", r"命题逻辑|谓词逻辑|真值表|偏序|等价关系|\b(?:propositional logic|predicate logic|truth table|partial order|equivalence relation)\b", 6),
     _Signal(
@@ -101,8 +120,28 @@ _SIGNALS = (
     ),
     _Signal("概率论", "probability", r"概率|条件概率|随机变量|分布函数|正态分布|标准正态|期望|方差|独立事件|独立等可能|均匀(?:抽取|分布)|次序统计量|随机间距|最大间距|样本空间|大数定律|中心极限定理|\b(?:probability|conditional probability|random variable|distribution function|normal distribution|standard normal|expectation|variance|independent events?|independent and equiprobable|uniform(?:ly)? (?:sample|distributed)|order statistics?|random spacings?|maximum spacing|sample space|law of large numbers|central limit theorem)\b", 7),
     _Signal("抽象代数", "groups-rings", r"群同态|正规子群|商群|环同态|理想|商环|有限域|不可约多项式|域扩张|分裂域|伽罗瓦|Galois|二面体群|交换子群|导出子群|群的中心|\b(?:group homomorphism|normal subgroup|quotient group|ring homomorphism|ideal|quotient ring|finite field|irreducible polynomial|field extension|splitting field|galois|dihedral group|commutator subgroup|derived subgroup|center of (?:a |the )?group)\b", 8),
+    _Signal(
+        "抽象代数",
+        "finite-field-notation",
+        r"\\mathbb\s*\{?F\}?\s*_\s*\{?\s*[A-Za-z0-9^]+\s*\}?|"
+        r"\b(?:monic\s+)?irreducible polynomials?\b[^.;\n]{0,100}"
+        r"\bover\s+(?:the\s+)?field\b",
+        9,
+    ),
     _Signal("随机过程", "stochastic-process", r"随机过程|随机游走|随机游动|出生死亡链|吸收(?:状态|边界)?|首达|击中概率|马尔可夫链|布朗运动|泊松过程|更新过程|平稳过程|鞅|\b(?:stochastic process|random walk|birth[- ]death (?:chain|process)|absorbing|hitting probability|first passage|markov chain|brownian motion|poisson process|renewal process|stationary process|martingale)\b", 9),
-    _Signal("复分析", "complex-analysis", r"全纯|复可导|复变函数|解析延拓|留数|Laurent|柯西积分|共形映射|辐角原理|Rouch|\b(?:holomorphic|complex differentiab(?:le|ility)|complex analysis|complex function|analytic continuation|residue|laurent|cauchy integral|conformal map|argument principle|rouch)\b", 8),
+    _Signal(
+        "复分析",
+        "complex-analysis",
+        r"全纯|复可导|复变函数|解析延拓|留数|Laurent|柯西积分|共形映射|辐角原理|Rouch|"
+        r"\b(?:holomorphic|complex differentiab(?:le|ility)|complex analysis|"
+        r"complex function|analytic continuation|laurent|cauchy integral|"
+        r"conformal map|argument principle|rouch)\b|"
+        r"\b(?:residue theorem|"
+        r"residues?\s+(?:at|of)\b(?![^.;\n]{0,140}\bmodulo\b)|"
+        r"(?:find|compute|calculate|determine)\s+(?:the\s+)?residues?\b"
+        r"(?![^.;\n]{0,140}\bmodulo\b))",
+        8,
+    ),
     _Signal(
         "复分析",
         "lacunary-natural-boundary",
@@ -132,6 +171,15 @@ _SIGNALS = (
     _Signal("偏微分方程", "pde-derivative-notation", r"(?=.*?u\s*_?\{?t\}?\s*)(?=.*?u\s*_?\{?x\}?\s*)", 8),
     _Signal("高等代数", "linear-algebra", r"矩阵|行列式|特征值|特征向量|线性空间|线性变换|秩|Jordan|Smith标准形|\b(?:matrix|determinant|eigenvalue|eigenvector|vector space|linear transformation|rank|jordan|smith normal form)\b", 6),
     _Signal("高等代数", "polynomial", r"多项式|最小多项式|特征多项式|不可约多项式|\b(?:polynomial|minimal polynomial|characteristic polynomial|irreducible polynomial)\b", 5),
+    _Signal(
+        "高等代数",
+        "symmetric-root-data",
+        r"(?:复根|实根)[^。；;\n]{0,100}(?:计重数|含重数)|"
+        r"\b(?:real|complex)?\s*roots?\b[^.;\n]{0,100}"
+        r"\bcounted with multiplicity\b|"
+        r"\b(?:Vieta(?:'s)? formulas?|resultants?|symmetric polynomial in the roots?)\b",
+        8,
+    ),
     _Signal("运筹学", "operations-research", r"线性规划|整数规划|对偶问题|单纯形|网络流|动态规划|KKT|\b(?:linear programming|integer programming|dual problem|simplex|network flow|dynamic programming|KKT)\b", 8),
     _Signal("运筹学", "network-optimization", r"最大(?:费用)?流|最小费用流|网络流|\b(?:maximum flow|max[- ]flow|min[- ]cost flow|network flow)\b", 10),
     _Signal("数学分析", "analysis", r"一致收敛|逐点收敛|函数列|级数收敛|连续性|可微性|极限|中值定理|\b(?:uniform convergence|pointwise convergence|sequence of functions|series convergence|continuity|differentiability|limit|mean value theorem)\b", 5),
@@ -145,6 +193,19 @@ _SIGNALS = (
         10,
     ),
     _Signal("数论", "number-theory", r"整除|同余|素数|丢番图|最大公约数|二次剩余|p进赋值|\b(?:divisibility|divisible|divides?|congruence|prime|diophantine|greatest common divisor|quadratic residue|p[- ]adic valuation)\b", 7),
+    _Signal(
+        "数论",
+        "modular-arithmetic",
+        r"\\(?:pmod|bmod)\s*\{?|"
+        r"\\equiv[^。；;\n]{0,100}\\(?:pmod|bmod)|"
+        r"(?:最小非负(?:剩余|余数)|剩余类|同余类|模乘法群|模\s*\d+\s*的乘法群)|"
+        r"(?:余数|剩余)[^。；;\n]{0,80}(?:模\s*\d+|除以\s*\d+)|"
+        r"\b(?:least nonnegative residue|residue classes?)\b"
+        r"[^.;\n]{0,120}\bmodulo\b|"
+        r"\b(?:multiplicative group|group of units)\s+modulo\b|"
+        r"\b(?:congruences?|congruent)\b[^.;\n]{0,120}\bmodulo\b",
+        10,
+    ),
     _Signal("离散数学", "discrete-structures", r"集合族|幂集|基数|布尔代数|递推关系|组合恒等式|匹配数|独立集|团数|\b(?:set family|power set|cardinality|boolean algebra|recurrence relation|combinatorial identity|matching number|independent set|clique number)\b", 7),
     _Signal(
         "离散数学",
@@ -179,6 +240,16 @@ _SIGNALS = (
     _Signal("拓扑学", "topological-invariants", r"商空间|积拓扑|子空间拓扑|邻域|闭包|内部|边界点|分离公理|同伦|覆盖空间|\b(?:quotient space|product topology|subspace topology|neighbou?rhood|closure|interior|boundary point|separation axiom|homotopy|covering space)\b", 8),
     _Signal("欧氏几何", "euclidean-geometry", r"三角形|四边形|圆周角|外接圆|内切圆|垂心|内心|旁心|中线|角平分线|相似三角形|\b(?:triangle|quadrilateral|cyclic quadrilateral|circumcircle|incircle|orthocenter|incenter|excenter|median|angle bisector|similar triangles)\b", 7),
     _Signal("数论", "number-theory-structure", r"质数|素因子|欧拉函数|费马小定理|中国剩余定理|原根|乘法阶|整数解|(?:正整数|整数)\s*[A-Za-z][^。；;\n]{0,80}(?:满足|使得)[^。；;\n]{0,100}(?<![<>!])=(?!=)|\b(?:primes?|prime factor|euler phi|fermat(?:'s)? little theorem|chinese remainder theorem|primitive root|multiplicative order|integer solutions?|positive integer (?:pairs?|tuples?)|pairs? of positive integers?)\b", 7),
+    _Signal(
+        "数论",
+        "elementary-number-theory-objects",
+        r"正(?:因数|约数)|约数个数|因数个数|最大公因数|最小公倍数|勾股数|佩尔方程|"
+        r"\b(?:positive divisors?|number of (?:positive )?divisors?|divisor function|"
+        r"gcd|lcm|primitive Pythagorean triples?|Pell equations?|prime factorization|"
+        r"[pq][- ]adic valuations?)\b|"
+        r"\b(?:greatest|largest)\s+integer\b[^.;\n]{0,160}\\mid",
+        9,
+    ),
     _Signal("非基础及进阶课程", "olympiad-structures", r"函数方程|不等式证明|对称不等式|循环不等式|极值构造|\b(?:functional equation|prove (?:the )?inequality|symmetric inequality|cyclic inequality|extremal construction)\b", 6),
     _Signal("进阶数学", "proof-structure", r"证明|求证|构造反例|\b(?:prove|proof|construct a counterexample)\b", 2),
 )

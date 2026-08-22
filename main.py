@@ -113,6 +113,7 @@ def parse_args() -> argparse.Namespace:
             "dual-consensus",
             "quick-consensus",
             "compact-primary-prompt",
+            "verbose-primary-prompt",
             "primary-plus-1k",
             "primary-minus-1k",
             "complex-subproblem-tools",
@@ -219,6 +220,8 @@ async def run(args: argparse.Namespace) -> None:
         agent.agent.enable_quick_consensus = True
     if args.reasoning_policy == "compact-primary-prompt":
         agent.agent.compact_primary_prompt = True
+    if args.reasoning_policy == "verbose-primary-prompt":
+        agent.agent.compact_primary_prompt = False
     if args.reasoning_policy == "complex-subproblem-tools":
         agent.agent.enable_complex_subproblem_tools = True
     if args.reasoning_policy in {"primary-plus-1k", "primary-minus-1k"}:
