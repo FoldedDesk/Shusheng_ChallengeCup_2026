@@ -28,7 +28,13 @@ from reasoning.candidate_selector import (
 from reasoning.finalizer import ExtractionResult, Finalizer
 from reasoning.local_tool_opportunity import (
     LocalToolOpportunity,
+    detect_local_tool_opportunities,
     detect_local_tool_opportunity,
+)
+from reasoning.method_scout import (
+    MethodScout,
+    scouting_request,
+    scouting_system_prompt,
 )
 from reasoning.math_equivalence import equivalent_answers
 from reasoning.obligation_graph import (
@@ -38,15 +44,24 @@ from reasoning.obligation_graph import (
 )
 from reasoning.solve_plan import SolvePlan
 from reasoning.subject_protocols import subject_protocol
+from reasoning.theorem_conditions import theorem_condition_protocol
 from reasoning.truncation_state import classify_truncated_output
 from tools.abstract_algebra_tool import AbstractAlgebraTool
+from tools.analysis_tool import AnalysisTool
 from tools.core_textbook_tool import CoreTextbookTool
 from tools.complex_analysis_tool import ComplexAnalysisTool
+from tools.declarative_computation import (
+    DeclarativeComputationTool,
+    DeclarativeWitness,
+)
 from tools.differential_geometry_tool import DifferentialGeometryTool
 from tools.finite_structure_tool import FiniteStructureTool
+from tools.functional_analysis_tool import FunctionalAnalysisTool
+from tools.linear_algebra_tool import LinearAlgebraTool
 from tools.measure_integral_tool import MeasureIntegralTool
 from tools.model_math_tools import ModelMathTools
 from tools.numerical_method_tool import NumericalMethodTool
+from tools.optimization_tool import OptimizationTool
 from tools.ode_pde_tool import OdePdeTool
 from tools.operation_locator import OperationLocator
 from tools.parameterized_discrete_tool import ParameterizedDiscreteTool
@@ -69,6 +84,9 @@ _AUTO_EXACT_MODEL_TOOLS = frozenset({
 })
 
 _PARAMETERIZED_STATEMENT_OPERATIONS = frozenset({
+    "explicit_modular_congruence_count",
+    "explicit_polynomial_coefficient",
+    "explicit_linear_recurrence_term",
     "parameterized_factorial_ratio_valuation",
     "parameterized_lattice_polygon_interior",
     "parameterized_modular_power_sum",
@@ -84,25 +102,61 @@ class SubmissionAgent:
         self.client = client
         self.sympy = SympyTool()
         self.abstract_algebra = AbstractAlgebraTool()
+        self.analysis = AnalysisTool()
         self.structured_verifier = StructuredVerificationTool(self.sympy)
         self.operation_locator = OperationLocator(self.sympy)
         self.core_textbook = CoreTextbookTool()
         self.complex_analysis = ComplexAnalysisTool()
+        self.declarative_computation = DeclarativeComputationTool()
         self.differential_geometry = DifferentialGeometryTool()
         self.numerical_methods = NumericalMethodTool()
+        self.optimization = OptimizationTool()
         self.ode_pde = OdePdeTool()
         self.finite_structures = FiniteStructureTool()
+        self.functional_analysis = FunctionalAnalysisTool()
+        self.linear_algebra = LinearAlgebraTool()
         self.stochastic_matrices = StochasticMatrixTool()
         self.probability_statistics = ProbabilityStatisticsTool()
         self.measure_integrals = MeasureIntegralTool()
         self.model_math_tools = ModelMathTools(self.sympy)
         self.parameterized_discrete = ParameterizedDiscreteTool(self.model_math_tools)
+        # These operations parse a complete one-goal contract directly from
+        # the current statement and cross-check two deterministic executions.
+        # The switch exists only for matched local A/B runs; production keeps
+        # the independently certified route enabled.
+        self.enable_direct_statement_certificates = True
         self.retriever = CardRetriever()
         self.prompt = self._load_prompt()
         # Kept behind a local A/B gate until a frozen replay demonstrates
         # that the extra method-search call improves accuracy rather than
         # merely adding plausible planning prose.
         self.enable_mog = False
+        # Local single-variable experiment. Unlike the retired MOG portfolio,
+        # this stage only supplies short, explicitly untrusted method sketches
+        # to the unchanged full primary solve. It remains disabled until a
+        # paired holdout demonstrates positive final-answer gain.
+        self.enable_method_scout = False
+        self.method_scout_tokens = 3072
+        self.method_scout_thinking = True
+        self.method_scout_answer_shapes: frozenset[str] | None = None
+        # Single-variable local experiment: explicit theorem names can add a
+        # short hypothesis contract to the unchanged solve prompt.  It neither
+        # certifies applicability nor adds a model call, and stays disabled
+        # until a paired holdout demonstrates positive final-answer gain.
+        self.enable_theorem_condition_contracts = False
+        # Local single-variable ablation.  Subject protocols are generic
+        # safeguards, but a prescriptive checklist can also anchor a capable
+        # solver on the wrong method.  Production keeps them enabled; matched
+        # A/B runs may disable only this context block.
+        self.enable_subject_protocols = True
+        # Local single-variable A/B control. Production keeps the established
+        # sampling temperature until a disjoint holdout proves that a
+        # deterministic primary improves final answers.
+        self.primary_temperature = 0.2
+        # Local ablation for measuring whether orchestration prose suppresses
+        # the base model's mathematical search. The production prompt remains
+        # unchanged unless a disjoint holdout proves a net answer gain.
+        self.minimal_primary_prompt = False
         # Local production A/B gate.  Disabling this removes only the
         # candidate-visible whole-answer audit; it must not silently replace
         # that call with another generic review stage.
@@ -119,13 +173,19 @@ class SubmissionAgent:
         # independently gated so a calculation-only ablation cannot disable or
         # enable it by accident.
         self.enable_quick_consensus = False
+        # Paired development replays on two disjoint 12-item choice suites
+        # produced two wrong-to-right changes and no right-to-wrong changes.
+        # Apply the gain narrowly to single-goal choices; truth, calculation,
+        # and proof tasks retain their established routing.
+        self.enable_short_answer_thinking = True
         # Local replay diagnostics only.  Production traces intentionally omit
         # candidate text under PLATFORM_CONSTRAINTS.md.
         self.local_candidate_diagnostics = False
-        # Development replays show a positive net accuracy change and lower
-        # elapsed time from the compact obligation-first protocol. Local
-        # runners may still disable it for matched ablations.
-        self.compact_primary_prompt = True
+        # Judge12 did not validate the compact 1.8K-lemma target: it reduced
+        # calls but increased provider truncations and changed 30/112 to
+        # 29/112. Keep the established full hidden-reasoning prompt in
+        # production; compact mode remains available only for local ablations.
+        self.compact_primary_prompt = False
         # Local ablation only.  The production path keeps MOG disabled until
         # a matched replay shows that hidden thinking improves route quality.
         self.mog_route_thinking = False
@@ -136,6 +196,14 @@ class SubmissionAgent:
         # submitted directly. Keep disabled until a frozen replay shows net
         # accuracy gain after accounting for the extra provider round.
         self.enable_complex_subproblem_tools = False
+        # Local single-variable experiment. A short non-thinking compiler may
+        # translate an eligible finite task into a guarded JSON contract. The
+        # local result certifies that contract only, never the problem
+        # translation, and therefore cannot bypass the primary solver or be
+        # selected directly. Keep disabled until paired blind evaluation shows
+        # positive final-answer gain.
+        self.enable_declarative_computation = False
+        self.declarative_computation_tokens = 2048
 
     def solve(self, problem: str, metadata: dict) -> dict:
         del metadata
@@ -148,6 +216,16 @@ class SubmissionAgent:
         # same canonical statement or their source fingerprints disagree.
         tool_statement = spec.problem_text or statement
         cards = self.retriever.retrieve(spec)
+        core_textbook_results = self.core_textbook.results_for(tool_statement)
+        if not self.enable_direct_statement_certificates:
+            core_textbook_results = [
+                item for item in core_textbook_results
+                if item.operation not in {
+                    "explicit_modular_congruence_count",
+                    "explicit_polynomial_coefficient",
+                    "explicit_linear_recurrence_term",
+                }
+            ]
         raw_tool_results = tuple((
             *self._with_tool_assurance(
                 self.abstract_algebra.results_for(tool_statement), "symbolic"
@@ -156,7 +234,10 @@ class SubmissionAgent:
                 self.sympy.results_for(tool_statement), "symbolic"
             ),
             *self._with_tool_assurance(
-                self.core_textbook.results_for(tool_statement), "symbolic"
+                self.analysis.results_for(tool_statement), "symbolic"
+            ),
+            *self._with_tool_assurance(
+                core_textbook_results, "symbolic"
             ),
             *self._with_tool_assurance(
                 self.complex_analysis.results_for(tool_statement), "symbolic"
@@ -168,10 +249,19 @@ class SubmissionAgent:
                 self.numerical_methods.results_for(tool_statement), "symbolic"
             ),
             *self._with_tool_assurance(
+                self.optimization.results_for(tool_statement), "exhaustive"
+            ),
+            *self._with_tool_assurance(
                 self.ode_pde.results_for(tool_statement), "symbolic"
             ),
             *self._with_tool_assurance(
                 self.finite_structures.results_for(tool_statement), "exhaustive"
+            ),
+            *self._with_tool_assurance(
+                self.functional_analysis.results_for(tool_statement), "symbolic"
+            ),
+            *self._with_tool_assurance(
+                self.linear_algebra.results_for(tool_statement), "symbolic"
             ),
             *self._with_tool_assurance(
                 self.parameterized_discrete.results_for(tool_statement), "exhaustive"
@@ -189,7 +279,7 @@ class SubmissionAgent:
         whole_tool = self._whole_tool_result(raw_tool_results, spec)
         evidence = self._tool_evidence(raw_tool_results, spec, whole_tool)
         deep_reasoning = self._deep_reasoning(spec)
-        hidden_thinking = self._hidden_thinking(spec)
+        hidden_thinking = self._effective_hidden_thinking(spec)
         budget = plan_stage_budget(
             spec,
             has_whole_tool_answer=whole_tool is not None,
@@ -271,9 +361,100 @@ class SubmissionAgent:
             },
         })
 
+        declarative_witness = DeclarativeWitness("rejected", "not_run")
+        declarative_eligibility = self.declarative_computation.eligibility(
+            statement, spec
+        )
+        declarative_admitted = bool(
+            self.enable_declarative_computation
+            and declarative_eligibility.eligible
+            and declarative_eligibility.score >= 5
+            and spec.answer_contract.mode == "answer_only"
+            and len(spec.goals) == 1
+            and call_count < budget.max_calls
+            and self._remaining_seconds(started_at)
+            >= budget.review_min_remaining_seconds + 60
+        )
+        if declarative_admitted:
+            compiler_raw, compiler_result = self._compile_declarative_contract(
+                statement,
+                spec,
+                budget,
+                trace,
+            )
+            call_count += self._request_count(compiler_result)
+            if not self._truncated(compiler_result, compiler_raw):
+                declarative_witness = self.declarative_computation.execute_response(
+                    statement, compiler_raw
+                )
+        trace.append({
+            "step": "declarative_computation",
+            "content": {
+                **declarative_eligibility.trace_content(),
+                **declarative_witness.trace_content(),
+                "admitted": declarative_admitted,
+                "translation_certified": False,
+                "whole_goal_certified": False,
+                "arbitrary_code_execution": False,
+            },
+        })
+
+        method_scout = MethodScout.fallback()
+        method_scout_admitted = bool(
+            self.enable_method_scout
+            and deep_reasoning
+            and budget.allow_plan
+            and self._method_scout_in_scope(spec)
+            and call_count < budget.max_calls
+            and self._remaining_seconds(started_at)
+            >= budget.review_min_remaining_seconds + 60
+        )
+        method_scout_truncated = False
+        if method_scout_admitted:
+            method_scout_raw, method_scout_result = self._call(
+                scouting_request(statement, spec),
+                stage="method_scout",
+                max_tokens=min(self.method_scout_tokens, budget.solve_tokens),
+                temperature=0.35,
+                thinking_mode=self.method_scout_thinking,
+                trace=trace,
+                system_prompt=scouting_system_prompt(),
+            )
+            call_count += self._request_count(method_scout_result)
+            parsed_scout = MethodScout.parse(method_scout_raw)
+            # Answer-finalizer sentence heuristics do not apply to a complete
+            # JSON planning object. A structurally valid scout emitted with a
+            # normal provider stop is complete even if prose-oriented checks
+            # would label the JSON tail a fragment.
+            method_scout_truncated = bool(
+                method_scout_result.provider_truncated
+                or (not parsed_scout.valid and self._truncated(
+                    method_scout_result, method_scout_raw
+                ))
+            )
+            if not method_scout_truncated and parsed_scout.valid:
+                method_scout = parsed_scout
+        trace.append({
+            "step": "method_scout",
+            "content": {
+                **method_scout.trace_content(),
+                "admitted": method_scout_admitted,
+                "provider_truncated": method_scout_truncated,
+                "thinking_mode": (
+                    self.method_scout_thinking
+                    if method_scout_admitted else "not_run"
+                ),
+                "answer_shape_scope": (
+                    sorted(self.method_scout_answer_shapes)
+                    if self.method_scout_answer_shapes is not None else "all"
+                ),
+            },
+        })
+
         obligation_graph = MathematicalObligationGraph.fallback(spec)
         method_search_admitted = bool(
             self.enable_mog
+            and not method_scout_admitted
             and budget.allow_plan
             and budget.plan_tokens > 0
             and call_count < budget.max_calls
@@ -343,11 +524,22 @@ class SubmissionAgent:
             plan=primary_plan,
             deep_reasoning=deep_reasoning,
             hidden_thinking=hidden_thinking,
+            method_scout=method_scout,
         )
+        # A deterministic executor certifies only the emitted JSON contract,
+        # not the model's translation of the original problem.  Matched A/B
+        # replay found that injecting such a value can anchor the solver on a
+        # perfectly computed answer to the wrong polynomial.  Until a direct
+        # statement parser independently certifies that translation, retain
+        # the witness for diagnostics only and never expose it to the solver.
         local_tool_opportunity = detect_local_tool_opportunity(
             statement,
             spec,
             allow_derived=self.enable_complex_subproblem_tools,
+        )
+        observed_tool_opportunities = detect_local_tool_opportunities(
+            statement,
+            spec,
         )
         model_tool_names = self._model_tool_names(
             statement,
@@ -367,6 +559,16 @@ class SubmissionAgent:
                     <= _AUTO_EXACT_MODEL_TOOLS
                 ),
                 "offered": bool(model_tool_names),
+                # Observation only: these broader levels never expose a tool
+                # or alter candidate selection. They let post-run diagnostics
+                # distinguish detector recall from contract/execution loss.
+                "observed_count": len(observed_tool_opportunities),
+                "observed_levels": sorted({
+                    item.level.value for item in observed_tool_opportunities
+                }),
+                "observed_kinds": sorted({
+                    item.kind.value for item in observed_tool_opportunities
+                }),
             },
         })
         model_tools = self.model_math_tools if model_tool_names else None
@@ -380,9 +582,13 @@ class SubmissionAgent:
             primary_request,
             stage="primary",
             max_tokens=budget.solve_tokens,
-            temperature=0.2,
+            temperature=self.primary_temperature,
             thinking_mode=hidden_thinking,
             trace=trace,
+            system_prompt=(
+                self._minimal_primary_system_prompt(spec)
+                if self.minimal_primary_prompt else ""
+            ),
             model_tools=model_tools,
             model_tool_names=model_tool_names,
             max_tool_rounds=1,
@@ -2013,6 +2219,117 @@ class SubmissionAgent:
         )
         return final_result.content.strip(), final_result
 
+    def _compile_declarative_contract(
+        self,
+        statement: str,
+        spec: ProblemSpec,
+        budget: StageBudget,
+        trace: list[dict],
+    ) -> tuple[str, ModelCallResult]:
+        """Request one data-only contract through native function calling.
+
+        The ordinary solve adapter intentionally extracts text.  A compiler
+        tool call is structured provider output, so routing it through that
+        text-only path previously yielded prose and zero usable contracts.
+        Clients without function-call support keep the old fail-closed text
+        protocol for compatibility.
+        """
+        max_tokens = min(
+            self.declarative_computation_tokens,
+            max(512, budget.plan_tokens or 1024),
+        )
+        message_call = getattr(self.client, "chat", None)
+        if not callable(message_call) or not self._supports_keyword(
+            message_call, "tools"
+        ):
+            return self._call(
+                self.declarative_computation.request(statement),
+                stage="declarative_compiler",
+                max_tokens=max_tokens,
+                temperature=0.0,
+                thinking_mode=False,
+                trace=trace,
+                system_prompt=self.declarative_computation.system_prompt(
+                    spec.profile.language
+                ),
+            )
+
+        messages = [
+            {
+                "role": "system",
+                "content": self.declarative_computation.system_prompt(
+                    spec.profile.language
+                ),
+            },
+            {
+                "role": "user",
+                "content": self.declarative_computation.request(statement),
+            },
+        ]
+        kwargs = {
+            "messages": messages,
+            "temperature": 0.0,
+            "max_tokens": max_tokens,
+            "tools": self.declarative_computation.tool_schemas(),
+        }
+        if self._supports_keyword(message_call, "thinking_mode"):
+            kwargs["thinking_mode"] = False
+        if self._supports_keyword(message_call, "tool_choice"):
+            kwargs["tool_choice"] = "required"
+
+        started = monotonic()
+        failure_type = ""
+        raw_response = None
+        try:
+            raw_response = message_call(**kwargs)
+            result = coerce_model_response(raw_response)
+            compiled = self.declarative_computation.response_from_tool_message(
+                raw_response
+            )
+            status = "tool_call" if compiled else (
+                "ok" if result.content.strip() else "empty"
+            )
+        except BaseException as error:
+            if not is_recoverable_runtime_failure(error):
+                raise
+            result = ModelCallResult("")
+            compiled = ""
+            status = "failed"
+            failure_type = type(error).__name__
+
+        content = {
+            "stage": "declarative_compiler",
+            "status": status,
+            "max_tokens": max_tokens,
+            "thinking_mode": False,
+            "finish_reason": result.finish_reason or "unavailable",
+            "provider_truncated": result.provider_truncated,
+            "truncated": bool(result.provider_truncated),
+            "output_length": len(compiled or result.content),
+            "usage": {
+                key: value
+                for key, value in result.usage.items()
+                if key in {
+                    "prompt_tokens", "completion_tokens", "total_tokens",
+                    "input_tokens", "output_tokens",
+                }
+                and isinstance(value, (int, float))
+                and not isinstance(value, bool)
+            },
+            "elapsed_ms": round((monotonic() - started) * 1000),
+            "native_function_call": True,
+        }
+        if failure_type:
+            content["failure_type"] = failure_type
+        trace.append({"step": "model_call", "content": content})
+        usage = dict(result.usage)
+        usage["_agent_request_count"] = 1
+        return compiled.strip(), ModelCallResult(
+            compiled.strip(),
+            result.finish_reason,
+            usage,
+        )
+
     @staticmethod
     def _tool_call_message(raw_response, result: ModelCallResult) -> dict | None:
         candidates = []
@@ -2904,7 +3221,10 @@ class SubmissionAgent:
         plan: SolvePlan | None = None,
         deep_reasoning: bool = False,
         hidden_thinking: bool | None = None,
+        method_scout: MethodScout | None = None,
     ) -> str:
+        if self.minimal_primary_prompt:
+            return self._minimal_primary_request(problem, spec)
         hidden_thinking = deep_reasoning if hidden_thinking is None else hidden_thinking
         if deep_reasoning and hidden_thinking:
             role = (
@@ -2957,7 +3277,38 @@ class SubmissionAgent:
             evidence=evidence,
             plan=plan,
         )
+        if method_scout is not None and method_scout.valid:
+            request += "\n\n" + method_scout.prompt_context()
         return f"{comprehension_check}\n\n{request}"
+
+    @staticmethod
+    def _minimal_primary_system_prompt(spec: ProblemSpec) -> str:
+        language = "Chinese" if spec.profile.language == "zh" else "English"
+        return (
+            "You are a rigorous mathematics solver. Derive the answer from the current "
+            "statement only; never substitute a remembered source or answer. Preserve every "
+            "coefficient, sign, domain, endpoint, and quantifier. Think as deeply as needed, "
+            "but emit no analysis before the answer. The first visible line must start "
+            "FINAL: and contain the complete gradable conclusion. Then give only the "
+            "necessary check or proof, close all mathematics, and stop. Use " + language + "."
+        )
+
+    @staticmethod
+    def _minimal_primary_request(problem: str, spec: ProblemSpec) -> str:
+        obligations = "; ".join(
+            part.description
+            for part in spec.answer_contract.parts
+            if part.strict
+        ) or "the complete requested result"
+        support = (
+            "After FINAL, give a concise complete proof covering every required obligation."
+            if spec.answer_contract.mode != "answer_only"
+            else "After FINAL, give at most one decisive verification when useful."
+        )
+        return (
+            f"Solve this problem independently:\n\n{problem}\n\n"
+            f"Required answer content: {obligations}. {support}"
+        )
 
     def _independent_request(
         self,
@@ -3109,6 +3460,34 @@ class SubmissionAgent:
             "CHECK: one reproducible domain check or correction\n\n"
             f"Required content: {obligations}\n\nProblem:\n{problem}\n\n"
             f"Locally recomputed model translation:\n{local_results}"
+        )
+
+    @staticmethod
+    def _declarative_computation_context(
+        witness: DeclarativeWitness,
+        spec: ProblemSpec,
+    ) -> str:
+        """Expose an exact local result without certifying model translation."""
+        if not witness.usable:
+            return ""
+        if spec.profile.language == "zh":
+            return (
+                "\n\n局部合同辅助（不是全题证书）：一个短编译调用把当前题翻译为受限"
+                f"的 {witness.kind} 合同，本地程序穷尽/精确执行该合同得到 "
+                f"{witness.answer}。该值只认证所提交合同，不认证模型对题意的翻译。"
+                "你必须从原题独立核对变量域、端点、零情形、前导零、标号、重复、"
+                "等概率性及所有量词；任何一项不一致就丢弃该值。不得仅因本地程序"
+                "给出数值就跳过题意对应证明。"
+            )
+        return (
+            "\n\nLOCAL CONTRACT AID (not a whole-problem certificate): a short compiler "
+            f"translated this problem into a restricted {witness.kind} contract, and the "
+            f"local interpreter evaluated that submitted contract exactly as {witness.answer}. "
+            "This certifies only the submitted contract, not its translation from the problem. "
+            "Independently audit the original domain, endpoints, zero cases, leading zeros, "
+            "labels, repetition, equiprobability, and every quantifier. Discard the value if "
+            "any correspondence fails; do not skip the mathematical correspondence merely "
+            "because a local value is available."
         )
 
     @staticmethod
@@ -3372,12 +3751,14 @@ class SubmissionAgent:
             if spec.answer_contract.mode != "answer_only"
             else "Return the complete gradable result without a long exposition."
         )
+        shape_contract = self._answer_shape_contract(spec)
         sections = [
             "Problem:\n" + problem,
             role,
             f"Answer language: {language}.",
             f"Required answer content: {obligations}.",
             support,
+            shape_contract,
             method,
         ]
         if plan is not None and plan.valid:
@@ -3392,7 +3773,15 @@ class SubmissionAgent:
                 "dropping a condition):\n" + semantic_context
             )
         if context:
-            sections.append("General reference facts (verify applicability):\n" + context)
+            sections.append(
+                "General reference context: first check every stated hypothesis, "
+                "convention, and domain against the current problem. A "
+                "[STANDARD_THEOREM] entry is a vetted general mathematical fact; when "
+                "its hypotheses and convention match exactly, the conclusion must be "
+                "consistent with it. A [METHOD_HINT] or [CHECK_PROTOCOL] entry is only "
+                "advice and may be discarded. None of these entries is an answer key:\n"
+                + context
+            )
         tool_context = self._evidence_prompt(evidence)
         if tool_context:
             sections.append(
@@ -3423,6 +3812,43 @@ class SubmissionAgent:
                 "or plan before FINAL; after it, keep only the shortest necessary check."
             )
         return "\n\n".join(sections)
+
+    @staticmethod
+    def _answer_shape_contract(spec: ProblemSpec) -> str:
+        """Constrain short answers without suggesting their mathematical content."""
+        shape = spec.profile.answer_shape
+        task_kind = spec.profile.task_kind
+        if shape == "choice":
+            return (
+                "CHOICE CONTRACT: privately evaluate every displayed option as a whole "
+                "proposition, including polarity and qualifiers. Select an option only "
+                "when its entire statement is true under the problem's stated convention. "
+                "Match every option separately against every applicable conclusion and "
+                "definition in a [STANDARD_THEOREM] entry; do not stop after finding the "
+                "first true option or use one theorem sentence while overlooking another. "
+                "Do not count two synonymous names as two different mathematical "
+                "components unless the statement explicitly defines them as distinct. "
+                "The FINAL line must contain exactly the complete set of option labels, "
+                "with no copied option text or question number."
+            )
+        if shape == "truth":
+            return (
+                "TRUTH CONTRACT: judge the exact proposition as written without silently "
+                "adding assumptions or changing its quantifier. The FINAL line must give "
+                "only the explicit true/false verdict (and the named object only when "
+                "needed to make that verdict independently readable), not a restatement "
+                "of the numbered question."
+            )
+        if spec.answer_contract.mode == "answer_only" and (
+            task_kind == "fill_blank" or shape == "text"
+        ):
+            return (
+                "SHORT-ANSWER CONTRACT: fill exactly the number of answer slots or items "
+                "requested by the stem. If it asks for one example, indicator, term, or "
+                "method, give one standard valid item rather than a list of alternatives. "
+                "Do not copy the question number or surrounding sentence into FINAL."
+            )
+        return ""
 
     def _arbitration_request(
         self,
@@ -4645,10 +5071,26 @@ class SubmissionAgent:
             and spec.profile.answer_shape not in {"choice", "truth"}
         )
 
+    def _method_scout_in_scope(self, spec: ProblemSpec) -> bool:
+        return bool(
+            self.method_scout_answer_shapes is None
+            or spec.profile.answer_shape in self.method_scout_answer_shapes
+        )
+
     @staticmethod
     def _hidden_thinking(spec: ProblemSpec) -> bool:
         """Use hidden reasoning whenever the risk router selects a deep solve."""
         return SubmissionAgent._deep_reasoning(spec)
+
+    def _effective_hidden_thinking(self, spec: ProblemSpec) -> bool:
+        if self._hidden_thinking(spec):
+            return True
+        return bool(
+            self.enable_short_answer_thinking
+            and spec.answer_contract.mode == "answer_only"
+            and spec.profile.answer_shape == "choice"
+            and len(spec.goals) == 1
+        )
 
     @staticmethod
     def _remaining_seconds(started_at: float) -> float:
@@ -4796,8 +5238,8 @@ class SubmissionAgent:
         text = str(value or "")
         return text if len(text) <= limit else text[:limit] + "\n[content shortened]"
 
-    @staticmethod
     def _grounded_context(
+        self,
         spec: ProblemSpec,
         cards: RetrievalBundle,
         *,
@@ -4833,10 +5275,12 @@ class SubmissionAgent:
                 spec,
                 review=review,
                 subject_override=planned_subject,
-            ) if protocol_allowed else "",
+            ) if self.enable_subject_protocols and protocol_allowed else "",
             (
                 cards.review_context() if review else cards.solve_context()
             ) if cards_allowed else "",
+            theorem_condition_protocol(spec, review=review)
+            if self.enable_theorem_condition_contracts and explicit_route else "",
         )
 
     @staticmethod

@@ -10,10 +10,16 @@ judge/
 /outputs/
 /sample_outputs/
 /sample_outputs_*/
+# Offline experiments may contain private reference sidecars and run logs;
+# they are never part of the competition submission snapshot.
+/experiments/
 # Local benchmark construction, replay, and answer-key verification helpers.
 /scripts/audit_unseen_hard*.py
 /scripts/audit_local_tool_coverage.py
 /scripts/build_judge1_style_hard112.py
+/scripts/build_public_judge1_hard112.py
+/scripts/build_matharena_fresh112.py
+/scripts/build_matharena_calibrated112.py
 /scripts/evaluate_answer_integrity.py
 /scripts/evaluate_judge_replay.py
 /scripts/generate_silver_references.py

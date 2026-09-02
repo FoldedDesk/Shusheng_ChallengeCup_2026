@@ -23,6 +23,7 @@ class AbstractAlgebraTool:
             return []
         handlers = (
             self._additive_cyclic_order,
+            self._finite_abelian_exact_order_count,
             self._power_element_order,
             self._homomorphism_kernel_normal,
             self._finite_field_irreducibility,
@@ -66,6 +67,96 @@ class AbstractAlgebraTool:
                             ("modulus_parsed", "representative_parsed", "gcd_recomputed"),
                             ("result_present", "numeric_result", "reasoning", "support_anchor_1", "support_anchor_2"),
                             ("number", "expression", "text"))
+
+    def _finite_abelian_exact_order_count(self, text: str) -> Optional[ToolResult]:
+        """Count elements of exact order in a product of cyclic groups."""
+        if not re.search(
+            r"有限(?:阿贝尔|交换)群|finite\s+abelian\s+group|"
+            r"(?:\\oplus|⊕|\\times|×)[^。.;\n]{0,60}(?:元素|elements?)",
+            text,
+            re.IGNORECASE,
+        ):
+            return None
+        if not re.search(
+            r"(?:阶恰为|阶恰好为|阶等于|exact(?:ly)?\s+(?:of\s+)?order|"
+            r"elements?\s+of\s+exact\s+order)",
+            text,
+            re.IGNORECASE,
+        ):
+            return None
+        moduli = tuple(
+            int(value)
+            for value in re.findall(
+                r"(?:\\mathbb\s*\{?Z\}?|ℤ|(?<![A-Za-z])Z)\s*_?\s*\{?\s*(\d+)\s*\}?",
+                text,
+                re.IGNORECASE,
+            )
+        )
+        if not 2 <= len(moduli) <= 12 or any(value < 1 for value in moduli):
+            return None
+        order_matches = {
+            int(next(group for group in match.groups() if group is not None))
+            for pattern in (
+                r"阶(?:恰为|恰好为|等于)\s*\$?\s*(\d+)",
+                r"(?:exact(?:ly)?\s+(?:of\s+)?order|elements?\s+of\s+exact\s+order)\s*\$?\s*(\d+)",
+            )
+            for match in re.finditer(pattern, text, re.IGNORECASE)
+        }
+        if len(order_matches) != 1:
+            return None
+        target = next(iter(order_matches))
+        if not 1 <= target <= 10**7:
+            return None
+
+        divisors = tuple(int(value) for value in self.sp.divisors(target))
+        dividing_counts = {
+            divisor: self.sp.prod(gcd(modulus, divisor) for modulus in moduli)
+            for divisor in divisors
+        }
+        mobius_count = sum(
+            int(self.sp.mobius(target // divisor)) * dividing_counts[divisor]
+            for divisor in divisors
+        )
+
+        # Independent divisor-lattice subtraction: D(d)=sum_{e|d} E(e).
+        exact_counts: dict[int, int] = {}
+        for divisor in divisors:
+            exact_counts[divisor] = int(dividing_counts[divisor]) - sum(
+                exact_counts[proper]
+                for proper in divisors
+                if proper < divisor and divisor % proper == 0
+            )
+        count = exact_counts[target]
+        if count != mobius_count or count < 0:
+            return None
+
+        factors = r"\oplus".join(rf"\mathbb Z_{{{value}}}" for value in moduli)
+        zh = self._zh(text)
+        support = (
+            rf"在 $G={factors}$ 中，满足 $d x=0$（即元素阶整除 $d$）的元素数为 "
+            rf"$D(d)=\prod_i\gcd(n_i,d)$。对 $D(d)=\sum_{{e\mid d}}E(e)$ 作 Möbius 反演，"
+            rf"$E({target})=\sum_{{d\mid {target}}}\mu({target}/d)D(d)={count}$，故阶恰为 {target} 的元素共有 ${count}$ 个。"
+            if zh else
+            rf"For $G={factors}$, the number killed by $d$ (equivalently, whose order divides $d$) is "
+            rf"$D(d)=\prod_i\gcd(n_i,d)$. Mobius inversion of $D(d)=\sum_{{e\mid d}}E(e)$ gives "
+            rf"$E({target})=\sum_{{d\mid {target}}}\mu({target}/d)D(d)={count}$ elements of exact order {target}."
+        )
+        return self._result(
+            text,
+            "finite_abelian_exact_order_count",
+            support,
+            "exact_element_order_count",
+            "annihilator_counts_and_mobius_inversion",
+            (
+                "all_cyclic_moduli_parsed",
+                "exact_target_order_parsed",
+                "dividing_order_counts_recomputed",
+                "mobius_inversion_recomputed",
+                "divisor_lattice_subtraction_crosscheck",
+            ),
+            ("result_present", "numeric_result", "count_conclusion", "reasoning"),
+            ("count", "number", "expression", "text"),
+        )
 
     def _power_element_order(self, text: str) -> Optional[ToolResult]:
         base = re.search(

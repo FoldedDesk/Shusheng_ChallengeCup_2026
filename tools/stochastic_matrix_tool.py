@@ -31,18 +31,23 @@ class StochasticMatrixTool:
         text = str(problem or "").strip()
         if not re.search(
             r"马尔可夫|Markov|转移矩阵|transition\s+matrix|"
-            r"随机游走|random\s+walk|出生.?死亡|birth[- ]?death",
+            r"随机游走|random\s+walk|出生.?死亡|birth[- ]?death|"
+            r"布朗运动|Brownian\s*(?:motion|运动)",
             text,
             re.IGNORECASE,
         ):
             return []
         results: list[ToolResult] = []
-        try:
-            birth_death = self._birth_death_hitting_probability(text)
-        except Exception:
-            birth_death = None
-        if birth_death is not None and birth_death.verified:
-            results.append(birth_death)
+        for compiler in (
+            self._birth_death_hitting_probability,
+            self._brownian_point_hitting_laplace,
+        ):
+            try:
+                item = compiler(text)
+            except Exception:
+                item = None
+            if item is not None and item.verified:
+                results.append(item)
         parsed = self._transition_matrix(text)
         if parsed is None:
             return results
@@ -71,7 +76,8 @@ class StochasticMatrixTool:
         if not re.search(
             r"absorbed\s+at\s+\$?0\$?\s+and\s+\$?\d+\$?|"
             r"\$?0\$?\s+and\s+\$?\d+\$?\s+are\s+absorbing|"
-            r"两端吸收|吸收(?:于|在)\s*0\s*(?:和|与|、)\s*\d+",
+            r"两端吸收|吸收(?:于|在)\s*0\s*(?:和|与|、)\s*\d+|"
+            r"0\s*(?:和|与|、)\s*\d+\s*(?:均|都)?\s*吸收",
             text,
             re.IGNORECASE,
         ):
@@ -90,6 +96,7 @@ class StochasticMatrixTool:
         )
         target = re.search(
             r"先(?:到达|到|击中)\s*\$?\s*(\d+)\s*\$?\s*(?:再|之)?前(?:到达|到|击中)?\s*\$?\s*0|"
+            r"先(?:到达|到|击中)\s*\$?\s*(\d+)\s*\$?\s*(?:而非|而不是|不是)\s*\$?\s*0|"
             r"先(?:到达|到|击中)\s*\$?\s*(\d+)\s*\$?\s*的概率|"
             r"hitting\s+\$?\s*(\d+)\s*\$?\s+before\s+\$?\s*0",
             text,
@@ -181,6 +188,57 @@ class StochasticMatrixTool:
             support,
             ("probability", "number", "expression"),
             ("result_present", "numeric_result"),
+        )
+
+    def _brownian_point_hitting_laplace(self, text: str) -> Optional[ToolResult]:
+        """Certify the Laplace transform of a point hitting time for standard BM."""
+        if not re.search(r"标准\s*Brownian\s*运动|标准布朗运动|standard\s+Brownian\s+motion", text, re.I):
+            return None
+        if not re.search(
+            r"(?:tau|\\tau|τ)\s*_?\s*\{?a\}?\s*=\s*(?:\\inf|inf)\s*"
+            r"(?:\\?\{|\{)[^}\n]{0,100}(?:B\s*_?\s*\{?t\}?|B\s*\(\s*t\s*\))\s*=\s*a",
+            text,
+            re.I,
+        ):
+            return None
+        if not re.search(
+            r"E\s*\[\s*e\s*\^\s*\{?\s*-\s*(?:\\lambda|λ|lambda)\s*"
+            r"(?:\\tau|τ|tau)\s*_?\s*\{?a\}?\s*\}?\s*\]",
+            text,
+            re.I,
+        ):
+            return None
+        if not re.search(r"a\s*(?:\\ne|!=|≠)\s*0", text, re.I):
+            return None
+        if not re.search(r"(?:\\lambda|λ|lambda)\s*(?:>|\\gt)\s*0", text, re.I):
+            return None
+        zh = self._is_chinese(text)
+        result = (
+            r"令 $u(x)=E_x[e^{-\lambda\tau_a}]$。在 $a$ 两侧有 $\frac12u''=\lambda u$，"
+            r"且 $u(a)=1$、远离 $a$ 时取有界衰减解，因此 $u(x)=e^{-|x-a|\sqrt{2\lambda}}$。"
+            r"从 $x=0$ 出发，故 $E[e^{-\lambda\tau_a}]=e^{-|a|\sqrt{2\lambda}}$。"
+            if zh else
+            r"Let $u(x)=E_x[e^{-\lambda\tau_a}]$. On either side of $a$, "
+            r"$\frac12u''=\lambda u$, with $u(a)=1$ and the bounded decaying solution at infinity. "
+            r"Thus $u(x)=e^{-|x-a|\sqrt{2\lambda}}$, so from $x=0$, "
+            r"$E[e^{-\lambda\tau_a}]=e^{-|a|\sqrt{2\lambda}}$."
+        )
+        return self._result(
+            text,
+            "brownian_point_hitting_laplace",
+            result,
+            "laplace_transform",
+            "generator_boundary_value_problem",
+            (
+                "standard_brownian_normalization",
+                "point_hitting_time_definition_parsed",
+                "positive_laplace_parameter",
+                "generator_ode_substituted",
+                "target_boundary_and_decay_checked",
+            ),
+            result,
+            ("expression", "text"),
+            ("result_present", "reasoning"),
         )
 
     @staticmethod

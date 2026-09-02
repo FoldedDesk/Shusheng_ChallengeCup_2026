@@ -323,7 +323,8 @@ class Requirement:
             return bool(
                 re.search(r"几乎处处|a\.?e\.?|almost\s+everywhere", value, re.IGNORECASE)
                 and re.search(
-                    r"f_?\{?n\}?\s*(?:→|\\to|converges?\s+to)\s*"
+                    r"f_?\{?n\}?(?:\s*\([^)]*\))?\s*"
+                    r"(?:→|\\to|converges?\s+to)\s*"
                     r"(?:0|[A-Za-z][A-Za-z0-9_{}^]*|\\[A-Za-z]+)|"
                     r"(?:极限|limit)[^。.;\n]{0,50}(?:为|是|=|is)\s*"
                     r"(?:0|[A-Za-z][A-Za-z0-9_{}^]*|\\[A-Za-z]+)",
@@ -885,12 +886,12 @@ class Requirement:
             ))
         if self.name == "local_uniform_convergence":
             return bool(
-                re.search(r"\[\s*0\s*[,，]\s*r\s*[\])]", value, re.IGNORECASE)
+                re.search(r"\[\s*0\s*[,，]\s*[A-Za-z]\s*\]", value, re.IGNORECASE)
                 and re.search(r"一致收敛|uniform(?:ly)?\s+conver", value, re.IGNORECASE)
             )
         if self.name == "global_nonuniform_convergence":
             return bool(
-                re.search(r"\[\s*0\s*[,，]\s*1\s*\)", value)
+                re.search(r"\[\s*0\s*[,，]\s*[^\]\)\n]{1,80}\s*\)", value)
                 and re.search(
                     r"不一致收敛|不是一致收敛|并非一致收敛|"
                     r"(?:not|does\s+not)\s+(?:converge\s+)?uniform(?:ly)?",
@@ -1626,7 +1627,9 @@ def _requirements(text: str, target: str, profile: ProblemProfile) -> list[Requi
         or shape in {"choice", "truth"}
     )
     explicit_short_form_support = re.search(
-        r"说明(?:你的)?理由|解释(?:原因|理由)?|给出(?:完整|严格)?(?:证明|论证|理由)|"
+        r"说明(?:你的)?理由|解释(?:原因|理由)?|"
+        r"给出(?:一句|一个|简要的?|必要的?|完整的?|严格的?)?"
+        r"(?:证明|论证|理由|解释)|"
         r"证明|论证|推导|展示(?:计算|推导|证明)?(?:过程|步骤)|写出(?:计算|推导)?过程|"
         r"\b(?:justify|explain)\b|"
         r"\bwith\s+(?:a\s+)?(?:proof|argument|reason|justification)\b|"
@@ -1950,8 +1953,8 @@ def _requirements(text: str, target: str, profile: ProblemProfile) -> list[Requi
         items.append(Requirement("umvu_estimator", strict=True))
     uniform_series = bool(
         re.search(r"函数项级数|级数|series", text, re.IGNORECASE)
-        and re.search(r"\[\s*0\s*[,，]\s*r\s*[\])]", text, re.IGNORECASE)
-        and re.search(r"\[\s*0\s*[,，]\s*1\s*\)", text)
+        and re.search(r"\[\s*0\s*[,，]\s*[A-Za-z]\s*\]", text, re.IGNORECASE)
+        and re.search(r"\[\s*0\s*[,，]\s*[^\]\)\n]{1,80}\s*\)", text)
     )
     if uniform_series:
         items.extend((
@@ -2954,9 +2957,11 @@ def _has_reasoning(value: str) -> bool:
         r"(?:^|[，。；;\s])因(?=\s|\$|\\|[A-Za-z0-9])|"
         r"所以|故|因此|从而|推出|假设|反设|若.*则|矛盾|"
         r"代入|分别取|令.*则|取.*得|计算得|展开得|"
+        r"通过[^。；;\n]{1,160}(?:可知|可得|得到|推出|证明)|"
         r"(?:分离变量|积分因子|特征方程|配方|因式分解|消元|换元|求导|积分)"
         r"[^。；;\n]{0,80}(?:得|得到|可得)|"
         r"\bby\b[^.\n]{0,80}\b(?:definition|theorem|lemma|property)\b|"
+        r"\b(?:using|via)\b[^.\n]{1,160}\b(?:we\s+)?(?:obtain|deduce|conclude|prove|show)\b|"
         r"\b(?:because|since|therefore|hence|thus|by|assume|suppose|contradiction|"
         r"implies?|follows from|if\b.*\bthen|substitut\w*|setting|evaluat\w*|"
         r"expanding)\b",

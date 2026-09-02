@@ -29,8 +29,12 @@ class CoreTextbookTool:
         text = str(problem or "").strip()
         results: list[ToolResult] = []
         for compiler in (
+            self._explicit_modular_congruence_count,
+            self._explicit_polynomial_coefficient,
+            self._explicit_linear_recurrence_term,
             self._even_cardinality_subsets,
             self._positive_compositions,
+            self._labelled_tree_exact_leaf_count,
             self._surjection_without_singleton_fibers,
             self._surjection_count,
             self._nonadjacent_subset_count,
@@ -57,6 +61,678 @@ class CoreTextbookTool:
             if result is not None and result.verified:
                 results.append(result)
         return results
+
+    def _explicit_modular_congruence_count(
+        self,
+        text: str,
+    ) -> Optional[ToolResult]:
+        """Count one explicitly stated polynomial congruence over residues.
+
+        This compiler deliberately accepts much less than the model-facing
+        modular tool.  The polynomial, modulus, target residue, domain, and
+        count request must all be present in the current statement.  Any
+        residual predicate makes the compiler abstain.
+        """
+        if len(re.findall(r"\\equiv|≡", text)) != 1:
+            return None
+        if not re.search(
+            r"(?:个数|数目|数量|多少个?|总数|解数|"
+            r"\bhow\s+many\b|\b(?:number|count)\s+of\b)",
+            text,
+            re.IGNORECASE,
+        ):
+            return None
+        if not re.search(
+            r"剩余类|同余类|完全剩余系|模\s*\d+[^。.;；\n]{0,45}解|"
+            r"\bresidue(?:s|\s+classes)?\b|"
+            r"\bsolutions?\s+(?:modulo|mod)\b|"
+            r"\bmodulo\s+\d+[^.\n]{0,45}\bsolutions?\b",
+            text,
+            re.IGNORECASE,
+        ):
+            return None
+        if re.search(
+            r"证明|说明|解释|推导|比较|列出|写出所有|"
+            r"奇数|偶数|素数|质数|正整数|负整数|互素|"
+            r"\b(?:prove|explain|justify|derive|compare|list|"
+            r"odd|even|prime|positive\s+integers?|negative\s+integers?|coprime)\b",
+            text,
+            re.IGNORECASE,
+        ):
+            return None
+        # A conjunction indicates a residual predicate not covered by the
+        # exhaustive residue scan contract.
+        if re.search(r"且|并且|同时|以及|\b(?:and|also)\b", text, re.IGNORECASE):
+            return None
+
+        congruence = re.search(r"\\equiv|≡", text)
+        if congruence is None:
+            return None
+        tail = text[congruence.end():]
+        relation_tail = re.match(
+            r"\s*(?P<rhs>[-+]?\d+)\s*"
+            r"(?:"
+            r"\\pmod\s*\{\s*(?P<pmod>\d+)\s*\}|"
+            r"\\mod\s*\{\s*(?P<latexmod>\d+)\s*\}|"
+            r"\(\s*(?:\\?mathrm\s*\{\s*mod\s*\}|mod|模)\s*"
+            r"(?P<parenmod>\d+)\s*\)|"
+            r"\bmod(?:ulo)?\s+(?P<wordmod>\d+)\b"
+            r")",
+            tail,
+            re.IGNORECASE,
+        )
+        if relation_tail is None:
+            return None
+        modulus_values = [
+            int(value)
+            for key, value in relation_tail.groupdict().items()
+            if key != "rhs" and value is not None
+        ]
+        if len(modulus_values) != 1:
+            return None
+        modulus = modulus_values[0]
+        if not 2 <= modulus <= 250_000:
+            return None
+        remainder = int(relation_tail.group("rhs")) % modulus
+
+        parsed_lhs = self._polynomial_suffix_before(text, congruence.start())
+        if parsed_lhs is None:
+            return None
+        expression, symbol, polynomial = parsed_lhs
+        if polynomial.degree() < 1 or polynomial.degree() > 64:
+            return None
+
+        # Every explicit modulus in the statement must agree.  This prevents
+        # a nearby domain modulus or a second relation from being ignored.
+        mentioned_moduli = {
+            int(value)
+            for pattern in (
+                r"\\pmod\s*\{\s*(\d+)\s*\}",
+                r"\bmod(?:ulo)?\s+(\d+)\b",
+                r"模\s*(\d+)",
+            )
+            for value in re.findall(pattern, text, re.IGNORECASE)
+        }
+        if mentioned_moduli and mentioned_moduli != {modulus}:
+            return None
+
+        coefficients = [int(value) for value in polynomial.all_coeffs()]
+        solutions = [
+            value
+            for value in range(modulus)
+            if self._horner_mod(coefficients, value, modulus) == remainder
+        ]
+        reverse_solutions = sorted(
+            value
+            for value in range(modulus - 1, -1, -1)
+            if int(polynomial.eval(value)) % modulus == remainder
+        )
+        if solutions != reverse_solutions:
+            return None
+
+        count = len(solutions)
+        zh = self._is_chinese(text)
+        displayed_solutions = ",".join(str(value) for value in solutions[:64])
+        support = (
+            rf"将多项式 ${self.sp.latex(polynomial.as_expr())}$ 在完整剩余系 "
+            rf"$0\le {symbol}< {modulus}$ 上逐一计算模 {modulus} 的值；"
+            rf"恰有 {count} 个剩余类满足同余式"
+            + (rf"（代表元为 ${displayed_solutions}$）" if count <= 64 else "")
+            + "。"
+            if zh else
+            rf"Exhaustively evaluating ${self.sp.latex(polynomial.as_expr())}$ on the complete "
+            rf"residue system $0\le {symbol}< {modulus}$ gives exactly {count} satisfying classes"
+            + (rf" (represented by ${displayed_solutions}$)" if count <= 64 else "")
+            + "."
+        )
+        return self._count_result(
+            text,
+            "explicit_modular_congruence_count",
+            str(count),
+            "direct_statement_parse_and_bidirectional_residue_enumeration",
+            (
+                "single_congruence_and_count_target_parsed",
+                "complete_residue_domain_parsed",
+                "integer_polynomial_parsed",
+                "forward_and_reverse_enumerations_agree",
+            ),
+            support,
+        )
+
+    def _explicit_polynomial_coefficient(
+        self,
+        text: str,
+    ) -> Optional[ToolResult]:
+        """Extract one explicitly delimited polynomial coefficient target."""
+        if len(re.findall(r"系数|\bcoefficient\b", text, re.IGNORECASE)) != 1:
+            return None
+        if re.search(
+            r"证明|说明|解释|推导|比较|近似|"
+            r"\b(?:prove|explain|justify|derive|compare|approximate)\b",
+            text,
+            re.IGNORECASE,
+        ):
+            return None
+        spans = self._math_spans(text)
+        # Exactly two delimited fragments are required: the source polynomial
+        # and the requested monomial.  A third fragment usually encodes a
+        # second coefficient target or another condition.
+        if len(spans) != 2:
+            return None
+        placeholder = self._math_placeholder_text(text, spans)
+        pair: Optional[tuple[int, int]] = None
+        chinese = re.search(
+            r"(?:求|计算|确定)[^。；;\n]{0,80}?§(?P<expr>\d+)§"
+            r"[^。；;\n]{0,35}?(?:中|内)[^。；;\n]{0,35}?§(?P<target>\d+)§"
+            r"[^。；;\n]{0,15}?(?:项的)?系数",
+            placeholder,
+        )
+        if chinese:
+            pair = (int(chinese.group("expr")), int(chinese.group("target")))
+        if pair is None:
+            chinese_reversed = re.search(
+                r"(?:求|计算|确定)[^。；;\n]{0,40}?§(?P<target>\d+)§"
+                r"[^。；;\n]{0,20}?(?:在|于)[^。；;\n]{0,20}?§(?P<expr>\d+)§"
+                r"[^。；;\n]{0,15}?(?:中|内)[^。；;\n]{0,10}?系数",
+                placeholder,
+            )
+            if chinese_reversed:
+                pair = (
+                    int(chinese_reversed.group("expr")),
+                    int(chinese_reversed.group("target")),
+                )
+        if pair is None:
+            english = re.search(
+                r"\b(?:find|compute|determine)\s+(?:the\s+)?coefficient\s+of\s+"
+                r"§(?P<target>\d+)§\s+in\s+(?:the\s+expansion\s+of\s+)?"
+                r"§(?P<expr>\d+)§",
+                placeholder,
+                re.IGNORECASE,
+            )
+            if english:
+                pair = (int(english.group("expr")), int(english.group("target")))
+        if pair is None:
+            return None
+        expression_index, target_index = pair
+        if (
+            expression_index == target_index
+            or not 0 <= expression_index < len(spans)
+            or not 0 <= target_index < len(spans)
+        ):
+            return None
+        expression = spans[expression_index][0].strip()
+        target = spans[target_index][0].strip()
+        target_match = re.fullmatch(
+            r"\s*([A-Za-z])(?:\s*\^\s*(?:\{\s*(\d+)\s*\}|(\d+)))?\s*",
+            target,
+        )
+        if target_match is None:
+            return None
+        variable = target_match.group(1)
+        degree = int(target_match.group(2) or target_match.group(3) or 1)
+        if not 0 <= degree <= 3000 or len(expression) > 320:
+            return None
+        try:
+            symbol = self.sp.Symbol(variable)
+            parsed = self.symbolic._parse(expression)
+            if parsed.free_symbols != {symbol} or self.sp.count_ops(parsed) > 250:
+                return None
+            polynomial = self.sp.Poly(parsed, symbol)
+            if polynomial.degree() > 3000:
+                return None
+            dynamic = self._truncated_polynomial(parsed, symbol, degree)
+            if dynamic is None:
+                return None
+            direct = polynomial.coeff_monomial(symbol ** degree)
+            replayed = dynamic[degree] if degree < len(dynamic) else self.sp.Integer(0)
+            if self.sp.simplify(direct - replayed) != 0:
+                return None
+        except Exception:
+            return None
+
+        answer = self.symbolic._format(direct)
+        zh = self._is_chinese(text)
+        support = (
+            rf"将题面中的多项式按加法、乘法和非负整数幂逐层卷积，并独立用符号多项式展开复核；"
+            rf"两种计算得到 $[{variable}^{{{degree}}}]={answer}$。"
+            if zh else
+            rf"Recursive coefficient convolution over additions, products, and nonnegative integer powers "
+            rf"agrees with an independent symbolic polynomial expansion: "
+            rf"$[{variable}^{{{degree}}}]={answer}$."
+        )
+        return self._result(
+            text,
+            "explicit_polynomial_coefficient",
+            answer,
+            "number",
+            "direct_delimited_expression_parse_with_independent_convolution",
+            (
+                "single_coefficient_target_parsed",
+                "expression_and_target_grounded_verbatim",
+                "single_variable_polynomial_verified",
+                "convolution_and_symbolic_expansion_agree",
+            ),
+            support,
+            ("number", "expression", "count"),
+            ("result_present", "numeric_result"),
+        )
+
+    def _explicit_linear_recurrence_term(
+        self,
+        text: str,
+    ) -> Optional[ToolResult]:
+        """Evaluate one explicit constant-coefficient recurrence target.
+
+        Only a fully grounded order 2--6 affine recurrence is accepted.  The
+        sequence name, every coefficient, all consecutive initial values, and
+        the requested target term must occur in the current statement.
+        Iteration and affine companion-matrix exponentiation are required to
+        agree before the result can become a whole-answer certificate.
+        """
+        if not re.search(r"递推|数列|recurrence|sequence", text, re.IGNORECASE):
+            return None
+        if re.search(
+            r"通项|闭式|证明|说明|解释|推导|归纳|求和|极限|收敛|单调|比较|"
+            r"验证|检验|模\s*\d|同余|余数|奇偶|正负|符号|近似|误差|比值|"
+            r"\b(?:general\s+term|closed\s+form|prove|explain|justify|derive|"
+            r"induction|sum|limit|convergen|monotonic|compare|verify|check|"
+            r"modulo|remainder|parity|sign|approximate|error|ratio)\w*\b",
+            text,
+            re.IGNORECASE,
+        ):
+            return None
+
+        target_pattern = re.compile(
+            r"(?:求|计算|确定|find|compute|determine)\s*"
+            r"(?:\$|\\\()?\s*([A-Za-z])\s*_\s*"
+            r"(?:\{\s*(\d+)\s*\}|(\d+))\s*"
+            r"(?:\$|\\\))?",
+            re.IGNORECASE,
+        )
+        targets = list(target_pattern.finditer(text))
+        if len(targets) != 1:
+            return None
+        sequence_name = targets[0].group(1)
+        target_index = int(targets[0].group(2) or targets[0].group(3))
+        if not 0 <= target_index <= 100_000:
+            return None
+
+        spans = self._math_spans(text)
+        if not spans:
+            return None
+        lhs_pattern = re.compile(
+            rf"^\s*{re.escape(sequence_name)}\s*_\s*"
+            r"(?:\{\s*n\s*\}|n)\s*"
+            r"=\s*(.+?)\s*$",
+            re.IGNORECASE,
+        )
+        recurrence_candidates: list[tuple[str, str]] = []
+        clauses: list[str] = []
+        for span, _, _ in spans:
+            for clause in re.split(r"[,，;；]|\\quad|\\\\", span):
+                clause = clause.strip().replace(r"\ ", " ")
+                if not clause:
+                    continue
+                clauses.append(clause)
+                match = lhs_pattern.fullmatch(clause)
+                if match:
+                    recurrence_candidates.append((clause, match.group(1).strip()))
+        if len(recurrence_candidates) != 1:
+            return None
+        _, rhs = recurrence_candidates[0]
+
+        term_pattern = re.compile(
+            rf"{re.escape(sequence_name)}\s*_\s*\{{\s*n\s*-\s*(\d+)\s*\}}",
+            re.IGNORECASE,
+        )
+        term_matches = list(term_pattern.finditer(rhs))
+        if not term_matches:
+            return None
+        lags = sorted({int(match.group(1)) for match in term_matches})
+        order = max(lags)
+        if not 2 <= order <= 6 or any(lag < 1 for lag in lags):
+            return None
+
+        placeholder_names = [
+            name for name in "uvwxyzpqrstu" if name.casefold() != sequence_name.casefold()
+        ][:order]
+        placeholders = [self.sp.Symbol(name) for name in placeholder_names]
+
+        def replace_term(match: re.Match[str]) -> str:
+            lag = int(match.group(1))
+            symbol = placeholder_names[lag - 1]
+            prefix = rhs[:match.start()].rstrip()
+            if prefix and (prefix[-1].isdigit() or prefix[-1] in ")}]"):
+                return "*" + symbol
+            return symbol
+
+        replaced_rhs = term_pattern.sub(replace_term, rhs)
+        # No indexed sequence term, n-dependent forcing, or unrelated object
+        # may survive the exact replacement.
+        if re.search(r"[A-Za-z]\s*_", replaced_rhs) or re.search(
+            r"(?<![A-Za-z])n(?![A-Za-z])", replaced_rhs
+        ):
+            return None
+        try:
+            parsed_rhs = self.sp.nsimplify(
+                self.symbolic._parse(replaced_rhs),
+                rational=True,
+                full=False,
+            )
+            if parsed_rhs.free_symbols - set(placeholders):
+                return None
+            polynomial = self.sp.Poly(parsed_rhs, *placeholders)
+            if polynomial.total_degree() > 1:
+                return None
+            coefficients = [
+                self.sp.simplify(parsed_rhs.coeff(symbol))
+                for symbol in placeholders
+            ]
+            constant = self.sp.simplify(
+                parsed_rhs - sum(
+                    coefficient * symbol
+                    for coefficient, symbol in zip(coefficients, placeholders)
+                )
+            )
+        except Exception:
+            return None
+        numeric_values = (*coefficients, constant)
+        if any(
+            value.free_symbols
+            or value.is_real is not True
+            or value.is_Rational is not True
+            for value in numeric_values
+        ):
+            return None
+
+        unsigned = (
+            r"(?:\d+(?:\.\d+)?(?:/\d+)?|"
+            r"\\frac\s*\{\s*\d+\s*\}\s*\{\s*\d+\s*\})"
+        )
+        initial_pattern = re.compile(
+            rf"^\s*{re.escape(sequence_name)}\s*_\s*"
+            rf"(?:\{{\s*(\d+)\s*\}}|(\d+))\s*"
+            rf"=\s*([+-]?\s*{unsigned})\s*$",
+            re.IGNORECASE,
+        )
+        initial_by_index: dict[int, object] = {}
+        for clause in clauses:
+            match = initial_pattern.fullmatch(clause)
+            if match is None:
+                continue
+            index = int(match.group(1) or match.group(2))
+            value = self._expr(re.sub(r"\s+", "", match.group(3)))
+            if (
+                value is None
+                or value.free_symbols
+                or value.is_real is not True
+                or value.is_Rational is not True
+                or index in initial_by_index
+            ):
+                return None
+            initial_by_index[index] = value
+        if len(initial_by_index) != order:
+            return None
+        start_index = min(initial_by_index)
+        expected_indices = list(range(start_index, start_index + order))
+        if sorted(initial_by_index) != expected_indices:
+            return None
+
+        expected_recurrence_start = start_index + order
+        lower_bounds = [
+            int(value)
+            for value in re.findall(
+                r"(?<![A-Za-z])n\s*(?:\\geq?|>=|≥)\s*(\d+)",
+                text,
+                re.IGNORECASE,
+            )
+        ]
+        if lower_bounds and set(lower_bounds) != {expected_recurrence_start}:
+            return None
+        if target_index < start_index:
+            return None
+
+        # Every equality must be either the single recurrence or one of the
+        # complete initial assignments.  This excludes residual constraints.
+        if len(re.findall(r"(?<![<>!])=(?!=)", text)) != order + 1:
+            return None
+
+        def as_fraction(value) -> Fraction:
+            numerator, denominator = value.as_numer_denom()
+            return Fraction(int(numerator), int(denominator))
+
+        coefficient_values = [as_fraction(value) for value in coefficients]
+        constant_value = as_fraction(constant)
+        initial_values = [as_fraction(initial_by_index[index]) for index in expected_indices]
+        if target_index < expected_recurrence_start:
+            iterative_value = initial_values[target_index - start_index]
+            matrix_value = iterative_value
+        else:
+            steps = target_index - (expected_recurrence_start - 1)
+            largest_bits = max(
+                max(abs(value.numerator).bit_length(), value.denominator.bit_length())
+                for value in (*coefficient_values, constant_value, *initial_values)
+            )
+            estimated_bits = largest_bits + steps * (
+                largest_bits + max(order.bit_length(), 1) + 1
+            )
+            if estimated_bits > 20_000:
+                return None
+
+            rolling = list(initial_values)
+            for _ in range(steps):
+                next_value = constant_value + sum(
+                    coefficient * rolling[-lag]
+                    for lag, coefficient in enumerate(coefficient_values, start=1)
+                )
+                if max(
+                    abs(next_value.numerator).bit_length(),
+                    next_value.denominator.bit_length(),
+                ) > 20_000:
+                    return None
+                rolling.append(next_value)
+                rolling.pop(0)
+            iterative_value = rolling[-1]
+
+            size = order + 1
+            transition = [
+                coefficient_values + [constant_value],
+                *[
+                    [Fraction(int(column == row - 1)) for column in range(size)]
+                    for row in range(1, order)
+                ],
+                [Fraction(0)] * order + [Fraction(1)],
+            ]
+            state = list(reversed(initial_values)) + [Fraction(1)]
+            powered = self._fraction_matrix_power(transition, steps)
+            if powered is None:
+                return None
+            matrix_value = sum(powered[0][column] * state[column] for column in range(size))
+        if iterative_value != matrix_value:
+            return None
+
+        target_value = self.sp.Rational(iterative_value.numerator, iterative_value.denominator)
+        rendered = self.sp.latex(target_value)
+        if len(rendered) > 12_000:
+            return None
+        result = rf"{sequence_name}_{{{target_index}}}={rendered}"
+        zh = self._is_chinese(text)
+        support = (
+            rf"从题面初值 ${sequence_name}_{{{start_index}}},\ldots,{sequence_name}_{{{start_index + order - 1}}}$ "
+            rf"按 {order} 阶常系数递推精确迭代到 ${sequence_name}_{{{target_index}}}$；"
+            rf"再用增广伴随矩阵快速幂独立复核，两者同得 ${rendered}$。"
+            if zh else
+            rf"Exact iteration from the stated initial values through the order-{order} recurrence "
+            rf"and an independent augmented companion-matrix power both give ${rendered}$ for "
+            rf"${sequence_name}_{{{target_index}}}$ ."
+        )
+        return self._result(
+            text,
+            "explicit_linear_recurrence_term",
+            result,
+            "sequence_term",
+            "direct_statement_parse_with_iteration_and_companion_matrix",
+            (
+                "single_target_term_parsed",
+                "constant_coefficients_grounded_verbatim",
+                "all_consecutive_initial_values_parsed",
+                "no_residual_equalities",
+                "iteration_and_companion_matrix_agree",
+            ),
+            support,
+            ("number", "expression"),
+            ("result_present", "numeric_result"),
+        )
+
+    @staticmethod
+    def _fraction_matrix_power(
+        matrix: list[list[Fraction]],
+        exponent: int,
+    ) -> Optional[list[list[Fraction]]]:
+        if exponent < 0 or not matrix or any(len(row) != len(matrix) for row in matrix):
+            return None
+        size = len(matrix)
+
+        def multiply(
+            left: list[list[Fraction]],
+            right: list[list[Fraction]],
+        ) -> list[list[Fraction]]:
+            return [
+                [
+                    sum(
+                        (left[row][inner] * right[inner][column] for inner in range(size)),
+                        Fraction(0),
+                    )
+                    for column in range(size)
+                ]
+                for row in range(size)
+            ]
+
+        result = [
+            [Fraction(int(row == column)) for column in range(size)]
+            for row in range(size)
+        ]
+        power = matrix
+        remaining = exponent
+        while remaining:
+            if remaining & 1:
+                result = multiply(result, power)
+            remaining //= 2
+            if remaining:
+                power = multiply(power, power)
+        return result
+
+    def _polynomial_suffix_before(self, text: str, end: int):
+        """Return the longest valid one-variable integer-polynomial suffix."""
+        window = text[max(0, end - 180):end]
+        window = re.sub(r"(?:\$|\\\(|\\\[)\s*$", "", window)
+        candidates = []
+        for start in range(len(window)):
+            candidate = window[start:].strip().strip("$")
+            if not candidate or candidate[0] not in "+-(0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz":
+                continue
+            try:
+                parsed = self.symbolic._parse(candidate)
+                if len(parsed.free_symbols) != 1:
+                    continue
+                symbol = next(iter(parsed.free_symbols))
+                polynomial = self.sp.Poly(parsed, symbol)
+                if polynomial.domain != self.sp.ZZ:
+                    continue
+                candidates.append((len(candidate), candidate, str(symbol), polynomial))
+            except Exception:
+                continue
+        if not candidates:
+            return None
+        _, expression, symbol, polynomial = max(candidates, key=lambda item: item[0])
+        return expression, symbol, polynomial
+
+    @staticmethod
+    def _horner_mod(coefficients: list[int], value: int, modulus: int) -> int:
+        result = 0
+        for coefficient in coefficients:
+            result = (result * value + coefficient) % modulus
+        return result
+
+    @staticmethod
+    def _math_spans(text: str) -> list[tuple[str, int, int]]:
+        pattern = re.compile(
+            r"\$([^$\n]+)\$|\\\((.*?)\\\)|\\\[(.*?)\\\]",
+            re.DOTALL,
+        )
+        return [
+            (next(group for group in match.groups() if group is not None), match.start(), match.end())
+            for match in pattern.finditer(text)
+        ]
+
+    @staticmethod
+    def _math_placeholder_text(
+        text: str,
+        spans: list[tuple[str, int, int]],
+    ) -> str:
+        pieces: list[str] = []
+        cursor = 0
+        for index, (_, start, end) in enumerate(spans):
+            pieces.append(text[cursor:start])
+            pieces.append(f"§{index}§")
+            cursor = end
+        pieces.append(text[cursor:])
+        return "".join(pieces)
+
+    def _truncated_polynomial(self, expression, symbol, limit: int):
+        """Evaluate a polynomial AST by coefficient convolution up to limit."""
+        if expression.is_Number:
+            return [expression]
+        if expression == symbol:
+            return [self.sp.Integer(0), self.sp.Integer(1)][:limit + 1]
+        if expression.is_Add:
+            result = [self.sp.Integer(0)]
+            for term in expression.args:
+                values = self._truncated_polynomial(term, symbol, limit)
+                if values is None:
+                    return None
+                if len(result) < len(values):
+                    result.extend([self.sp.Integer(0)] * (len(values) - len(result)))
+                for index, value in enumerate(values):
+                    result[index] += value
+            return [self.sp.simplify(value) for value in result[:limit + 1]]
+        if expression.is_Mul:
+            result = [self.sp.Integer(1)]
+            for factor in expression.args:
+                values = self._truncated_polynomial(factor, symbol, limit)
+                if values is None:
+                    return None
+                result = self._convolve(result, values, limit)
+            return result
+        if expression.is_Pow:
+            base, exponent = expression.args
+            if exponent.is_integer is not True or exponent.is_nonnegative is not True:
+                return None
+            power = int(exponent)
+            if power > 3000:
+                return None
+            values = self._truncated_polynomial(base, symbol, limit)
+            if values is None:
+                return None
+            result = [self.sp.Integer(1)]
+            while power:
+                if power & 1:
+                    result = self._convolve(result, values, limit)
+                power //= 2
+                if power:
+                    values = self._convolve(values, values, limit)
+            return result
+        return None
+
+    def _convolve(self, left, right, limit: int):
+        result = [self.sp.Integer(0)] * min(limit + 1, len(left) + len(right) - 1)
+        for left_index, left_value in enumerate(left):
+            for right_index, right_value in enumerate(right):
+                index = left_index + right_index
+                if index > limit:
+                    break
+                result[index] += left_value * right_value
+        return [self.sp.simplify(value) for value in result]
 
     def _even_cardinality_subsets(self, text: str) -> Optional[ToolResult]:
         if not re.search(
@@ -191,6 +867,116 @@ class CoreTextbookTool:
             text, "surjection_count", str(count),
             "finite_inclusion_exclusion_over_codomain",
             ("domain_cardinality_parsed", "codomain_cardinality_parsed", "all_omission_sizes_summed"),
+            support,
+        )
+
+    def _labelled_tree_exact_leaf_count(self, text: str) -> Optional[ToolResult]:
+        """Count labelled trees with exactly a stated number of leaves.
+
+        The compiler accepts only the standard unrestricted labelled-tree
+        problem.  It cross-checks the onto-Prufer count by both
+        inclusion-exclusion and a Stirling-number recurrence.
+        """
+        if not re.search(
+            r"(?:标号|有标号|label(?:l)?ed)[^。.;；\n]{0,30}(?:树|trees?)|"
+            r"(?:树|trees?)[^。.;；\n]{0,30}(?:标号|有标号|label(?:l)?ed)",
+            text,
+            re.IGNORECASE,
+        ):
+            return None
+        if not re.search(r"(?:叶子|叶节点|leaves?|leaf\s+vertices?)", text, re.IGNORECASE):
+            return None
+        if not re.search(r"(?:恰有|恰好|正好|exactly)", text, re.IGNORECASE):
+            return None
+        if re.search(
+            r"(?:有根|rooted|平面树|plane\s+tree|ordered\s+tree|"
+            r"度数至少|度数至多|最大度|直径|高度|相邻|指定边|指定叶|"
+            r"minimum\s+degree|maximum\s+degree|diameter|height|adjacent|prescribed)",
+            text,
+            re.IGNORECASE,
+        ):
+            return None
+
+        vertex_patterns = (
+            r"(?:顶点集(?:为|是)?\s*\$?\s*\[\s*(\d+)\s*\])",
+            r"(\d+)\s*(?:个|个有)?\s*(?:标号|有标号)顶点",
+            r"(?:on|with)\s+(\d+)\s+label(?:l)?ed\s+vertices",
+        )
+        leaf_patterns = (
+            r"(?:恰有|恰好|正好)\s*(\d+)\s*(?:个)?(?:叶子|叶节点)",
+            r"exactly\s+(\d+)\s+(?:leaves|leaf\s+vertices)",
+        )
+        vertex_values = {
+            int(match.group(1))
+            for pattern in vertex_patterns
+            for match in re.finditer(pattern, text, re.IGNORECASE)
+        }
+        leaf_values = {
+            int(match.group(1))
+            for pattern in leaf_patterns
+            for match in re.finditer(pattern, text, re.IGNORECASE)
+        }
+        if len(vertex_values) != 1 or len(leaf_values) != 1:
+            return None
+        n, leaves = next(iter(vertex_values)), next(iter(leaf_values))
+        if not 2 <= n <= 200 or not 2 <= leaves <= n:
+            return None
+        if n > 2 and leaves == n:
+            count = 0
+            onto = 0
+        else:
+            nonleaves = n - leaves
+            sequence_length = n - 2
+            if nonleaves == 0:
+                onto = int(sequence_length == 0)
+            else:
+                onto = sum(
+                    (-1) ** omitted
+                    * comb(nonleaves, omitted)
+                    * (nonleaves - omitted) ** sequence_length
+                    for omitted in range(nonleaves + 1)
+                )
+
+            # Independent recurrence for S(sequence_length, nonleaves).
+            stirling = [0] * (nonleaves + 1)
+            stirling[0] = 1
+            for _ in range(sequence_length):
+                updated = [0] * (nonleaves + 1)
+                for blocks in range(1, nonleaves + 1):
+                    updated[blocks] = (
+                        blocks * stirling[blocks] + stirling[blocks - 1]
+                    )
+                stirling = updated
+            recurrent_onto = factorial(nonleaves) * stirling[nonleaves]
+            if recurrent_onto != onto:
+                return None
+            count = comb(n, leaves) * onto
+
+        zh = self._is_chinese(text)
+        support = (
+            rf"Prüfer 序列长度为 ${n-2}$；顶点是叶子当且仅当其标号不出现。先选出 {leaves} 个叶标号，"
+            rf"其余 {n-leaves} 个标号必须在序列中全部出现。容斥给出满射序列数 "
+            rf"$\sum_{{j=0}}^{{{n-leaves}}}(-1)^j\binom{{{n-leaves}}}j({n-leaves}-j)^{{{n-2}}}={onto}$，"
+            rf"故总数为 $\binom{{{n}}}{{{leaves}}}\times {onto}={count}$。Prüfer 双射保证无遗漏、无重复。"
+            if zh else
+            rf"A Prufer sequence has length ${n-2}$, and a label is a leaf exactly when it is absent. "
+            rf"Choose the {leaves} leaf labels; every remaining {n-leaves} label must occur. "
+            rf"Inclusion-exclusion gives $\sum_{{j=0}}^{{{n-leaves}}}(-1)^j\binom{{{n-leaves}}}j"
+            rf"({n-leaves}-j)^{{{n-2}}}={onto}$ onto sequences, hence "
+            rf"$\binom{{{n}}}{{{leaves}}}\times {onto}={count}$. The Prufer bijection prevents omission or duplication."
+        )
+        return self._count_result(
+            text,
+            "labelled_tree_exact_leaf_count",
+            str(count),
+            "prufer_absent_labels_and_onto_sequence_count",
+            (
+                "labelled_vertex_count_parsed",
+                "exact_leaf_count_parsed",
+                "prufer_leaf_characterization",
+                "inclusion_exclusion_recomputed",
+                "stirling_recurrence_crosscheck",
+            ),
             support,
         )
 
@@ -453,7 +1239,19 @@ class CoreTextbookTool:
     def _affine_first_order_recurrence(self, text: str) -> Optional[ToolResult]:
         if not re.search(r"递推|数列|recurrence|sequence", text, re.IGNORECASE):
             return None
-        if not re.search(r"通项|闭式|general\s+term|closed\s+form", text, re.IGNORECASE):
+        closed_form_requested = bool(re.search(
+            r"通项|闭式|general\s+term|closed\s+form",
+            text,
+            re.IGNORECASE,
+        ))
+        target = re.search(
+            r"(?:求|计算|确定|find|compute|determine)\s*"
+            r"(?:\$|\\\()?\s*([A-Za-z])\s*_?\s*\{?\s*(\d+)\s*\}?\s*"
+            r"(?:\$|\\\))?",
+            text,
+            re.IGNORECASE,
+        )
+        if not closed_form_requested and target is None:
             return None
         if re.search(
             r"模\s*\d|modulo|\bmod\b|取整|floor|ceiling|绝对值|absolute\s+value|"
@@ -470,12 +1268,14 @@ class CoreTextbookTool:
             re.compile(
                 rf"([A-Za-z])\s*_?\s*\{{?\s*n\s*\}}?\s*=\s*{coefficient}\s*\*?\s*"
                 rf"([A-Za-z])\s*_?\s*\{{?\s*n\s*-\s*1\s*\}}?\s*{offset}"
+                rf"\s*(?:\$|\\\))?"
                 rf"(?=\s*(?:[,，。.;；]|且|并|where\b|with\b|and\b|$))",
                 re.IGNORECASE,
             ),
             re.compile(
                 rf"([A-Za-z])\s*_?\s*\{{?\s*n\s*\+\s*1\s*\}}?\s*=\s*{coefficient}\s*\*?\s*"
                 rf"([A-Za-z])\s*_?\s*\{{?\s*n\s*\}}?\s*{offset}"
+                rf"\s*(?:\$|\\\))?"
                 rf"(?=\s*(?:[,，。.;；]|且|并|where\b|with\b|and\b|$))",
                 re.IGNORECASE,
             ),
@@ -489,6 +1289,13 @@ class CoreTextbookTool:
         sequence_name, coefficient_text, rhs_name, offset_text = recurrence.groups()
         if sequence_name.casefold() != rhs_name.casefold():
             return None
+        target_index: int | None = None
+        if target is not None:
+            if target.group(1).casefold() != sequence_name.casefold():
+                return None
+            target_index = int(target.group(2))
+            if not 0 <= target_index <= 100_000:
+                return None
         coefficient_text = re.sub(r"\s+", "", coefficient_text or "")
         coefficient_text = "1" if coefficient_text in {"", "+"} else "-1" if coefficient_text == "-" else coefficient_text
         coefficient_value = self._expr(coefficient_text)
@@ -500,6 +1307,8 @@ class CoreTextbookTool:
             or offset_value.free_symbols
             or coefficient_value.is_real is not True
             or offset_value.is_real is not True
+            or coefficient_value.is_Rational is not True
+            or offset_value.is_Rational is not True
         ):
             return None
         initial = re.search(
@@ -512,8 +1321,34 @@ class CoreTextbookTool:
             return None
         start_index = int(initial.group(1))
         initial_value = self._expr(re.sub(r"\s+", "", initial.group(2)))
-        if initial_value is None or initial_value.free_symbols or initial_value.is_real is not True:
+        if (
+            initial_value is None
+            or initial_value.free_symbols
+            or initial_value.is_real is not True
+            or initial_value.is_Rational is not True
+        ):
             return None
+        if target_index is not None and target_index < start_index:
+            return None
+
+        if target_index is not None:
+            steps = target_index - start_index
+
+            def rational_bits(value) -> int:
+                numerator, denominator = value.as_numer_denom()
+                return max(
+                    abs(int(numerator)).bit_length(),
+                    abs(int(denominator)).bit_length(),
+                    1,
+                )
+
+            estimated_bits = (
+                rational_bits(initial_value)
+                + rational_bits(offset_value)
+                + steps * rational_bits(coefficient_value)
+            )
+            if estimated_bits > 16_000:
+                return None
 
         n_symbol = self.sp.symbols("n", integer=True)
         if coefficient_value == 1:
@@ -537,11 +1372,22 @@ class CoreTextbookTool:
             )
         if initial_check != 0 or recurrence_check != 0:
             return None
-        result = rf"{sequence_name}_n={self.sp.latex(expression)}\quad(n\ge {start_index})"
+        if target_index is None or closed_form_requested:
+            result = rf"{sequence_name}_n={self.sp.latex(expression)}\quad(n\ge {start_index})"
+            target_check = ()
+        else:
+            target_value = self.sp.simplify(expression.subs(n_symbol, target_index))
+            if target_value.free_symbols:
+                return None
+            rendered_target = self.sp.latex(target_value)
+            if len(rendered_target) > 12_000:
+                return None
+            result = rf"{sequence_name}_{{{target_index}}}={rendered_target}"
+            target_check = ("requested_target_term_exactly_evaluated",)
         if self._is_chinese(text):
             support = (
                 rf"由固定点方程得 $L={self.sp.latex(fixed_point)}$；令 $b_n={sequence_name}_n-L$ 后得到等比递推。"
-                rf"再代入初值 $ {sequence_name}_{{{start_index}}}={self.sp.latex(initial_value)}$，并把所得通项代回原递推验证。"
+                rf"再代入初值 $ {sequence_name}_{{{start_index}}}={self.sp.latex(initial_value)}$，并把所得表达式代回原递推验证。"
                 if coefficient_value != 1 else
                 rf"由递推逐次累加常量增量得到该式；再代入初值 $ {sequence_name}_{{{start_index}}}={self.sp.latex(initial_value)}$ 并代回原递推验证。"
             )
@@ -553,7 +1399,13 @@ class CoreTextbookTool:
         return self._result(
             text, "affine_first_order_recurrence", result, "sequence_formula",
             "fixed_point_translation_and_symbolic_substitution",
-            ("recurrence_parameters_parsed", "initial_condition_parsed", "initial_value_checked", "recurrence_identity_checked"),
+            (
+                "recurrence_parameters_parsed",
+                "initial_condition_parsed",
+                "initial_value_checked",
+                "recurrence_identity_checked",
+                *target_check,
+            ),
             support,
             ("expression", "number"),
             ("result_present", "numeric_result"),
@@ -797,7 +1649,7 @@ class CoreTextbookTool:
         )
 
     def _coupon_collector_expectation(self, text: str) -> Optional[ToolResult]:
-        if not re.search(r"coupon\s+collector|集齐|收集齐", text, re.IGNORECASE) or not re.search(r"期望|expected", text, re.IGNORECASE):
+        if not re.search(r"coupon\s+collector|集齐|收集齐|收齐", text, re.IGNORECASE) or not re.search(r"期望|expected", text, re.IGNORECASE):
             return None
         if not re.search(r"等概率|均匀|equally\s+likely|uniform", text, re.IGNORECASE):
             return None
@@ -813,9 +1665,11 @@ class CoreTextbookTool:
         answer = self._fraction_latex(expectation)
         zh = self._is_chinese(text)
         support = (
-            rf"已有 $k$ 种时得到新品种的成功率为 $({n}-k)/{n}$，等待期望为 ${n}/({n}-k)$；对 $k=0,\ldots,{n-1}$ 求和得 ${n}H_{{{n}}}={answer}$。"
+            rf"因为各次抽取独立且 {n} 类等概率，已有 $k$ 种时得到新品种的成功率为 $({n}-k)/{n}$，"
+            rf"故该阶段服从几何等待且期望为 ${n}/({n}-k)$；对 $k=0,\ldots,{n-1}$ 求和得 ${n}H_{{{n}}}={answer}$。"
             if zh else
-            rf"With $k$ types collected, a new type arrives with probability $({n}-k)/{n}$, so the waiting mean is ${n}/({n}-k)$; summing for $k=0,\ldots,{n-1}$ gives ${n}H_{{{n}}}={answer}$."
+            rf"Because draws are independent and the {n} types are equiprobable, with $k$ types collected a new type arrives with probability $({n}-k)/{n}$. "
+            rf"That stage is geometric with mean ${n}/({n}-k)$; summing for $k=0,\ldots,{n-1}$ gives ${n}H_{{{n}}}={answer}$."
         )
         return self._result(
             text, "coupon_collector_expectation", answer, "expectation",

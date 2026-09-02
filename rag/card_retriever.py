@@ -46,10 +46,21 @@ class RetrievalBundle:
     subject_confidence: str = "low"
 
     def solve_context(self) -> str:
-        return "\n".join(f"- {card.render(self.language)}" for card in self.solve_cards)
+        return self._tagged_context(self.solve_cards)
 
     def review_context(self) -> str:
-        return "\n".join(f"- {card.render(self.language)}" for card in self.review_cards)
+        return self._tagged_context(self.review_cards)
+
+    def _tagged_context(self, cards: tuple[KnowledgeCard, ...]) -> str:
+        labels = {
+            "theorem": "STANDARD_THEOREM",
+            "method": "METHOD_HINT",
+            "check": "CHECK_PROTOCOL",
+        }
+        return "\n".join(
+            f"- [{labels.get(card.kind, 'REFERENCE')}] {card.render(self.language)}"
+            for card in cards
+        )
 
     def verification_fact_context(self) -> str:
         # Independent reviewers receive theorem facts only when the theorem is

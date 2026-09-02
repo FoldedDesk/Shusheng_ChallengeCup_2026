@@ -26,6 +26,28 @@ class LocalToolOpportunityKind(str, Enum):
     RECURRENCE = "RECURRENCE"
     MODULAR = "MODULAR"
     DIGIT_DP = "DIGIT_DP"
+    ALGEBRAIC_VERIFICATION = "ALGEBRAIC_VERIFICATION"
+    DIFFERENTIAL_VERIFICATION = "DIFFERENTIAL_VERIFICATION"
+    MATRIX_VERIFICATION = "MATRIX_VERIFICATION"
+    NORMALIZATION_VERIFICATION = "NORMALIZATION_VERIFICATION"
+    FUNCTIONAL_EQUATION_VERIFICATION = "FUNCTIONAL_EQUATION_VERIFICATION"
+    EQUATION_SOLVE = "EQUATION_SOLVE"
+    SYMBOLIC_CALCULUS = "SYMBOLIC_CALCULUS"
+    LINEAR_ALGEBRA = "LINEAR_ALGEBRA"
+
+
+class ToolEligibilityLevel(str, Enum):
+    """How a certified operation may be used by a solver.
+
+    Detection alone never certifies that a model-translated operation matches
+    the statement.  The level only limits the strongest permitted use after a
+    separate operation contract succeeds.
+    """
+
+    NONE = "NONE"
+    VERIFICATION_ONLY = "VERIFICATION_ONLY"
+    LOCAL_FACT = "LOCAL_FACT"
+    FULLY_COVERED = "FULLY_COVERED"
 
 
 @dataclass(frozen=True)
@@ -36,6 +58,14 @@ class LocalToolOpportunity:
     scope: str = "none"
 
     @property
+    def level(self) -> ToolEligibilityLevel:
+        return {
+            "verification_only": ToolEligibilityLevel.VERIFICATION_ONLY,
+            "derived_subproblem": ToolEligibilityLevel.LOCAL_FACT,
+            "statement_exact": ToolEligibilityLevel.FULLY_COVERED,
+        }.get(self.scope, ToolEligibilityLevel.NONE)
+
+    @property
     def eligible(self) -> bool:
         return self.kind is not LocalToolOpportunityKind.NONE and bool(
             self.allowed_tools
@@ -44,6 +74,7 @@ class LocalToolOpportunity:
     def trace_content(self) -> dict[str, Any]:
         return {
             "kind": self.kind.value,
+            "level": self.level.value,
             "eligible": self.eligible,
             "allowed_tools": list(self.allowed_tools),
             "evidence": list(self.evidence),
@@ -81,7 +112,9 @@ _CONSTRAINT = re.compile(
 _CHAINED_BOUND = re.compile(
     r"(?P<lo>-?\d{1,7})\s*(?:<=|≤|<|\\leq(?:slant)?)\s*"
     r"(?P<var>[A-Za-z](?:\s*_\s*\{?[A-Za-z0-9]+\}?)?)\s*"
-    r"(?:<=|≤|<|\\leq(?:slant)?)\s*(?P<hi>-?\d{1,7})",
+    r"(?:<=|≤|<|\\leq(?:slant)?)\s*(?P<hi>-?\d{1,7})"
+    r"(?![A-Za-z0-9_])"
+    r"(?!\s*(?:[*/^]|[+-]\s*[A-Za-z]))",
     re.IGNORECASE,
 )
 _FINITE_SET_DOMAIN = re.compile(
@@ -107,8 +140,8 @@ _RESIDUE_DOMAIN = re.compile(
 )
 
 _RECURRENCE_WORD = re.compile(
-    r"递推|递归定义|数列|序列|"
-    r"\b(?:recurrence|recursively|sequence)\b",
+    r"递推|递归定义|数列|序列|斐波那契|"
+    r"\b(?:recurrence|recursively|sequence|Fibonacci)\b",
     re.IGNORECASE,
 )
 _RECURRENCE_RELATION = re.compile(
@@ -245,6 +278,236 @@ _MODULAR_VALUE_QUERY = re.compile(
     r"求余|余数|模\s*\d+\s*(?:下)?(?:的)?(?:值|结果)|"
     r"\b(?:compute|evaluate|find|determine)[^.。;；]{0,120}"
     r"\b(?:modulo|remainder)\b",
+    re.IGNORECASE,
+)
+
+_VERIFY_REQUEST = re.compile(
+    r"验证|检验|核验|代入检查|是否满足|是否为.{0,20}解|"
+    r"\b(?:verify|check|confirm|is\s+(?:a|the)\s+solution)\b",
+    re.IGNORECASE,
+)
+_SOLVE_REQUEST = re.compile(
+    r"(?:求|解|确定|计算)[^。；;\n]{0,80}(?:方程|方程组|解)|"
+    r"\b(?:solve|find|determine|compute)[^.。;；\n]{0,80}"
+    r"(?:equation|system|solution|root)\b",
+    re.IGNORECASE,
+)
+_IDENTITY_SIGNAL = re.compile(
+    r"恒等式|恒等于|等式.{0,30}成立|"
+    r"\b(?:identity|identically\s+equal|holds?\s+identically)\b",
+    re.IGNORECASE,
+)
+_EXPLICIT_RELATION = re.compile(
+    r"(?<![<>!])=(?!=)|(?:\^|\*\*)|\\(?:equiv|frac|sqrt|mid)|"
+    r"≡|∣|整除|\bdivides?\b",
+    re.IGNORECASE,
+)
+_DIFFERENTIAL_EQUATION_SIGNAL = re.compile(
+    r"微分方程|偏微分方程|常微分方程|初值问题|边值问题|"
+    # A prime denotes a derivative only next to mathematical syntax.  The
+    # narrower lookahead avoids treating prose quotes such as ``x 'special'``
+    # as a differential equation.
+    r"[A-Za-z]\s*(?:''|′′|″|'|′)(?=\s*(?:\(|=|[+\-*/^]))|"
+    r"[A-Za-z]\s*_\s*\{?(?:x|t|xx|tt|xt|tx)\}?|"
+    r"\b(?:ODE|PDE|differential\s+equation|initial[- ]value|boundary[- ]value)\b",
+    re.IGNORECASE,
+)
+_DIFFERENTIAL_TARGET = re.compile(
+    r"通解|特解|解为|满足|求解|验证|"
+    r"\b(?:solution|solve|satisfy|verify)\b",
+    re.IGNORECASE,
+)
+_MATRIX_SIGNAL = re.compile(
+    r"矩阵|行列式|特征值|特征向量|逆矩阵|线性方程组|"
+    r"\\begin\s*\{(?:pmatrix|bmatrix|vmatrix|matrix)\}|"
+    r"\b(?:matrix|matrices|determinant|eigenvalue|eigenvector|inverse)\b",
+    re.IGNORECASE,
+)
+_MATRIX_TARGET = re.compile(
+    r"求|计算|确定|验证|检验|是否|"
+    r"\b(?:compute|calculate|find|determine|verify|check)\b",
+    re.IGNORECASE,
+)
+_PROBABILITY_NORMALIZATION_SIGNAL = re.compile(
+    r"概率密度|密度函数|概率质量函数|分布列|归一化常数|"
+    r"\b(?:probability\s+density|density\s+function|probability\s+mass|"
+    r"pmf|pdf|normalizing\s+constant|normalization)\b",
+    re.IGNORECASE,
+)
+_NORMALIZATION_TARGET = re.compile(
+    r"是否.{0,20}(?:密度|分布)|验证|求.{0,20}常数|"
+    r"\b(?:verify|check|find|determine|normalize)\b",
+    re.IGNORECASE,
+)
+_FUNCTIONAL_EQUATION_SIGNAL = re.compile(
+    r"(?:求|找出|确定)\s*(?:出)?\s*(?:全部|所有)\s*(?:函数|映射)|"
+    r"(?:求|找出|确定)[^。；;\n]{0,24}(?:函数|映射)[^。；;\n]{0,80}"
+    r"(?:满足|使得)|"
+    r"\b(?:find|determine)\s+all"
+    r"(?:\s+[A-Za-z][A-Za-z-]*){0,3}\s+(?:functions?|maps?)\b|"
+    r"\b(?:find|determine)\s+[$\\({\[]*\s*[A-Za-z]\s*"
+    r"(?::|\\colon)\s*[^.。;；\n]{0,100}",
+    re.IGNORECASE,
+)
+_UNKNOWN_FUNCTION_CALL = re.compile(
+    r"(?<![A-Za-z0-9_\\])(?P<name>[A-Za-z])\s*"
+    r"(?:\\left\s*)?\([^()\n]{0,160}\)",
+)
+_FIXED_POLYNOMIAL_DECLARATION = re.compile(
+    r"(?:\b(?:let|given)\s+(?P<en_name>[A-Za-z])\s+(?:be|is)\b"
+    r"[^.。;；\n]{0,80}\bpolynomial\b)|"
+    r"(?:\b(?:a|the)\s+polynomial\s+(?P<en_after>[A-Za-z])\s*\()|"
+    r"(?:多项式\s*(?P<zh_name>[A-Za-z])\s*\()",
+    re.IGNORECASE,
+)
+_UNKNOWN_FUNCTION_DECLARATION = re.compile(
+    r"(?:\b(?:functions?|maps?|mappings?)\b|函数|映射)"
+    r"[^.。;；\n]{0,48}?(?P<after>[A-Za-z])\s*(?::|\\colon|\(|\b)|"
+    r"(?:\b(?:let|suppose|assume)\b|设)\s*[$\\({\[]*\s*"
+    r"(?P<before>[A-Za-z])[^.。;；\n]{0,100}?"
+    r"(?:\b(?:be|is)\s+(?:a\s+)?(?:function|map|mapping)\b|为.{0,12}(?:函数|映射))",
+    re.IGNORECASE,
+)
+_HIGH_ORDER_FUNCTION_QUANTIFIER = re.compile(
+    r"\b(?:for\s+(?:each|every|any)|given\s+any)\s+(?:a\s+)?"
+    r"(?:function|map|mapping)\b|对(?:任意|每个|所有)(?:一个)?(?:函数|映射)|"
+    r"任给(?:函数|映射)",
+    re.IGNORECASE,
+)
+_POLYNOMIAL_SOLUTION_SIGNAL = re.compile(
+    r"(?:求|找出|确定)\s*(?:全部|所有)?\s*多项式|"
+    r"\b(?:find|determine)\s+all(?:\s+[A-Za-z-]+){0,3}\s+polynomials?\b|"
+    r"\bpolynomial\b[^.。;；\n]{0,180}\b(?:for\s+all|identically)\b",
+    re.IGNORECASE,
+)
+
+
+def _has_repeated_unknown_function_relation(text: str) -> bool:
+    """Recognize an unknown function without mistaking named functions.
+
+    Requiring the same standalone one-letter symbol at least twice preserves
+    ordinary ``f(x+y)=f(x)+f(y)`` statements while excluding expressions such
+    as ``arctan(k)=arctan(16)``. A polynomial already fixed by the statement is
+    not an unknown-function search target either.
+    """
+    if _HIGH_ORDER_FUNCTION_QUANTIFIER.search(text):
+        return False
+    fixed_polynomials = {
+        match.group(name).lower()
+        for match in _FIXED_POLYNOMIAL_DECLARATION.finditer(text)
+        for name in ("en_name", "en_after", "zh_name")
+        if match.group(name)
+    }
+    declared_functions = {
+        match.group(name).lower()
+        for match in _UNKNOWN_FUNCTION_DECLARATION.finditer(text)
+        for name in ("after", "before")
+        if match.group(name)
+    }
+    if not declared_functions:
+        return False
+    counts: dict[str, int] = {}
+    for match in _UNKNOWN_FUNCTION_CALL.finditer(text):
+        name = match.group("name").lower()
+        if name in fixed_polynomials or name not in declared_functions:
+            continue
+        counts[name] = counts.get(name, 0) + 1
+    return any(count >= 2 for count in counts.values())
+_DIRECT_EQUATION_QUERY = re.compile(
+    r"(?:解|求解|求.{0,20}根|求.{0,20}方程组)|"
+    r"\b(?:solve|find|determine)\b[^.。;；\n]{0,120}"
+    r"\b(?:equation|system|roots?|solutions?)\b",
+    re.IGNORECASE,
+)
+_UNSUPPORTED_DIRECT_EQUATION = re.compile(
+    r"\\sqrt|\\lfloor|\\rfloor|\\lvert|\\rvert|"
+    r"\b(?:sin|cos|tan|log|ln|exp|floor|ceiling|absolute)\b|"
+    r"\\frac\s*(?:\{[^{}]{0,80}\}|[^\s])\s*"
+    r"\{?\s*[A-Za-z][^}]{0,80}\}?",
+    re.IGNORECASE,
+)
+_EXPLICIT_SOLVE_VARIABLE = re.compile(
+    r"(?:解|求解)\s*关于\s*(?P<zh_var>[A-Za-z])\s*的\s*方程|"
+    r"\bsolve\b[^.。;；\n]{0,160}\bequation\b"
+    r"[^.。;；\n]{0,160}\bfor\s+(?P<en_var>[A-Za-z])\b",
+    re.IGNORECASE,
+)
+_DIRECT_INTEGRAL_QUERY = re.compile(
+    r"(?:求|计算|确定|evaluate|compute|find|determine)"
+    r"[^.。;；\n]{0,100}(?:\\int|积分)|"
+    r"(?:\\int|积分)[^.。;；\n]{0,160}"
+    r"(?:的值|等于多少|evaluate|compute)",
+    re.IGNORECASE,
+)
+_DIRECT_LIMIT_QUERY = re.compile(
+    r"(?:求|计算|确定|evaluate|compute|find|determine)"
+    r"[^.。;；\n]{0,100}(?:\\lim(?![A-Za-z])|极限)|"
+    r"(?:\\lim(?![A-Za-z])|极限)[^.。;；\n]{0,160}"
+    r"(?:的值|evaluate|compute)",
+    re.IGNORECASE,
+)
+_UNSUPPORTED_DIRECT_LIMIT = re.compile(
+    r"\\mathbb\s*\{?[EP]\}?|期望|概率|"
+    r"\b(?:expectation|probability)\b|"
+    r"[A-Za-z]\s*_\s*\{?\s*n\s*\}?",
+    re.IGNORECASE,
+)
+_DIRECT_DERIVATIVE_QUERY = re.compile(
+    r"(?:求|计算|确定)[^。；;\n]{0,80}(?:导数|微分)|"
+    r"\b(?:compute|calculate|find|determine)\b"
+    r"[^.。;；\n]{0,80}\b(?:derivative|differential)\b",
+    re.IGNORECASE,
+)
+_NUMERICAL_DERIVATIVE_METHOD = re.compile(
+    r"数值微分|差分公式|(?:中心|前向|后向)差分|"
+    r"\b(?:finite[- ]difference|central[- ]difference|forward[- ]difference|"
+    r"backward[- ]difference|numerical\s+differentiat)\w*\b|"
+    r"(?<![A-Za-z])h\s*=\s*[-+]?\d",
+    re.IGNORECASE,
+)
+_EXPLICIT_MATRIX_LITERAL = re.compile(
+    r"\[\s*\[[^\n]{1,800}\]\s*\]|"
+    r"\\begin\s*\{(?:pmatrix|bmatrix|vmatrix|matrix|array)\}",
+    re.IGNORECASE,
+)
+_DIRECT_MATRIX_OPERATION = re.compile(
+    r"行列式|秩|逆矩阵|特征值|"
+    r"\b(?:determinant|rank|inverse|eigenvalues?)\b",
+    re.IGNORECASE,
+)
+_EXPLICIT_INTEGRAL = re.compile(r"\\int\s*_", re.IGNORECASE)
+_TRANSFORM_VALUE_QUERY = re.compile(
+    r"求.{0,40}(?:显式|表达式|形式|变换)|"
+    r"\b(?:find|determine|compute)\b[^.。;；\n]{0,100}"
+    r"\b(?:explicit\s+forms?|transforms?|values?)\b",
+    re.IGNORECASE,
+)
+_POLYNOMIAL_FACTOR_CHECK = re.compile(
+    r"多项式[^。；;\n]{0,180}(?:因式|分解|乘积)|"
+    r"\bpolynomials?\b[^.。;；\n]{0,180}"
+    r"\b(?:factor|factorization|factorisation|product)\b",
+    re.IGNORECASE,
+)
+_PROVE_OR_DISPROVE = re.compile(
+    r"证明或否定|证明或举反例|"
+    r"\b(?:prove\s+or\s+disprove|prove\s+or\s+give\s+a\s+counterexample)\b",
+    re.IGNORECASE,
+)
+_DIGIT_VARIABLES = re.compile(
+    r"(?:digits?|数字)\s*[$\\({\[]*\s*"
+    r"(?:[A-Za-z]\s*[,，]\s*){1,8}[A-Za-z]\s*[$\\)}\]]*|"
+    r"[A-Za-z](?:\s*[,，]\s*[A-Za-z]){1,8}\s*(?:are\s+)?digits?",
+    re.IGNORECASE,
+)
+_EXPLICIT_FINITE_SUM_STRUCTURE = re.compile(
+    r"[A-Za-z]\s*_\s*\{?n\}?\s*=\s*[^.。;；\n]{0,500}"
+    r"(?:\\sum|\\frac|\+\s*1\s*/\s*\d)",
+    re.IGNORECASE,
+)
+_POLYNOMIAL_TRANSFORMATION_SIGNAL = re.compile(
+    r"(?:多项式|polynomial)[^.。;；\n]{0,240}"
+    r"(?:系数.{0,30}(?:交换|置换)|switch.{0,40}coefficients?|"
+    r"replace[^.。;；\n]{0,80}P\s*\(\s*x\s*\+\s*1\s*\))",
     re.IGNORECASE,
 )
 
@@ -539,6 +802,42 @@ def _derived_subproblem_opportunity(text: str) -> LocalToolOpportunity | None:
         or _LIST_QUERY.search(text)
         or _OPTIMIZE_QUERY.search(text)
     )
+    if (
+        (
+            query
+            or re.search(
+                r"(?:求|找出|确定)[^。；;\n]{0,30}(?:数字|数码)|"
+                r"\b(?:find|determine)\s+digits?\b",
+                text,
+                re.IGNORECASE,
+            )
+        )
+        and _DIGIT_VARIABLES.search(text)
+        and _EXPLICIT_RELATION.search(text)
+    ):
+        return LocalToolOpportunity(
+            LocalToolOpportunityKind.FINITE_ENUM,
+            ("bounded_integer_search",),
+            (
+                "explicit_digit_variables",
+                "implicit_zero_to_nine_domains",
+                "explicit_relation",
+                "model_must_derive_every_constraint",
+            ),
+            "derived_subproblem",
+        )
+
+    if _EXPLICIT_FINITE_SUM_STRUCTURE.search(text) and _INDEXED_NUMERIC_TERM.search(text):
+        return LocalToolOpportunity(
+            LocalToolOpportunityKind.RECURRENCE,
+            ("finite_sum",),
+            (
+                "explicit_indexed_finite_sum",
+                "numeric_target_index",
+                "model_must_translate_nested_sum_exactly",
+            ),
+            "derived_subproblem",
+        )
     assignment_sizes = tuple(
         int(match.group("size"))
         for match in _EXPLICIT_SMALL_ASSIGNMENT_SIZE.finditer(text)
@@ -615,6 +914,315 @@ def _derived_subproblem_opportunity(text: str) -> LocalToolOpportunity | None:
     return None
 
 
+def _verification_only_opportunities(
+    text: str,
+) -> tuple[LocalToolOpportunity, ...]:
+    """Find claims that a future candidate can be checked mechanically.
+
+    These opportunities deliberately cannot answer the problem.  They only
+    identify a residual, substitution, or normalization check that may reject
+    a bad candidate after the model has independently derived one.
+    """
+    opportunities: list[LocalToolOpportunity] = []
+
+    if _POLYNOMIAL_TRANSFORMATION_SIGNAL.search(text):
+        opportunities.append(LocalToolOpportunity(
+            LocalToolOpportunityKind.ALGEBRAIC_VERIFICATION,
+            ("simplify_expression", "substitute_values"),
+            (
+                "explicit_polynomial_transformation",
+                "candidate_step_or_invariant_check_only",
+            ),
+            "verification_only",
+        ))
+
+    if (
+        (
+            _FUNCTIONAL_EQUATION_SIGNAL.search(text)
+            or _has_repeated_unknown_function_relation(text)
+        )
+        and _EXPLICIT_RELATION.search(text)
+    ):
+        opportunities.append(LocalToolOpportunity(
+            LocalToolOpportunityKind.FUNCTIONAL_EQUATION_VERIFICATION,
+            ("simplify_expression", "substitute_values"),
+            (
+                "functional_equation_structure",
+                "explicit_relation",
+                "candidate_function_substitution_only",
+            ),
+            "verification_only",
+        ))
+
+    if _POLYNOMIAL_SOLUTION_SIGNAL.search(text) and _EXPLICIT_RELATION.search(text):
+        opportunities.append(LocalToolOpportunity(
+            LocalToolOpportunityKind.ALGEBRAIC_VERIFICATION,
+            ("simplify_expression", "substitute_values"),
+            (
+                "polynomial_solution_candidate",
+                "explicit_relation",
+                "candidate_polynomial_check_only",
+            ),
+            "verification_only",
+        ))
+
+    if (
+        _DIFFERENTIAL_EQUATION_SIGNAL.search(text)
+        and _DIFFERENTIAL_TARGET.search(text)
+        and _EXPLICIT_RELATION.search(text)
+    ):
+        opportunities.append(LocalToolOpportunity(
+            LocalToolOpportunityKind.DIFFERENTIAL_VERIFICATION,
+            ("differentiate_expression", "substitute_values"),
+            (
+                "explicit_differential_relation",
+                "solution_or_verification_target",
+                "candidate_residual_only",
+            ),
+            "verification_only",
+        ))
+
+    if (
+        _MATRIX_SIGNAL.search(text)
+        and _MATRIX_TARGET.search(text)
+        and _EXPLICIT_MATRIX_LITERAL.search(text)
+    ):
+        opportunities.append(LocalToolOpportunity(
+            LocalToolOpportunityKind.MATRIX_VERIFICATION,
+            ("matrix_operation",),
+            (
+                "explicit_matrix_literal",
+                "computational_or_verification_target",
+                "derived_invariant_or_candidate_check_only",
+            ),
+            "derived_subproblem",
+        ))
+
+    if (
+        _PROBABILITY_NORMALIZATION_SIGNAL.search(text)
+        and _NORMALIZATION_TARGET.search(text)
+    ):
+        opportunities.append(LocalToolOpportunity(
+            LocalToolOpportunityKind.NORMALIZATION_VERIFICATION,
+            ("finite_sum", "definite_integral"),
+            (
+                "probability_normalization_object",
+                "normalization_or_validity_target",
+                "support_and_measure_must_be_supplied_by_model",
+            ),
+            "verification_only",
+        ))
+
+    if _POLYNOMIAL_FACTOR_CHECK.search(text) and _PROVE_OR_DISPROVE.search(text):
+        opportunities.append(LocalToolOpportunity(
+            LocalToolOpportunityKind.ALGEBRAIC_VERIFICATION,
+            ("simplify_expression",),
+            (
+                "polynomial_factorization_claim",
+                "prove_or_disprove_target",
+                "candidate_factorization_or_counterexample_only",
+            ),
+            "verification_only",
+        ))
+
+    algebraic_target = (
+        _VERIFY_REQUEST.search(text)
+        or _SOLVE_REQUEST.search(text)
+        or _IDENTITY_SIGNAL.search(text)
+    )
+    if algebraic_target and _EXPLICIT_RELATION.search(text):
+        opportunities.append(LocalToolOpportunity(
+            LocalToolOpportunityKind.ALGEBRAIC_VERIFICATION,
+            ("simplify_expression", "substitute_values"),
+            (
+                "explicit_algebraic_relation",
+                "solve_identity_or_verification_target",
+                "candidate_residual_only",
+            ),
+            "verification_only",
+        ))
+
+    return tuple(opportunities)
+
+
+def _direct_symbolic_opportunities(
+    text: str,
+) -> tuple[LocalToolOpportunity, ...]:
+    """Find direct requests whose complete target is one whitelisted operation.
+
+    The classification is still provisional: a model-supplied translation must
+    pass the operation contract before a result can be considered covered.
+    """
+    opportunities: list[LocalToolOpportunity] = []
+    direct_limit = bool(
+        _DIRECT_LIMIT_QUERY.search(text)
+        and re.search(r"\\lim(?![A-Za-z])", text)
+        and not _UNSUPPORTED_DIRECT_LIMIT.search(text)
+        and not _RECURRENCE_RELATION.search(text)
+    )
+    equation_system = bool(re.search(r"方程组|\bsystem\b", text, re.IGNORECASE))
+
+    if (
+        _DIRECT_EQUATION_QUERY.search(text)
+        and _EXPLICIT_RELATION.search(text)
+        and not _UNSUPPORTED_DIRECT_EQUATION.search(text)
+        and not _FUNCTIONAL_EQUATION_SIGNAL.search(text)
+        and not _has_repeated_unknown_function_relation(text)
+        and (equation_system or _EXPLICIT_SOLVE_VARIABLE.search(text))
+    ):
+        tools = (
+            ("solve_polynomial_system",)
+            if equation_system
+            else ("solve_equation",)
+        )
+        opportunities.append(LocalToolOpportunity(
+            LocalToolOpportunityKind.EQUATION_SOLVE,
+            tools,
+            (
+                "direct_equation_solution_target",
+                "explicit_relation",
+                "domain_and_all_constraints_must_survive_contract",
+            ),
+            "statement_exact",
+        ))
+
+    if _DIRECT_INTEGRAL_QUERY.search(text) and re.search(
+        r"\\int\s*_\s*(?:\{|[^\s])[^\n]{0,100}\^", text
+    ):
+        integral_scope = (
+            "derived_subproblem"
+            if direct_limit or _OPTIMIZE_QUERY.search(text)
+            else "statement_exact"
+        )
+        opportunities.append(LocalToolOpportunity(
+            LocalToolOpportunityKind.SYMBOLIC_CALCULUS,
+            ("definite_integral",),
+            (
+                (
+                    "nested_definite_integral_subproblem"
+                    if direct_limit
+                    else "optimization_integral_subproblem"
+                    if _OPTIMIZE_QUERY.search(text)
+                    else "direct_definite_integral_target"
+                ),
+                "explicit_bounds_candidate",
+                "integrand_variable_and_bounds_must_survive_contract",
+            ),
+            integral_scope,
+        ))
+    elif _EXPLICIT_INTEGRAL.search(text) and _TRANSFORM_VALUE_QUERY.search(text):
+        opportunities.append(LocalToolOpportunity(
+            LocalToolOpportunityKind.SYMBOLIC_CALCULUS,
+            ("definite_integral",),
+            (
+                "integral_defined_transform_subproblem",
+                "explicit_integration_bounds_candidate",
+                "transform_substitution_must_survive_contract",
+            ),
+            "derived_subproblem",
+        ))
+
+    if direct_limit:
+        opportunities.append(LocalToolOpportunity(
+            LocalToolOpportunityKind.SYMBOLIC_CALCULUS,
+            ("limit_expression",),
+            (
+                "direct_limit_target",
+                "explicit_limit_notation",
+                "point_and_direction_must_survive_contract",
+            ),
+            "statement_exact",
+        ))
+
+    if (
+        _DIRECT_DERIVATIVE_QUERY.search(text)
+        and _EXPLICIT_RELATION.search(text)
+        and not _NUMERICAL_DERIVATIVE_METHOD.search(text)
+    ):
+        opportunities.append(LocalToolOpportunity(
+            LocalToolOpportunityKind.SYMBOLIC_CALCULUS,
+            ("differentiate_expression",),
+            (
+                "direct_derivative_target",
+                "explicit_expression_candidate",
+                "variable_and_requested_order_must_survive_contract",
+            ),
+            "statement_exact",
+        ))
+
+    if (
+        _EXPLICIT_MATRIX_LITERAL.search(text)
+        and _DIRECT_MATRIX_OPERATION.search(text)
+        and _MATRIX_TARGET.search(text)
+    ):
+        opportunities.append(LocalToolOpportunity(
+            LocalToolOpportunityKind.LINEAR_ALGEBRA,
+            ("matrix_operation",),
+            (
+                "direct_explicit_matrix_operation",
+                "matrix_literal_present",
+                "requested_operation_must_survive_contract",
+            ),
+            "statement_exact",
+        ))
+    return tuple(opportunities)
+
+
+_STATEMENT_DETECTORS = (
+    _finite_state_opportunity,
+    _subtraction_game_opportunity,
+    _permutation_cycle_opportunity,
+    _lattice_polygon_opportunity,
+    _factorial_valuation_opportunity,
+    _modular_power_opportunity,
+    _digit_dp_opportunity,
+    _modular_opportunity,
+    _recurrence_opportunity,
+    _finite_enum_opportunity,
+)
+
+
+def detect_local_tool_opportunities(
+    problem: str,
+    spec: Any | None = None,
+) -> tuple[LocalToolOpportunity, ...]:
+    """Return every structurally plausible opportunity, strongest first.
+
+    This is an offline measurement entry point.  It neither exposes tools to
+    the production model nor executes an operation.  Each returned operation
+    still requires a valid precondition/execution/postcondition contract.
+    """
+    del spec  # Detection depends only on the current statement text.
+    text = str(problem or "").strip()
+    if not 1 <= len(text) <= 5_000:
+        return ()
+
+    candidates: list[LocalToolOpportunity] = []
+    candidates.extend(
+        opportunity
+        for detector in _STATEMENT_DETECTORS
+        if (opportunity := detector(text)) is not None
+    )
+    candidates.extend(_direct_symbolic_opportunities(text))
+    derived = _derived_subproblem_opportunity(text)
+    if derived is not None:
+        candidates.append(derived)
+    candidates.extend(_verification_only_opportunities(text))
+
+    unique: list[LocalToolOpportunity] = []
+    seen: set[tuple[str, str, tuple[str, ...]]] = set()
+    for opportunity in candidates:
+        key = (
+            opportunity.level.value,
+            opportunity.kind.value,
+            opportunity.allowed_tools,
+        )
+        if key not in seen:
+            seen.add(key)
+            unique.append(opportunity)
+    return tuple(unique)
+
+
 def detect_local_tool_opportunity(
     problem: str,
     spec: Any | None = None,
@@ -626,18 +1234,7 @@ def detect_local_tool_opportunity(
     text = str(problem or "").strip()
     if not 1 <= len(text) <= 5_000:
         return LocalToolOpportunity()
-    for detector in (
-        _finite_state_opportunity,
-        _subtraction_game_opportunity,
-        _permutation_cycle_opportunity,
-        _lattice_polygon_opportunity,
-        _factorial_valuation_opportunity,
-        _modular_power_opportunity,
-        _digit_dp_opportunity,
-        _modular_opportunity,
-        _recurrence_opportunity,
-        _finite_enum_opportunity,
-    ):
+    for detector in _STATEMENT_DETECTORS:
         opportunity = detector(text)
         if opportunity is not None:
             return opportunity

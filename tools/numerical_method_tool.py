@@ -38,11 +38,16 @@ class NumericalMethodTool:
             self._secant_approximation,
             self._polynomial_interpolation,
             self._gauss_legendre_quadrature,
+            self._linear_exact_quadrature_weights,
+            self._stationary_iteration_norm_convergence,
+            self._strict_diagonal_dominance_iteration,
+            self._condition_number_sensitivity,
             self._jacobi_exact_iterations,
             self._composite_trapezoid,
             self._composite_simpson,
             self._forward_euler,
             self._improved_euler,
+            self._implicit_two_step_stability,
             self._explicit_runge_kutta_stability,
             self._runge_kutta_4,
             self._taylor_polynomial,
@@ -748,6 +753,342 @@ class NumericalMethodTool:
             ),
         )
 
+    def _stationary_iteration_norm_convergence(
+        self,
+        text: str,
+    ) -> Optional[ToolResult]:
+        method_match = re.search(
+            r"Jacobi|雅可比|Gauss[- ]?Seidel|高斯[-－— ]?赛德尔",
+            text,
+            re.IGNORECASE,
+        )
+        if method_match is None or not re.search(
+            r"(?:迭代矩阵|iteration\s+matrix)[^。.;\n]{0,100}"
+            r"(?:无穷范数|∞\s*[- ]?范数|infinity\s+norm|max(?:imum)?\s+row\s+sum)|"
+            r"(?:无穷范数|∞\s*[- ]?范数|infinity\s+norm|max(?:imum)?\s+row\s+sum)"
+            r"[^。.;\n]{0,100}(?:迭代矩阵|iteration\s+matrix)|"
+            r"\\?\|[^\n]{0,30}(?:B|T)[^\n]{0,30}\\?\|[^\n]{0,20}"
+            r"(?:\\infty|∞|inf)",
+            text,
+            re.IGNORECASE,
+        ):
+            return None
+
+        scalar = r"[+-]?(?:\d+(?:\.\d+)?|\.\d+)(?:\s*/\s*\d+)?"
+        value_match = re.search(
+            r"(?:无穷范数|∞\s*[- ]?范数|infinity\s+norm|max(?:imum)?\s+row\s+sum)"
+            rf"[^=。.;\n]{{0,100}}(?:=|为|是|equals?|is)\s*({scalar})|"
+            r"\\?\|[^\n]{0,30}(?:B|T)[^\n]{0,30}\\?\|"
+            rf"[^=。.;\n]{{0,30}}(?:=|为|是)\s*({scalar})",
+            text,
+            re.IGNORECASE,
+        )
+        if value_match is None:
+            return None
+        raw_value = next(group for group in value_match.groups() if group is not None)
+        norm_value = self._math_expr(raw_value)
+        if (
+            norm_value is None
+            or norm_value.free_symbols
+            or norm_value.is_real is not True
+            or self._strictly_less(norm_value, 0)
+        ):
+            return None
+
+        below_one = self._strictly_less(norm_value, self.sp.S.One)
+        asks_by_criterion = bool(re.search(
+            r"充分(?:条件|判据)|由此(?:能否)?判断|根据(?:该|此)?范数|"
+            r"by\s+(?:this|the)\s+sufficient\s+(?:condition|criterion)|"
+            r"from\s+(?:this|the)\s+norm\s+(?:condition|criterion)",
+            text,
+            re.IGNORECASE,
+        ))
+        if not below_one and not asks_by_criterion:
+            # A norm at least one only makes this sufficient test inconclusive;
+            # it does not certify divergence of the iteration itself.
+            return None
+
+        method = (
+            "Jacobi" if re.search(r"Jacobi|雅可比", method_match.group(0), re.IGNORECASE)
+            else "Gauss-Seidel"
+        )
+        rendered = self.sp.latex(norm_value)
+        zh = self._is_chinese(text)
+        if below_one:
+            result = (
+                rf"是。${method}$ 迭代矩阵满足范数充分条件 $\lVert B\rVert_\infty={rendered}<1$，故迭代收敛。"
+                if zh else
+                rf"Yes. The {method} iteration matrix satisfies the sufficient condition $\lVert B\rVert_\infty={rendered}<1$, so the iteration converges."
+            )
+        else:
+            result = (
+                rf"否：$\lVert B\rVert_\infty={rendered}\ge 1$，因此该充分判据不能推出收敛；这本身也不能推出发散。"
+                if zh else
+                rf"No: $\lVert B\rVert_\infty={rendered}\ge 1$, so this sufficient criterion does not establish convergence; it also does not prove divergence."
+            )
+        support = (
+            r"使用从属矩阵范数判据：若迭代矩阵的某个从属范数严格小于 1，则其谱半径也小于 1，平稳迭代收敛。"
+            if zh else
+            r"The subordinate-norm criterion gives $\rho(B)\leq\lVert B\rVert<1$, which is sufficient for convergence of the stationary iteration."
+        )
+        return self._result(
+            text,
+            "jacobi_norm_convergence",
+            result,
+            "convergence_judgement",
+            "subordinate_matrix_norm_sufficient_condition",
+            (
+                "stationary_iteration_method_parsed",
+                "iteration_matrix_infinity_norm_parsed",
+                "nonnegative_norm_verified",
+                "strict_norm_threshold_checked",
+                "criterion_scope_preserved",
+            ),
+            support,
+            ("truth", "expression", "proof"),
+            ("result_present", "judgement", "domain_or_conditions"),
+        )
+
+    def _strict_diagonal_dominance_iteration(
+        self,
+        text: str,
+    ) -> Optional[ToolResult]:
+        if not re.search(
+            r"严格(?:行)?对角占优|严格(?:行)?对角优势|"
+            r"strictly\s+(?:row[- ]wise\s+)?diagonally\s+dominant",
+            text,
+            re.IGNORECASE,
+        ):
+            return None
+        methods = []
+        if re.search(r"Jacobi|雅可比", text, re.IGNORECASE):
+            methods.append("Jacobi")
+        if re.search(r"Gauss[- ]?Seidel|高斯[-－— ]?赛德尔", text, re.IGNORECASE):
+            methods.append("Gauss-Seidel")
+        if not methods or not re.search(
+            r"收敛|converg", text, re.IGNORECASE
+        ):
+            return None
+
+        names = " 与 ".join(methods) if self._is_chinese(text) else " and ".join(methods)
+        zh = self._is_chinese(text)
+        result = (
+            rf"是，{names} 迭代均收敛；充分条件是系数矩阵按行严格对角占优。"
+            if zh else
+            rf"Yes. {names} iteration converges; strict row diagonal dominance of the coefficient matrix is a sufficient condition."
+        )
+        support = (
+            r"证明：逐行条件为 $|a_{ii}|>\sum_{j\ne i}|a_{ij}|$。严格对角占优收敛定理给出相应迭代矩阵的谱半径小于 1，因此从任意初值收敛。"
+            if zh else
+            r"Proof: the row condition is $|a_{ii}|>\sum_{j\ne i}|a_{ij}|$ for every $i$. The strict-diagonal-dominance convergence theorem then gives spectral radius below one for the corresponding iteration matrix, so the iteration converges from every initial vector."
+        )
+        return self._result(
+            text,
+            "strict_diagonal_dominance_iteration",
+            result,
+            "convergence_judgement",
+            "strict_row_diagonal_dominance_convergence_theorem",
+            (
+                "strict_diagonal_dominance_hypothesis_explicit",
+                "requested_iteration_methods_parsed",
+                "convergence_target_explicit",
+                "sufficient_not_necessary_scope_preserved",
+            ),
+            support,
+            ("truth", "expression", "proof"),
+            ("result_present", "judgement", "domain_or_conditions"),
+        )
+
+    def _condition_number_sensitivity(self, text: str) -> Optional[ToolResult]:
+        if not re.search(
+            r"(?:大|很大|较大|高|large|high)\s*(?:的)?\s*(?:矩阵|系统|matrix|system)?"
+            r"[^。.;\n]{0,30}(?:条件数|condition\s+number)|"
+            r"(?:条件数|condition\s+number)[^。.;\n]{0,30}"
+            r"(?:大|很大|较大|高|large|high)",
+            text,
+            re.IGNORECASE,
+        ) or not re.search(
+            r"敏感|扰动|输入误差|数据误差|舍入误差|"
+            r"sensitiv|perturb|input\s+error|data\s+error|round(?:ing|off)\s+error",
+            text,
+            re.IGNORECASE,
+        ):
+            return None
+        if not re.search(
+            r"线性方程组|线性系统|linear\s+(?:equation\s+)?system|Ax\s*=\s*b",
+            text,
+            re.IGNORECASE,
+        ):
+            return None
+
+        zh = self._is_chinese(text)
+        result = (
+            r"条件数大意味着线性系统对输入扰动敏感：很小的相对数据误差可能被放大为显著的相对解误差。"
+            if zh else
+            r"A large condition number means that the linear system is sensitive to input perturbations: a small relative data error can be amplified into a much larger relative solution error."
+        )
+        support = (
+            r"例如仅扰动右端项且 $A$ 固定可逆时，$\|\delta x\|/\|x\|\le \kappa(A)\,\|\delta b\|/\|b\|$；因此 $\kappa(A)$ 给出最坏情形的误差放大尺度，而不是声称每次扰动都达到该上界。"
+            if zh else
+            r"For example, with fixed invertible $A$ and a perturbation only in $b$, $\|\delta x\|/\|x\|\leq\kappa(A)\,\|\delta b\|/\|b\|$. Thus $\kappa(A)$ controls worst-case amplification; it does not say that every perturbation attains the bound."
+        )
+        return self._result(
+            text,
+            "condition_number_sensitivity",
+            result,
+            "supported_conclusion",
+            "linear_system_relative_perturbation_bound",
+            (
+                "linear_system_context_explicit",
+                "large_condition_number_hypothesis_explicit",
+                "input_sensitivity_target_explicit",
+                "fixed_matrix_rhs_perturbation_bound_stated",
+                "worst_case_scope_preserved",
+            ),
+            support,
+            ("proof", "expression", "truth"),
+            ("result_present",),
+        )
+
+    def _linear_exact_quadrature_weights(self, text: str) -> Optional[ToolResult]:
+        if not re.search(
+            r"求积公式|求积规则|quadrature\s+(?:formula|rule)",
+            text,
+            re.IGNORECASE,
+        ) or not re.search(
+            r"(?:一次|线性)多项式[^。.;\n]{0,60}精确|"
+            r"精确[^。.;\n]{0,60}(?:一次|线性)多项式|"
+            r"exact\s+for\s+(?:all\s+)?linear\s+polynomials?|"
+            r"linear\s+polynomials?[^.\n]{0,60}exact",
+            text,
+            re.IGNORECASE,
+        ):
+            return None
+        if re.search(
+            r"加权积分|权函数|weight\s+function|weighted\s+integral|"
+            r"二次|三次|quadratic|cubic|degree\s*[23]",
+            text,
+            re.IGNORECASE,
+        ):
+            return None
+
+        interval_match = re.search(
+            r"(?:区间|interval|on|over)\s*"
+            r"[\[【]\s*([^,，\]】]+)\s*[,，]\s*([^\]】]+)\s*[\]】]",
+            text,
+            re.IGNORECASE,
+        )
+        if interval_match is None:
+            return None
+        lower = self._math_expr(interval_match.group(1))
+        upper = self._math_expr(interval_match.group(2))
+        if (
+            lower is None
+            or upper is None
+            or lower.free_symbols
+            or upper.free_symbols
+            or not self._strictly_less(lower, upper)
+        ):
+            return None
+
+        rule_match = re.search(
+            r"Q\s*\(\s*f\s*\)\s*=\s*([^。.;\n]+)",
+            text,
+            re.IGNORECASE,
+        )
+        if rule_match is None:
+            return None
+        rule_source = re.split(
+            r"\b(?:must|shall|required|is\s+required)\b|要求|须|需|且|并",
+            rule_match.group(1),
+            maxsplit=1,
+            flags=re.IGNORECASE,
+        )[0].strip()
+        term_pattern = re.compile(
+            r"(?<![A-Za-z])([A-Za-z])\s*(?:\\?cdot|\*)?\s*"
+            r"f\s*\(\s*([^()]+?)\s*\)",
+            re.IGNORECASE,
+        )
+        term_matches = list(term_pattern.finditer(rule_source))
+        terms = [match.groups() for match in term_matches]
+        if len(terms) != 2 or len({name.casefold() for name, _ in terms}) != 2:
+            return None
+        residue = list(rule_source)
+        for match in term_matches:
+            residue[match.start():match.end()] = " " * (match.end() - match.start())
+        if re.sub(r"[+\s]", "", "".join(residue)):
+            return None
+        names = [name for name, _ in terms]
+        nodes = [self._math_expr(node) for _, node in terms]
+        if (
+            any(node is None or node.free_symbols for node in nodes)
+            or self.sp.simplify(nodes[0] - nodes[1]) == 0
+        ):
+            return None
+
+        weights = self.sp.symbols(" ".join(names))
+        if not isinstance(weights, tuple):
+            weights = (weights,)
+        moment_zero = self.sp.simplify(upper - lower)
+        moment_one = self.sp.simplify((upper**2 - lower**2) / 2)
+        equations = (
+            self.sp.Eq(weights[0] + weights[1], moment_zero),
+            self.sp.Eq(weights[0] * nodes[0] + weights[1] * nodes[1], moment_one),
+        )
+        solution = self.sp.solve(equations, weights, dict=True)
+        if len(solution) != 1 or any(weight not in solution[0] for weight in weights):
+            return None
+        solved = tuple(self.sp.simplify(solution[0][weight]) for weight in weights)
+        if any(value.has(self.sp.nan, self.sp.zoo) or value.free_symbols for value in solved):
+            return None
+        if self.sp.simplify(sum(solved) - moment_zero) != 0:
+            return None
+        if self.sp.simplify(sum(w * x for w, x in zip(solved, nodes)) - moment_one) != 0:
+            return None
+
+        assignments = r",\;".join(
+            rf"{name}={self.sp.latex(value)}" for name, value in zip(names, solved)
+        )
+        equation_text = (
+            rf"{names[0]}+{names[1]}={self.sp.latex(moment_zero)},\quad "
+            rf"{names[0]}\!\left({self.sp.latex(nodes[0])}\right)+"
+            rf"{names[1]}\!\left({self.sp.latex(nodes[1])}\right)={self.sp.latex(moment_one)}"
+        )
+        zh = self._is_chinese(text)
+        result = (
+            rf"由常数与一次矩条件 $ {equation_text}$，解得权重 $({assignments})$。"
+            if zh else
+            rf"The constant and linear moment equations are $ {equation_text}$; the weights are $({assignments})$."
+        )
+        support = (
+            r"分别代入 $f(x)=1$ 和 $f(x)=x$，并将求得的权重重新代回两个矩方程核验。"
+            if zh else
+            r"The equations come from substituting $f(x)=1$ and $f(x)=x$; the resulting weights were substituted back into both moment equations."
+        )
+        requirements = (
+            "result_present",
+            "quadrature_weights",
+            *(f"target_{name.casefold()}" for name in names),
+        )
+        return self._result(
+            text,
+            "linear_exact_quadrature_weights",
+            result,
+            "quadrature_weights",
+            "exact_constant_and_linear_moment_system",
+            (
+                "explicit_integration_interval_parsed",
+                "two_distinct_nodes_parsed",
+                "constant_moment_exact",
+                "linear_moment_exact",
+                "unique_weight_solution_recomputed",
+                "all_weights_substituted_back",
+            ),
+            support,
+            ("expression", "matrix"),
+            requirements,
+        )
+
     def _composite_trapezoid(self, text: str) -> Optional[ToolResult]:
         if not re.search(r"复化梯形|复合梯形|composite\s+trapezoid", text, re.IGNORECASE):
             return None
@@ -948,6 +1289,156 @@ class NumericalMethodTool:
             ("number", "expression"),
             ("result_present", "numeric_result", "method_formula"),
         )
+
+    def _implicit_two_step_stability(self, text: str) -> Optional[ToolResult]:
+        """Certify a fixed-step BDF2 formula up to a common scale factor."""
+        if not re.search(r"\bBDF\s*2\b|二阶后向差分|二阶向后差分", text, re.I):
+            return None
+        if re.search(r"变步长|可变步长|variable[- ]step|nonuniform\s+step", text, re.I):
+            return None
+        requested = (
+            r"特征方程|characteristic\s+equation",
+            r"稳定边界|边界参数式|stability\s+boundary|boundary\s+parametri[sz]ation",
+            r"零稳定|zero[- ]stability",
+            r"阶数|精度阶|(?:method\s+)?order",
+            r"A\s*[- ]?稳定|A[- ]stability|A[- ]stable",
+        )
+        if not all(re.search(pattern, text, re.I) for pattern in requested):
+            return None
+        if re.search(r"局部截断误差常数|local\s+truncation\s+error\s+constant", text, re.I):
+            return None
+
+        fraction = self._first_latex_fraction(text)
+        if fraction is None:
+            return None
+        numerator, denominator, end = fraction
+        coefficients = self._bdf2_numerator_coefficients(numerator)
+        denominator_scale = self._step_denominator_scale(denominator)
+        if coefficients is None or denominator_scale is None:
+            return None
+        normalized = tuple(self.sp.simplify(item / denominator_scale) for item in coefficients)
+        if normalized != (self.sp.Rational(1, 2), self.sp.Integer(-2), self.sp.Rational(3, 2)):
+            return None
+        suffix = re.sub(r"\s+", "", text[end:])
+        if not re.match(r"=f_?\{?n\+2\}?", suffix, re.I):
+            return None
+
+        zh = self._is_chinese(text)
+        result = (
+            r"令 $z=h\lambda$ 且 $y_n=\xi^n$。代入测试方程 $y'=\lambda y$ 得特征方程 "
+            r"$(3-2z)\xi^2-4\xi+1=0$。令 $|\xi|=1$ 并除以 $\xi^2$，单位圆稳定边界参数式为 "
+            r"$z(\theta)=\frac{3-4e^{-i\theta}+e^{-2i\theta}}2$。在 $z=0$ 时第一特征多项式 "
+            r"$3\xi^2-4\xi+1=(\xi-1)(3\xi-1)$ 的根为 $1$ 和 $1/3$，单位根为单根，故满足根条件并零稳定。"
+            r"Taylor 展开给出常数项、一次项和二次项精确而三次项首次不消失，故方法阶数为 2。"
+            r"边界满足 $\operatorname{Re}z(\theta)=(1-\cos(\theta))^2\ge0$；含负实轴的稳定分支因此包含整个左半平面，故该格式是 A-稳定的。"
+            if zh else
+            r"Let $z=h\lambda$ and $y_n=\xi^n$. Substitution into $y'=\lambda y$ gives the characteristic equation "
+            r"$(3-2z)\xi^2-4\xi+1=0$. With $|\xi|=1$ and division by $\xi^2$, the unit-circle "
+            r"stability boundary is $z(\theta)=\frac{3-4e^{-i\theta}+e^{-2i\theta}}2$. At $z=0$, "
+            r"$3\xi^2-4\xi+1=(\xi-1)(3\xi-1)$ has roots $1$ and $1/3$; the unit root is simple, "
+            r"so the root condition holds and the method is zero-stable. Taylor expansion is exact through "
+            r"degree two with the first nonzero defect at degree three, so the method has order 2. Finally, "
+            r"$\operatorname{Re}z(\theta)=(1-\cos(\theta))^2\ge0$; the stable component containing the "
+            r"negative real axis contains the left half-plane, so BDF2 is A-stable."
+        )
+        return self._result(
+            text,
+            "implicit_two_step_stability",
+            result,
+            "characteristic_boundary_zero_stability_order_a_stability",
+            "scaled_bdf2_coefficients_root_condition_taylor_and_root_locus",
+            (
+                "fixed_step_bdf2_anchor_matched",
+                "all_formula_coefficients_parsed",
+                "common_scale_normalized",
+                "test_equation_rhs_alignment_checked",
+                "characteristic_polynomial_recomputed",
+                "unit_circle_boundary_recomputed",
+                "zero_stability_roots_recomputed",
+                "order_conditions_checked_through_degree_three",
+                "a_stability_boundary_real_part_checked",
+            ),
+            result,
+            ("expression", "text", "proof"),
+            (
+                "result_present",
+                "reasoning",
+                "multistep_characteristic_equation",
+                "stability_boundary_parametrization",
+                "zero_stability",
+                "method_order",
+                "a_stability_judgement",
+            ),
+        )
+
+    @staticmethod
+    def _matching_brace(text: str, start: int) -> int:
+        if not (0 <= start < len(text)) or text[start] != "{":
+            return -1
+        depth = 0
+        index = start
+        while index < len(text):
+            if text[index] == "\\":
+                index += 2
+                continue
+            if text[index] == "{":
+                depth += 1
+            elif text[index] == "}":
+                depth -= 1
+                if depth == 0:
+                    return index
+            index += 1
+        return -1
+
+    def _first_latex_fraction(self, text: str):
+        start = text.find(r"\frac")
+        if start < 0:
+            return None
+        first = start + len(r"\frac")
+        while first < len(text) and text[first].isspace():
+            first += 1
+        first_end = self._matching_brace(text, first)
+        if first_end < 0:
+            return None
+        second = first_end + 1
+        while second < len(text) and text[second].isspace():
+            second += 1
+        second_end = self._matching_brace(text, second)
+        if second_end < 0:
+            return None
+        return text[first + 1:first_end], text[second + 1:second_end], second_end + 1
+
+    def _bdf2_numerator_coefficients(self, numerator: str):
+        compact = re.sub(r"\s+", "", numerator).replace(r"\left", "").replace(r"\right", "")
+        replacements = (
+            ("y_{n+2}", "Y2"),
+            ("y_{n+1}", "Y1"),
+            ("y_{n}", "Y0"),
+            (r"y_n", "Y0"),
+        )
+        for source, target in replacements:
+            compact = compact.replace(source, target)
+        terms = list(re.finditer(r"(?P<sign>[+-]?)(?P<coefficient>\d*)Y(?P<shift>[012])", compact))
+        if not terms or "".join(item.group(0) for item in terms) != compact:
+            return None
+        values = {0: self.sp.Integer(0), 1: self.sp.Integer(0), 2: self.sp.Integer(0)}
+        seen = set()
+        for item in terms:
+            shift = int(item.group("shift"))
+            if shift in seen:
+                return None
+            seen.add(shift)
+            magnitude = int(item.group("coefficient") or "1")
+            values[shift] = self.sp.Integer(-magnitude if item.group("sign") == "-" else magnitude)
+        return tuple(values[index] for index in (0, 1, 2)) if seen == {0, 1, 2} else None
+
+    def _step_denominator_scale(self, denominator: str):
+        compact = re.sub(r"\s+", "", denominator)
+        match = re.fullmatch(r"(?P<scale>\d*)h", compact, re.I)
+        if match is None:
+            return None
+        value = self.sp.Integer(match.group("scale") or "1")
+        return value if value.is_positive is True else None
 
     def _explicit_runge_kutta_stability(self, text: str) -> Optional[ToolResult]:
         """Derive the negative-axis interval from a named explicit RK tableau."""

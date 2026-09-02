@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 import re
+import string
 from typing import Any, Optional
 
 from tools.tool_contract import ToolResult, make_tool_result as _make_tool_result
@@ -71,6 +72,8 @@ class SympyTool:
         )
 
     def integral(self, expression: str, variable: str = "x") -> Optional[str]:
+        if not self._integral_complexity_allowed(expression, variable):
+            return None
         return self._run(
             lambda s: s.integrate(self._parse(expression), s.Symbol(variable)),
             forbidden_nodes=("Integral",),
@@ -83,6 +86,8 @@ class SympyTool:
         lower: str,
         upper: str,
     ) -> Optional[str]:
+        if not self._integral_complexity_allowed(expression, variable):
+            return None
         return self._run(
             lambda s: s.integrate(
                 self._parse(expression),
@@ -90,6 +95,50 @@ class SympyTool:
             ),
             forbidden_nodes=("Integral",),
         )
+
+    @staticmethod
+    def _integral_complexity_allowed(expression: str, variable: str) -> bool:
+        """Admit only integrations with a predictably small symbolic search.
+
+        SymPy integration is deterministic but not time bounded.  Mixed
+        transcendental/rational integrands can spend minutes in heuristic
+        search, which is unsafe inside a per-question Agent budget.  Refusing
+        such a request is an abstention, never a mathematical verdict.
+        """
+        text = str(expression or "").strip()
+        name = str(variable or "").strip()
+        if (
+            not text
+            or len(text) > 600
+            or not re.fullmatch(r"[A-Za-z]", name)
+            or re.search(
+                r"\b(?:Piecewise|RootSum|Integral|Derivative|Sum|Product)\b|"
+                r"\b(?:abs|sign|floor|ceiling|gamma|polygamma|polylog|meijerg|"
+                r"hyper|elliptic|bessel|erf|Ei)\s*\(",
+                text,
+                re.IGNORECASE,
+            )
+        ):
+            return False
+        function_calls = re.findall(
+            r"\b(?:log|ln|sin|cos|tan|asin|acos|atan|sinh|cosh|tanh|exp)\s*\(",
+            text,
+            re.IGNORECASE,
+        )
+        if len(function_calls) > 1:
+            return False
+        # A transcendental numerator over a variable-dependent denominator is
+        # a common trigger for expensive special-function search.  Simple
+        # log(x), sin(x), exp(x), and rational functions remain admitted.
+        if function_calls and re.search(
+            rf"/\s*(?:\([^)]*\b{re.escape(name)}\b[^)]*\)|"
+            rf"[^+\-*/\n]{{0,80}}\b{re.escape(name)}\b)",
+            text,
+        ):
+            return False
+        if re.search(rf"\^\s*\([^)]*\b{re.escape(name)}\b", text):
+            return False
+        return True
 
     def limit(self, expression: str, variable: str, point: str) -> Optional[str]:
         return self._run(
@@ -1180,6 +1229,16 @@ class SympyTool:
         )
 
     def _compile_laplacian(self, text: str) -> Optional[ToolResult]:
+        # A bi-Laplacian is Delta squared, not the ordinary Laplacian.  The
+        # generic compiler does not implement that operator, so a hyphenated
+        # English name must not fall through to the ``laplacian`` word match.
+        if re.search(
+            r"双调和(?:算子|方程)?|双拉普拉斯|"
+            r"\b(?:bi[- ]?laplacian|biharmonic(?:\s+operator)?)\b",
+            text,
+            re.IGNORECASE,
+        ):
+            return None
         if not re.search(
             r"拉普拉斯算子|拉普拉斯量|拉普拉斯方程|拉普拉斯[-— ]?贝尔特拉米|"
             r"是否调和|是不是调和|"
@@ -1209,9 +1268,24 @@ class SympyTool:
             text,
             re.IGNORECASE,
         ))
-        if surface_context and not explicit_ambient and not circle_context:
-            # General surfaces require a metric parser.  The centered circle
-            # case below is the only intrinsic geometry certified here.
+        explicit_intrinsic = bool(re.search(
+            r"内蕴|诱导度量|拉普拉斯[-— ]?贝尔特拉米|"
+            r"\b(?:intrinsic|induced[- ]metric)\b[^.\n]{0,45}\blaplacian\b|"
+            r"\bLaplace[- ]Beltrami\b",
+            text,
+            re.IGNORECASE,
+        ))
+        if explicit_intrinsic and explicit_ambient:
+            return None
+        if surface_context and not (explicit_intrinsic or explicit_ambient):
+            # ``the Laplacian on a surface`` can mean the ambient Euclidean
+            # operator or the intrinsic Laplace-Beltrami operator.  Both are
+            # mathematically standard and can disagree, so abstain unless the
+            # statement selects one explicitly.
+            return None
+        if explicit_intrinsic and (not surface_context or not circle_context):
+            # General intrinsic surfaces require an explicit metric parser.
+            # The centered circle case below is the only certified geometry.
             return None
         definitions: list[tuple[tuple[str, ...], str]] = []
         function_name = "f"
@@ -1286,7 +1360,7 @@ class SympyTool:
         except Exception:
             return None
 
-        if surface_context and not explicit_ambient:
+        if explicit_intrinsic:
             if len(variables) != 2 or not point_requested:
                 return None
             x_var, y_var = variables
@@ -2509,7 +2583,7 @@ class SympyTool:
             r"是否|是不是|并(?:计算|求|判断|验证)|"
             r"\b(?:whether|and\s+(?:compute|find|determine|verify)|"
             r"is\s+(?:an?\s+)?solution|satisf(?:y|ies)|solves?)\b|"
-            r"[，。；;?？]|$)",
+            r"\$|[，。；;?？]|$)",
             re.IGNORECASE | re.DOTALL,
         )
         sources = tuple(dict.fromkeys((
@@ -2577,11 +2651,25 @@ class SympyTool:
             "factorial", "binomial", "gamma",
         }
         constants = {"pi", "oo", "E", "I"}
-        if any(identifier not in functions | constants and (len(identifier) != 1 or not identifier.isalpha()) for identifier in identifiers):
+        called_identifiers = set(re.findall(r"\b([A-Za-z_]+)\s*\(", value))
+        if called_identifiers - functions:
+            # Never let SymPy resolve an undefined f(x), S(n), Q(x), ...
+            # through its global namespace. A caller must first substitute an
+            # explicitly parsed function definition.
+            raise ValueError("unsupported function call")
+        if any(
+            identifier not in functions | constants
+            and (len(identifier) != 1 or identifier not in string.ascii_letters)
+            for identifier in identifiers
+        ):
             raise ValueError("unsupported identifier")
         local = {name: getattr(self.sympy, name) for name in functions if hasattr(self.sympy, name)}
         local.update({"pi": self.sympy.pi, "oo": self.sympy.oo, "E": self.sympy.E, "I": self.sympy.I})
-        local.update({letter: self.sympy.Symbol(letter) for letter in "abcdefghijklmnopqrstuvwxyz"})
+        local.update({
+            letter: self.sympy.Symbol(letter)
+            for letter in string.ascii_letters
+            if letter not in {"E", "I"}
+        })
         return self.sympy.sympify(value, locals=local)
 
     @staticmethod
