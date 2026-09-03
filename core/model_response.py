@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+import json
+from collections.abc import Sequence
 from typing import Any, Mapping
 
 
@@ -14,7 +16,9 @@ class ModelCallResult:
 
     @property
     def provider_truncated(self) -> bool:
-        return self.finish_reason.lower() in {"length", "max_tokens", "token_limit"}
+        return _string_value(self.finish_reason).strip().casefold() in {
+            "length", "max_tokens", "token_limit"
+        }
 
 
 def _read_field(value: Any, name: str, default: Any = None) -> Any:
@@ -31,22 +35,26 @@ def _text_content(value: Any) -> str:
     if isinstance(value, str):
         return value
     if isinstance(value, Mapping):
-        if "value" in value:
-            return _text_content(value["value"])
-        if "text" in value:
-            return _text_content(value["text"])
-    if isinstance(value, (list, tuple)):
+        for key in ("value", "text", "content"):
+            nested = value.get(key)
+            if nested is not None:
+                return _text_content(nested)
+    if isinstance(value, Sequence) and not isinstance(value, (str, bytes, bytearray)):
         parts: list[str] = []
         for part in value:
             text = _read_field(part, "text", None)
             if text is None:
                 text = _read_field(part, "value", None)
+            if text is None:
+                text = _read_field(part, "content", None)
             if text is None and isinstance(part, str):
                 text = part
             if text is not None:
                 parts.append(_text_content(text))
-        if parts:
-            return "".join(parts)
+        # A content array can contain refusal/image/tool blocks without text.
+        # Do not turn that structured value into Python's repr and accidentally
+        # submit it as mathematical prose.
+        return "".join(parts)
     value_field = _read_field(value, "value", None)
     if value_field is not None and value_field is not value:
         return _text_content(value_field)
@@ -60,7 +68,12 @@ def _string_value(value: Any, default: str = "") -> str:
     if isinstance(value, str):
         return value
     scalar = _read_field(value, "value", None)
-    return str(scalar if scalar is not None else value)
+    if scalar is not None and scalar is not value:
+        return _string_value(scalar, default)
+    name = _read_field(value, "name", None)
+    if name is not None and name is not value:
+        return str(name)
+    return str(value)
 
 
 def _coerce_usage(value: Any) -> Mapping[str, Any]:
@@ -81,9 +94,21 @@ def _coerce_usage(value: Any) -> Mapping[str, Any]:
 
 def _first_choice(value: Any) -> Any:
     choices = _read_field(value, "choices", None)
-    if isinstance(choices, (list, tuple)) and choices:
+    if isinstance(choices, Sequence) and not isinstance(
+        choices, (str, bytes, bytearray)
+    ) and choices:
         return choices[0]
     return None
+
+
+def _tool_arguments(value: Any) -> str:
+    """Keep parsed SDK argument objects valid on the next tool request."""
+    if isinstance(value, Mapping):
+        try:
+            return json.dumps(value, ensure_ascii=False, separators=(",", ":"))
+        except (TypeError, ValueError):
+            pass
+    return _text_content(value)
 
 
 def _tool_call(value: Any) -> dict[str, Any] | None:
@@ -98,7 +123,7 @@ def _tool_call(value: Any) -> dict[str, Any] | None:
         "type": _string_value(_read_field(value, "type", "function"), "function"),
         "function": {
             "name": _string_value(name),
-            "arguments": _text_content(arguments),
+            "arguments": _tool_arguments(arguments),
         },
     }
 
@@ -106,7 +131,9 @@ def _tool_call(value: Any) -> dict[str, Any] | None:
 def _tool_message(value: Any) -> dict[str, Any] | None:
     """Return a canonical assistant message when tool calls are present."""
     calls = _read_field(value, "tool_calls", None)
-    if not isinstance(calls, (list, tuple)):
+    if not isinstance(calls, Sequence) or isinstance(
+        calls, (str, bytes, bytearray)
+    ):
         return None
     normalized = [item for call in calls if (item := _tool_call(call)) is not None]
     if not normalized:
