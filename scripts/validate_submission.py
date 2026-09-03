@@ -573,6 +573,22 @@ def _transport_metadata_violations(agent_class) -> list[str]:
     return violations
 
 
+def _response_structure_violations() -> list[str]:
+    from reasoning.finalizer import Finalizer
+
+    violations: list[str] = []
+    truncated = (
+        "We reduce the expression to the remaining boundary contribution, "
+        "and the final simplification depends on"
+    )
+    if "truncated_sentence" not in Finalizer.validate_structure(truncated):
+        violations.append("dangling English preposition was not detected as truncation")
+    complete = "The sequence converges in probability."
+    if Finalizer.validate_structure(complete):
+        violations.append("complete mathematical sentence was rejected as truncation")
+    return violations
+
+
 def main() -> int:
     entry = ROOT / "user_agent.py"
     if not entry.is_file():
@@ -612,6 +628,12 @@ def main() -> int:
     if transport_violations:
         print("transport-metadata validation failed:", file=sys.stderr)
         for violation in transport_violations:
+            print(f"- {violation}", file=sys.stderr)
+        return 1
+    structure_violations = _response_structure_violations()
+    if structure_violations:
+        print("response-structure validation failed:", file=sys.stderr)
+        for violation in structure_violations:
             print(f"- {violation}", file=sys.stderr)
         return 1
     result = validation_agent.solve("计算 1+1。", {"idx": 0})

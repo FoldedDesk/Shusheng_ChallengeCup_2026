@@ -521,7 +521,8 @@ class Finalizer:
         if re.search(
             r"(?:^|[\s,，;；。:：\-–—])(?:若|如果|当|因为|由于|由|则|且|并|或|"
             r"因此|所以|故|从而|可得|"
-            r"if|when|because|since|therefore|hence|then|and|or|where|with|by)"
+            r"if|when|because|since|therefore|hence|then|and|or|where|with|by|"
+            r"on|of|to|from|into|about|as)"
             r"\s*[:：\-–—]?\s*$",
             value,
             re.IGNORECASE,

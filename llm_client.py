@@ -85,7 +85,7 @@ class InternChatClient:
             request_args=request_args,
         )
         content = message.get("content", "")
-        if "tool_calls" in message and not content:
+        if "tool_calls" in message:
             content = json.dumps(message, ensure_ascii=False)
         return coerce_model_response({
             "content": content,
