@@ -501,6 +501,29 @@ def _answer_contract_violations() -> list[str]:
     return violations
 
 
+def _production_default_violations(agent: object) -> list[str]:
+    """Keep rejected experiment switches out of the submitted default path."""
+    internal = getattr(agent, "agent", agent)
+    expected = {
+        "primary_temperature": 0.2,
+        "enable_subject_protocols": True,
+        "enable_mog": False,
+        "enable_candidate_audit": False,
+        "enable_blind_consensus": False,
+        "enable_quick_consensus": False,
+        "enable_complex_subproblem_tools": False,
+        "compact_primary_prompt": False,
+    }
+    violations: list[str] = []
+    for name, expected_value in expected.items():
+        actual = getattr(internal, name, None)
+        if actual != expected_value:
+            violations.append(
+                f"production default {name}={actual!r}; expected {expected_value!r}"
+            )
+    return violations
+
+
 def main() -> int:
     entry = ROOT / "user_agent.py"
     if not entry.is_file():
@@ -529,7 +552,14 @@ def main() -> int:
     if [parameter.name for parameter in solve_parameters[:3]] != ["self", "problem", "metadata"]:
         print("ReasoningAgent.solve must accept problem and metadata", file=sys.stderr)
         return 1
-    result = agent_class(client=ValidationClient()).solve("计算 1+1。", {"idx": 0})
+    validation_agent = agent_class(client=ValidationClient())
+    default_violations = _production_default_violations(validation_agent)
+    if default_violations:
+        print("production-default validation failed:", file=sys.stderr)
+        for violation in default_violations:
+            print(f"- {violation}", file=sys.stderr)
+        return 1
+    result = validation_agent.solve("计算 1+1。", {"idx": 0})
     if not isinstance(result, dict) or not isinstance(result.get("final_response"), str) or not result["final_response"].strip():
         print("invalid response", file=sys.stderr)
         return 1
