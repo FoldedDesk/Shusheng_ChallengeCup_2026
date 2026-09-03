@@ -5,7 +5,7 @@ from __future__ import annotations
 from fractions import Fraction
 import re
 
-from tools.latex_parser import find_matching_brace, normalize_latex
+from tools.latex_parser import normalize_latex
 from classifier.choice import answer_choice_labels
 
 
@@ -40,19 +40,12 @@ def equivalent_answers(left: str, right: str) -> bool:
         _finite_nested_integer_set_match,
         _finite_roots_of_unity_set_match,
         _jordan_block_multiset_match,
-        _multistep_stability_summary_match,
         _integer_tuple_parameter_family_match,
-        # Resolve explicit finite function lists before broad polynomial-family
-        # signatures.  Otherwise one quadratic member can make the broad
-        # matcher reject two equivalent, reordered solution sets.
-        _repeated_function_family_match,
         _polynomial_family_match,
         _trigonometric_family_match,
         _entropy_identity_match,
         _runge_kutta_stability_match,
         _gaussian_curvature_function_match,
-        _poisson_exponential_umvu_match,
-        _operator_norm_spectrum_point_match,
         _wasserstein_transport_match,
         _rouche_zero_count_match,
         _uniform_series_summary_match,
@@ -64,6 +57,7 @@ def equivalent_answers(left: str, right: str) -> bool:
         _approximate_exact_pair_match,
         _approximate_interval_match,
         _negative_convergence_match,
+        _repeated_function_family_match,
     ):
         specialized_match = matcher(left_value, right_value)
         if specialized_match is not None:
@@ -74,18 +68,6 @@ def equivalent_answers(left: str, right: str) -> bool:
     # expression fallbacks, which intentionally look for any shared fragment.
     # Once both (or either) sides clearly claim multiple labelled results, all
     # labels and all corresponding values must agree.
-    # Tool-backed and concise model answers often introduce each requested
-    # object with a short prose label, for example ``iteration matrix
-    # $B_J=...$`` followed by ``$x^{(1)}=...$``.  The older assignment parser
-    # deliberately accepts only an all-mathematics answer line, so it misses
-    # this common, still unambiguous representation.  Compare the complete set
-    # of named assignments found in explicit math spans before falling back to
-    # any-fragment heuristics.  This remains fail closed: both sides need at
-    # least two labels, their label sets must agree, and every value must match.
-    span_assignment_match = _math_span_assignment_list_match(left_raw, right_raw)
-    if span_assignment_match is not None:
-        return span_assignment_match
-
     assignment_match = _assignment_list_match(left_raw, right_raw)
     if assignment_match is not None:
         return assignment_match
@@ -171,10 +153,6 @@ def equivalent_answers(left: str, right: str) -> bool:
     if _adjoint_product_rule_match(left_value, right_value):
         return True
 
-    textual_list_match = _short_textual_item_list_match(left_value, right_value)
-    if textual_list_match is not None:
-        return textual_list_match
-
     a_choice = answer_choice_labels(left_value)
     b_choice = answer_choice_labels(right_value)
     if a_choice or b_choice:
@@ -192,51 +170,6 @@ def equivalent_answers(left: str, right: str) -> bool:
     a_expressions = _expressions(left_value)
     b_expressions = _expressions(right_value)
     return bool(a_expressions and b_expressions and _symbolically_match(a_expressions, b_expressions))
-
-
-def _short_textual_item_list_match(left: str, right: str) -> bool | None:
-    """Compare short unordered lists across punctuation/conjunction spelling.
-
-    The matcher is deliberately unavailable for mathematical expressions or
-    prose sentences. At least one side must use an explicit list separator;
-    this lets ``A和B`` match ``A、B`` without treating every Chinese ``和``
-    inside ordinary prose as a list boundary.
-    """
-
-    def prepare(value: str) -> str:
-        text = _unwrap_text_commands(normalize_latex(str(value or ""))).strip()
-        text = re.sub(
-            r"(?i)^\s*(?:最终答案|答案|answer|final\s+answer)\s*[:：]?\s*",
-            "",
-            text,
-        )
-        return text.strip(" \t\r\n。.!?")
-
-    first, second = prepare(left), prepare(right)
-    if (
-        not first
-        or not second
-        or max(len(first), len(second)) > 180
-        or re.search(r"[$=<>\\^{}\[\]()\n]", first + second)
-        or re.search(r"[。.!?：:]", first + second)
-        or not re.search(r"[、,，;；]", first + second)
-    ):
-        return None
-
-    separator = r"\s*(?:、|,|，|;|；|以及|和|与|\band\b)\s*"
-
-    def parts(value: str) -> tuple[str, ...]:
-        items = tuple(
-            _compact(item)
-            for item in re.split(separator, value, flags=re.IGNORECASE)
-            if _compact(item)
-        )
-        return items if 2 <= len(items) <= 8 else ()
-
-    left_parts, right_parts = parts(first), parts(second)
-    if not left_parts or not right_parts:
-        return None
-    return sorted(left_parts) == sorted(right_parts)
 
 
 def _finite_game_outcome_match(left: str, right: str) -> bool | None:
@@ -807,113 +740,6 @@ def _sample_sum_estimator_match(left: str, right: str) -> bool | None:
     return left_signature == right_signature
 
 
-def _poisson_exponential_umvu_signature(value: str) -> str:
-    """Extract an explicit exp(-lambda) UMVU estimator without comparing prose."""
-    text = normalize_latex(str(value or ""))
-    if not re.search(r"Poisson|泊松", text, re.IGNORECASE) or not re.search(
-        r"\bUMVU\b|一致最小方差无偏|uniformly\s+minimum\s+variance",
-        text,
-        re.IGNORECASE,
-    ):
-        return ""
-
-    aliases: set[str] = set()
-    fragments = _math_result_fragments(text)
-    for fragment in fragments:
-        equation = _split_single_top_level_equals(fragment.strip(" $，,；;"))
-        if equation is None:
-            continue
-        lhs, rhs = equation
-        if re.fullmatch(r"[A-Za-z]", lhs.strip()) and _SIMPLE_SAMPLE_SUM.fullmatch(
-            rhs.strip()
-        ):
-            aliases.add(lhs.strip())
-
-    estimators: list[str] = []
-    for fragment in fragments:
-        equation = _split_single_top_level_equals(fragment.strip(" $，,；;"))
-        if equation is None:
-            continue
-        lhs, rhs = equation
-        if not re.search(r"\\(?:widehat|hat)", lhs) or not re.search(
-            r"(?:\\lambda|lambda|λ)", lhs,
-            re.IGNORECASE,
-        ):
-            continue
-        canonical = _SIMPLE_SAMPLE_SUM.sub("TOTAL", rhs.strip())
-        for alias in aliases:
-            canonical = re.sub(
-                rf"(?<![A-Za-z0-9_]){re.escape(alias)}(?![A-Za-z0-9_])",
-                "TOTAL",
-                canonical,
-            )
-        if _parse_scalar_expression(canonical) is not None:
-            estimators.append(canonical)
-    return min(estimators, key=len) if estimators else ""
-
-
-def _poisson_exponential_umvu_match(left: str, right: str) -> bool | None:
-    left_signature = _poisson_exponential_umvu_signature(left)
-    right_signature = _poisson_exponential_umvu_signature(right)
-    if not left_signature and not right_signature:
-        return None
-    if not left_signature or not right_signature:
-        return False
-    return _scalar_math_match(left_signature, right_signature)
-
-
-def _operator_norm_spectrum_point_signature(
-    value: str,
-) -> tuple[str, str, str, bool] | None:
-    """Parse the norm, interval spectrum, and explicitly empty point spectrum."""
-    text = normalize_latex(str(value or ""))
-    norm = re.search(
-        r"(?:\\?\|\s*T\s*\\?\||\\lVert\s*T\s*\\rVert)\s*=\s*"
-        r"(?P<value>\\(?:d?frac)\s*\{[^{}]+\}\s*\{[^{}]+\}|"
-        r"[-+]?\d+(?:\.\d+)?(?:/[-+]?\d+)?)",
-        text,
-    )
-    spectrum = re.search(
-        r"\\sigma\s*\(\s*T\s*\)\s*=\s*\[\s*"
-        r"(?P<lower>[^,，\]\n]+)\s*[,，]\s*(?P<upper>[^\]\n]+)\s*\]",
-        text,
-        re.IGNORECASE,
-    )
-    point_empty = bool(re.search(
-        r"(?:\\sigma\s*_?\s*\{?p\}?\s*\(\s*T\s*\)|点谱|point\s+spectrum)"
-        r"[^。；;\n]{0,40}(?:=|为|是|is)\s*\$?\s*"
-        r"(?:\\varnothing|\\emptyset|∅|空集|空)",
-        text,
-        re.IGNORECASE,
-    ))
-    if norm is None or spectrum is None or not point_empty:
-        return None
-    values = (
-        norm.group("value").strip(),
-        spectrum.group("lower").strip(),
-        spectrum.group("upper").strip(),
-    )
-    if any(_parse_scalar_expression(item) is None for item in values):
-        return None
-    return values[0], values[1], values[2], point_empty
-
-
-def _operator_norm_spectrum_point_match(left: str, right: str) -> bool | None:
-    left_signature = _operator_norm_spectrum_point_signature(left)
-    right_signature = _operator_norm_spectrum_point_signature(right)
-    if left_signature is None and right_signature is None:
-        return None
-    if left_signature is None or right_signature is None:
-        return False
-    return bool(
-        left_signature[3] and right_signature[3]
-        and all(
-            _scalar_math_match(left_item, right_item)
-            for left_item, right_item in zip(left_signature[:3], right_signature[:3])
-        )
-    )
-
-
 def _abelian_group_signature(value: str) -> tuple[int, tuple[int, ...]] | None:
     """Parse a finite-rank Z-module written as free and cyclic summands."""
     text = _strip_math_wrappers(value).replace(r"\left", "").replace(r"\right", "")
@@ -1306,21 +1132,6 @@ def _contour_integral_signature(value: str) -> str:
         terminal = _terminal_chain_expression(fragment)
         if terminal:
             candidates.append(terminal)
-    # Concise residue solutions often omit the word "contour" in the final
-    # sentence after the contour was explicit in the problem.  Accept only an
-    # explicit integral-result assignment inside a math span; residue values
-    # elsewhere in the proof are not eligible as the requested integral.
-    if not candidates and re.search(r"\\operatorname\s*\{?Res\}?|\bresidue\b|留数", value, re.IGNORECASE):
-        for match in re.finditer(
-            r"(?:围道)?积分\s*(?:为|等于|=)\s*\$([^$]+)\$|"
-            r"(?:contour\s+)?integral\s*(?:is|equals?|=)\s*\$([^$]+)\$",
-            value,
-            re.IGNORECASE,
-        ):
-            body = next(group for group in match.groups() if group is not None)
-            terminal = _terminal_chain_expression(body) or body.strip()
-            if terminal:
-                candidates.append(terminal)
     return candidates[-1] if candidates else ""
 
 
@@ -1415,7 +1226,7 @@ def _nilpotent_summary_signature(
 ) -> tuple[tuple[int, ...], str, int, int] | None:
     text = normalize_latex(str(value or ""))
     blocks = re.search(
-        r"(?:Jordan\s*)?(?:全部)?块(?:大小)?\s*(?:为|是|=|[:：])\s*\$?\s*"
+        r"(?:Jordan\s*)?块大小\s*(?:为|是|=|[:：])\s*\$?\s*"
         r"[\[(]?\s*((?:\d+\s*[,，]\s*)+\d+)\s*[\])]??\s*\$?",
         text,
         re.IGNORECASE,
@@ -1980,60 +1791,6 @@ def _parenthesize_function_atoms(value: str) -> str:
         search_from = match.start() + len(replacement)
 
 
-def _replace_symbolic_binomial_coefficients(value: str) -> str:
-    r"""Translate unambiguous scalar ``\binom{u}{k}`` terms for SymPy.
-
-    TeX also uses ``\binom{a}{b}`` as a compact two-entry column vector, so
-    treating every occurrence as a binomial coefficient is unsafe.  The
-    scalar equivalence layer only translates the conservative form whose
-    lower argument is a nonnegative integer and whose upper argument contains
-    a variable or arithmetic operation.  Purely numeric pairs remain
-    untouched and are handled, if applicable, by the structured-object
-    parser.
-    """
-    text = str(value or "")
-    search_from = 0
-    while True:
-        match = re.search(r"\\binom(?![A-Za-z])", text[search_from:])
-        if match is None:
-            return text
-        start = search_from + match.start()
-        cursor = search_from + match.end()
-        while cursor < len(text) and text[cursor].isspace():
-            cursor += 1
-        if cursor >= len(text) or text[cursor] != "{":
-            search_from = cursor
-            continue
-        upper_end = find_matching_brace(text, cursor)
-        if upper_end < 0:
-            return text
-        lower_start = upper_end + 1
-        while lower_start < len(text) and text[lower_start].isspace():
-            lower_start += 1
-        if lower_start >= len(text) or text[lower_start] != "{":
-            search_from = upper_end + 1
-            continue
-        lower_end = find_matching_brace(text, lower_start)
-        if lower_end < 0:
-            return text
-
-        upper = text[cursor + 1:upper_end].strip()
-        lower = text[lower_start + 1:lower_end].strip()
-        safe_upper = bool(
-            upper
-            and re.fullmatch(r"[A-Za-z0-9_+\-*/^().\s]+", upper)
-            and (re.search(r"[A-Za-z_]", upper) or re.search(r"[+\-*/^()]", upper))
-        )
-        safe_lower = bool(re.fullmatch(r"\d+", lower))
-        if not safe_upper or not safe_lower or int(lower) > 1000:
-            search_from = lower_end + 1
-            continue
-
-        replacement = f"binomial(({upper}),({lower}))"
-        text = text[:start] + replacement + text[lower_end + 1:]
-        search_from = start + len(replacement)
-
-
 def _parse_scalar_expression(value: str):
     text = _strip_math_wrappers(value)
     if not text or len(text) > 600 or "=" in text or "&" in text:
@@ -2050,7 +1807,6 @@ def _parse_scalar_expression(value: str):
     # Both ``2\pi i`` and ``2 i\pi`` are conventional scalar notation.
     # Canonicalize the latter before implicit multiplication is inserted.
     text = re.sub(r"(?<![A-Za-z0-9_])i\s*\\pi", r"\\pi i", text)
-    text = _replace_symbolic_binomial_coefficients(text)
     text = _replace_bare_log_bases(
         _replace_parenthesized_log_bases(
             _parenthesize_function_atoms(
@@ -2913,72 +2669,6 @@ def _runge_kutta_stability_match(left: str, right: str) -> bool | None:
     )
 
 
-def _multistep_stability_summary_match(left: str, right: str) -> bool | None:
-    """Compare multi-obligation linear-multistep summaries conservatively."""
-
-    def conclusion(text: str, positive: str, negative: str) -> bool | None:
-        if re.search(negative, text, re.IGNORECASE):
-            return False
-        if re.search(positive, text, re.IGNORECASE):
-            return True
-        return None
-
-    def order(text: str) -> int | None:
-        match = re.search(
-            r"(?:阶数|精度阶|order)\s*(?:为|是|=|:|：|is)?\s*"
-            r"(?P<first>\d+|一|二|三|四)|"
-            r"(?P<second>\d+|一|二|三|四)\s*阶",
-            text,
-            re.IGNORECASE,
-        )
-        if match is None:
-            return None
-        token = match.group("first") or match.group("second")
-        return int(token) if token.isdigit() else {"一": 1, "二": 2, "三": 3, "四": 4}.get(token)
-
-    def signature(value: str):
-        text = _unwrap_text_commands(normalize_latex(str(value or "")))
-        if not re.search(r"(?:\\?xi|ξ)", text, re.IGNORECASE):
-            return None
-        if not re.search(
-            r"z\s*\(\s*(?:\\?theta|θ)\s*\)|稳定边界|stability\s+boundary",
-            text,
-            re.IGNORECASE,
-        ):
-            return None
-        equations = {
-            _compact(span)
-            for span in re.findall(r"\$([^$\n]+)\$", text)
-            if "=" in span and re.search(r"(?:\\?xi|ξ|z\s*\()", span, re.IGNORECASE)
-        }
-        zero_stable = conclusion(
-            text,
-            r"零稳定|zero[- ]stable|满足(?:了)?根条件|"
-            r"satisf(?:y|ies|ied)[^.;\n]{0,30}root\s+condition|"
-            r"root\s+condition\s+(?:holds|is\s+satisfied)",
-            r"非零稳定|不零稳定|不是零稳定|not\s+zero[- ]stable|"
-            r"不满足根条件|root\s+condition\s+(?:fails|is\s+not\s+satisfied)",
-        )
-        a_stable = conclusion(
-            text,
-            r"A\s*[- ]?稳定|A[- ]stable",
-            r"(?:不|非|不是|并非)\s*A\s*[- ]?稳定|not\s+A[- ]stable",
-        )
-        parsed_order = order(text)
-        if len(equations) < 2 or zero_stable is None or a_stable is None or parsed_order is None:
-            return None
-        return equations, zero_stable, parsed_order, a_stable
-
-    first = signature(left)
-    second = signature(right)
-    if first is None or second is None:
-        return None
-    return bool(
-        len(first[0].intersection(second[0])) >= 2
-        and first[1:] == second[1:]
-    )
-
-
 def _gaussian_curvature_signature(value: str) -> str:
     candidates: list[str] = []
     for fragment in _math_result_fragments(value):
@@ -3143,7 +2833,6 @@ def _uniform_series_summary_match(left: str, right: str) -> bool | None:
 
 def _optimization_signature(value: str) -> tuple[tuple[str, ...], str] | None:
     text = _unwrap_text_commands(_strip_math_wrappers(value))
-    text = text.replace(r"\left", "").replace(r"\right", "")
     coordinate = re.search(
         r"\(\s*(?:[A-Za-z]\s*,\s*)+[A-Za-z]\s*\)\s*=\s*"
         r"(?P<tuple>\([^()]+\))",
@@ -3240,20 +2929,9 @@ def _finite_exact_order_count_signature(value: str) -> tuple[int, int] | None:
 def _finite_exact_order_count_match(left: str, right: str) -> bool | None:
     left_signature = _finite_exact_order_count_signature(left)
     right_signature = _finite_exact_order_count_signature(right)
-    if left_signature is not None and right_signature is not None:
-        return left_signature == right_signature
-
-    def bare_integer(value: str) -> int | None:
-        answer = _strip_math_wrappers(_answer_value(value)).strip()
-        return int(answer) if re.fullmatch(r"[-+]?\d+", answer) else None
-
-    if left_signature is not None:
-        direct = bare_integer(right)
-        return left_signature[1] == direct if direct is not None else None
-    if right_signature is not None:
-        direct = bare_integer(left)
-        return right_signature[1] == direct if direct is not None else None
-    return None
+    if left_signature is None or right_signature is None:
+        return None
+    return left_signature == right_signature
 
 
 def _vitali_conclusion_signature(value: str) -> tuple[bool, bool] | None:
@@ -3767,77 +3445,6 @@ def _assignment_list_match(left: str, right: str) -> bool | None:
     )
 
 
-def _math_span_assignment_list_match(left: str, right: str) -> bool | None:
-    """Compare complete multi-result assignments embedded in concise prose.
-
-    Only explicit dollar or ``\\(...\\)`` math spans are inspected.  This is
-    intentionally narrower than scanning arbitrary proof text: it is meant for
-    answer lines such as a matrix, spectral radius, and requested iterates.
-    """
-    left_parts = _math_span_assignment_parts(_answer_value(left))
-    right_parts = _math_span_assignment_parts(_answer_value(right))
-    if left_parts is None and right_parts is None:
-        return None
-    if left_parts is None or right_parts is None:
-        # A one-sided collection may simply be explanatory derivation beside
-        # a concise scalar answer.  It supplies no safe list-level verdict;
-        # dedicated scalar/count/family matchers below may still compare it.
-        return None
-    if left_parts.keys() != right_parts.keys():
-        return False
-    return all(
-        _component_match(left_parts[key], right_parts[key])
-        for key in left_parts
-    )
-
-
-def _math_span_assignment_parts(value: str) -> dict[str, str] | None:
-    text = normalize_latex(str(value or ""))
-    parts: dict[str, str] = {}
-    conflicting_key = False
-    for match in re.finditer(
-        r"\$(?P<dollar>[^$\n]+)\$|\\\((?P<paren>.*?)\\\)",
-        text,
-        re.DOTALL,
-    ):
-        fragment = (match.group("dollar") or match.group("paren") or "").strip()
-        equation = _split_single_top_level_equals(fragment)
-        if equation is None:
-            continue
-        lhs, rhs = equation
-        key = _assignment_key(lhs) or _safe_expression_assignment_key(lhs)
-        if not key or not rhs.strip():
-            continue
-        if key in parts:
-            # A repeated label is acceptable only when it repeats the same
-            # value.  Conflicting revisions must never be hidden by this
-            # equivalence path.
-            if not _component_match(parts[key], rhs):
-                conflicting_key = True
-                break
-            continue
-        parts[key] = rhs.strip()
-    if conflicting_key or len(parts) < 2:
-        return None
-    return parts
-
-
-def _safe_expression_assignment_key(value: str) -> str:
-    """Canonicalize a bounded symbolic lhs, never a matrix or prose clause."""
-    text = normalize_latex(str(value or "")).strip()
-    if (
-        not text
-        or len(text) > 180
-        or "=" in text
-        or _MATRIX_ENVIRONMENT.search(text)
-        or re.search(r"(?:<=|>=|<|>|≤|≥|\\\\leq?|\\\\geq?)", text)
-        or not re.search(r"[A-Za-z]|\\\\[A-Za-z]+", text)
-        or not re.fullmatch(r"[A-Za-z0-9_{}^()\\.\s+*/-]+", text)
-    ):
-        return ""
-    return _compact(text)
-
-
 def _repeated_function_family_match(left: str, right: str) -> bool | None:
     """Compare short unordered families written as repeated function assignments."""
     left_family = _repeated_function_family(_answer_value(left))
@@ -3845,27 +3452,15 @@ def _repeated_function_family_match(left: str, right: str) -> bool | None:
     if left_family is None and right_family is None:
         return None
     if left_family is None or right_family is None:
-        # Set-builder and parameterized-family notations may describe the same
-        # solutions without repeating a function assignment.  Leave those
-        # asymmetric representations to the dedicated family matchers below.
-        return None
-    left_name, left_values = left_family
-    right_name, right_values = right_family
-    if left_name != right_name or len(left_values) != len(right_values):
+        return False
+    left_lhs, left_values = left_family
+    right_lhs, right_values = right_family
+    if left_lhs != right_lhs or len(left_values) != len(right_values):
         return False
     remaining = list(right_values)
-    for left_args, value in left_values:
+    for value in left_values:
         match_index = next(
-            (
-                index
-                for index, (right_args, other) in enumerate(remaining)
-                if _alpha_function_component_match(
-                    value,
-                    left_args,
-                    other,
-                    right_args,
-                )
-            ),
+            (index for index, other in enumerate(remaining) if _component_match(value, other)),
             None,
         )
         if match_index is None:
@@ -3874,78 +3469,20 @@ def _repeated_function_family_match(left: str, right: str) -> bool | None:
     return not remaining
 
 
-def _alpha_function_component_match(
-    left: str,
-    left_args: tuple[str, ...],
-    right: str,
-    right_args: tuple[str, ...],
-) -> bool:
-    """Compare two function formulas modulo bound-argument renaming.
-
-    Free parameter names remain authoritative.  The bound variables are
-    replaced only after both scalar expressions have parsed successfully, so
-    a rename cannot silently merge a free parameter with an argument.
-    """
-    if len(left_args) != len(right_args):
-        return False
-    left_expression = _parse_scalar_expression(left)
-    right_expression = _parse_scalar_expression(right)
-    if left_expression is None or right_expression is None:
-        return False
-    try:
-        import sympy as sp
-
-        left_bound = tuple(sp.Symbol(item.lower()) for item in left_args)
-        right_bound = tuple(sp.Symbol(item.lower()) for item in right_args)
-        if any(item not in left_expression.free_symbols for item in left_bound):
-            return False
-        if any(item not in right_expression.free_symbols for item in right_bound):
-            return False
-        if (
-            left_expression.free_symbols - set(left_bound)
-            != right_expression.free_symbols - set(right_bound)
-        ):
-            return False
-        canonical = tuple(sp.Dummy(f"bound_{index}") for index in range(len(left_args)))
-        normalized_left = left_expression.xreplace(dict(zip(left_bound, canonical)))
-        normalized_right = right_expression.xreplace(dict(zip(right_bound, canonical)))
-        return bool(sp.simplify(normalized_left - normalized_right) == 0)
-    except Exception:
-        return False
-
-
-def _repeated_function_family(
-    value: str,
-) -> tuple[str, tuple[tuple[tuple[str, ...], str], ...]] | None:
-    text = _unwrap_text_commands(normalize_latex(str(value or ""))).strip()
+def _repeated_function_family(value: str) -> tuple[str, tuple[str, ...]] | None:
+    text = normalize_latex(str(value or "")).strip()
     text = re.sub(
         r"(?i)^\s*(?:【\s*)?(?:最终答案|答案|final\s+answer|answer)(?:\s*】)?\s*[:：]?\s*",
         "",
         text,
     )
-    # TeX spacing commands such as ``\ `` and ``\,`` are presentation-only
-    # here.  Removing them before recognizing separators also lets a comma
-    # followed by ``\ `` start the next assignment cleanly.
-    text = re.sub(r"\\(?:quad|qquad)|\\(?=\s)|\\[,;:!]", " ", text)
-    # Finite solution families are commonly separated by prose ``or`` rather
-    # than commas.  Split only when the following clause starts another
-    # function assignment; an ``or`` inside a formula or explanation remains
-    # untouched.
-    text = re.sub(
-        r"\s+(?:or|或)\s+(?=(?:[A-Za-z]|\\[A-Za-z]+)\s*\()",
-        ",",
-        text,
-        flags=re.IGNORECASE,
-    )
     pieces = _split_assignment_pieces(text)
     if not 2 <= len(pieces) <= 8:
         return None
-    function_key = ""
-    values: list[tuple[tuple[str, ...], str]] = []
+    lhs_key = ""
+    values: list[str] = []
     for piece in pieces:
-        equation = _split_single_top_level_equals(
-            _clean_assignment_piece(piece).strip(" \t\r\n$")
-        )
+        equation = _split_single_top_level_equals(piece.strip(" \t\r\n$"))
         if equation is None:
             return None
         lhs, rhs = equation
@@ -3956,35 +3493,12 @@ def _repeated_function_family(
         )
         if function is None or not rhs.strip():
             return None
-        # A real-domain qualifier is redundant when attached to a displayed
-        # function identity.  Do not discard integer, positive, interval, or
-        # parameter restrictions: those can change the represented family.
-        rhs = re.sub(
-            r"\s*(?:for\s+(?:all|every)\s+(?:real\s+)?[A-Za-z]"
-            r"(?:\s*(?:\\in|in)\s*(?:\\mathbb\s*\{?R\}?|R|"
-            r"the\s+reals?))?|"
-            r"对(?:任意|所有)实数\s*[A-Za-z]|"
-            r"对于(?:任意|所有)实数\s*[A-Za-z])\s*$",
-            "",
-            rhs,
-            flags=re.IGNORECASE,
-        ).strip()
-        if not rhs:
+        current = re.sub(r"\s+", "", function.group(0)).casefold()
+        if lhs_key and current != lhs_key:
             return None
-        arguments = tuple(
-            item.strip().casefold()
-            for item in function.group("args").split(",")
-        )
-        current = f"{function.group('name').casefold()}/{len(arguments)}"
-        if function_key and current != function_key:
-            return None
-        function_key = current
-        values.append((arguments, rhs.strip()))
-    return (
-        (function_key, tuple(values))
-        if function_key and len(values) >= 2
-        else None
-    )
+        lhs_key = current
+        values.append(rhs.strip())
+    return (lhs_key, tuple(values)) if lhs_key and len(values) >= 2 else None
 
 
 def _assignment_parts(

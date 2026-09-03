@@ -24,7 +24,6 @@ class ProbabilityStatisticsTool:
         handlers = (
             self._conditional_two_dice,
             self._independent_standard_normal_sum,
-            self._conditional_order_statistic_given_maximum,
             self._geometric_tail,
             self._discrete_moments,
             self._symmetric_walk_moments,
@@ -32,7 +31,6 @@ class ProbabilityStatisticsTool:
             self._renewal_limit,
             self._z_critical,
             self._variance_preference,
-            self._poisson_exponential_umvu,
             self._full_covariance_gls,
         )
         results: list[ToolResult] = []
@@ -116,93 +114,6 @@ class ProbabilityStatisticsTool:
                             ("two_variables_parsed", "independence_present", "means_added", "variances_added"),
                             ("result_present", "reasoning", "support_anchor_1", "target_x"),
                             ("expression", "text"))
-
-    def _conditional_order_statistic_given_maximum(self, text: str) -> Optional[ToolResult]:
-        """Compute E[X_(r) | X_(n)=t] for an iid continuous uniform sample."""
-        if not re.search(r"次序统计量|order\s+statistics?", text, re.I):
-            return None
-        if not re.search(r"独立(?:同分布)?|iid|i\.i\.d\.|independent", text, re.I):
-            return None
-        if not re.search(
-            r"(?:U|Unif|Uniform)\s*\(\s*0\s*,\s*([^()]+?)\s*\)",
-            text,
-            re.I,
-        ):
-            return None
-        sample = re.search(
-            r"X\s*_?\s*\{?1\}?\s*[,，]\s*(?:\\ldots|\\cdots|\.{3})\s*[,，]\s*"
-            r"X\s*_?\s*\{?(\d+|[A-Za-z])\}?",
-            text,
-            re.I,
-        )
-        target = re.search(
-            r"E\s*\[\s*X\s*_?\s*\{?\s*\(\s*(\d+)\s*\)\s*\}?\s*"
-            r"(?:\\mid|\||given)\s*X\s*_?\s*\{?\s*\(\s*(\d+)\s*\)\s*\}?\s*=\s*"
-            r"([A-Za-z])\s*\]",
-            text,
-            re.I,
-        )
-        if sample is None or target is None:
-            return None
-        n = int(sample.group(1))
-        rank, conditioned_rank, value_symbol = int(target.group(1)), int(target.group(2)), target.group(3)
-        if not 2 <= n <= 10_000 or conditioned_rank != n or not 1 <= rank < n:
-            return None
-        # Requiring an explicit interior condition avoids endpoint versions
-        # whose regular conditional formulation needs separate wording.
-        if not re.search(
-            rf"0\s*<\s*{re.escape(value_symbol)}\s*<|"
-            rf"{re.escape(value_symbol)}\s*(?:\\in|∈|in)\s*\(\s*0\s*,",
-            text,
-            re.I,
-        ):
-            return None
-
-        coefficient = self.sp.Rational(rank, n)
-        # Cross-check with the Beta(r, n-r) first moment of the r-th order
-        # statistic among the n-1 observations below the conditioned maximum.
-        sample_below = n - 1
-        density_constant = self.sp.factorial(sample_below) / (
-            self.sp.factorial(rank - 1)
-            * self.sp.factorial(sample_below - rank)
-        )
-        beta_mean = self.sp.simplify(
-            density_constant
-            * self.sp.integrate(
-                self.sp.Symbol("v") ** rank
-                * (1 - self.sp.Symbol("v")) ** (sample_below - rank),
-                (self.sp.Symbol("v"), 0, 1),
-            )
-        )
-        if self.sp.simplify(beta_mean - coefficient) != 0:
-            return None
-        rendered = self.symbolic._format(coefficient * self.sp.Symbol(value_symbol))
-        zh = self._zh(text)
-        result = (
-            rf"在正则条件分布下，给定 $X_{{({n})}}={value_symbol}$ 后，其余 {n-1} 个样本等价于独立的 "
-            rf"$U(0,{value_symbol})$ 样本。$X_{{({rank})}}$ 是其中第 {rank} 个次序统计量，故 "
-            rf"$E[X_{{({rank})}}\mid X_{{({n})}}={value_symbol}]={rank}{value_symbol}/{n}={rendered}$。"
-            if zh else
-            rf"Under the regular conditional law given $X_{{({n})}}={value_symbol}$, the other {n-1} "
-            rf"observations are iid $U(0,{value_symbol})$. Thus $X_{{({rank})}}$ is their rank-{rank} order "
-            rf"statistic and $E[X_{{({rank})}}\mid X_{{({n})}}={value_symbol}]={rank}{value_symbol}/{n}={rendered}$."
-        )
-        return self._result(
-            text,
-            "conditional_order_statistic_given_maximum",
-            result,
-            "conditional_expectation",
-            "uniform_scaling_and_beta_order_statistic_mean",
-            (
-                "iid_uniform_sample_size_parsed",
-                "conditioned_maximum_rank_matches_sample_size",
-                "interior_condition_present",
-                "uniform_scaling_argument",
-                "beta_integral_mean_crosscheck",
-            ),
-            ("result_present", "numeric_result", "reasoning"),
-            ("expression", "number", "text"),
-        )
 
     def _geometric_tail(self, text: str) -> Optional[ToolResult]:
         if not re.search(r"首次(?:成功|正面)|直到首次|geometric|first\s+(?:success|head)", text, re.I):
@@ -402,83 +313,6 @@ class ProbabilityStatisticsTool:
                             ("unbiasedness_present", "variance_order_parsed", "mse_order_inferred"),
                             ("result_present", "reasoning"),
                             ("expression", "text", "choice"))
-
-    def _poisson_exponential_umvu(self, text: str) -> Optional[ToolResult]:
-        """Certify the UMVU estimator of exp(-lambda) in an iid Poisson sample."""
-        if not re.search(r"\bUMVU\b|一致最小方差无偏|uniformly\s+minimum\s+variance", text, re.I):
-            return None
-        if not re.search(r"独立|iid|i\.i\.d\.|independent", text, re.I):
-            return None
-        sample = re.search(
-            r"X\s*_?\s*\{?1\}?\s*[,，]\s*(?:\\ldots|\\cdots|\.{3})\s*[,，]\s*"
-            r"X\s*_?\s*\{?(\d+|[A-Za-z])\}?",
-            text,
-            re.I,
-        )
-        if sample is None or not re.search(
-            r"(?:\\operatorname\s*\{?Poisson\}?|Poisson)\s*\(\s*(?:\\lambda|λ|lambda)\s*\)",
-            text,
-            re.I,
-        ):
-            return None
-        if not re.search(
-            r"e\s*\^\s*\{\s*-\s*(?:\\lambda|λ|lambda)\s*\}|"
-            r"exp\s*\(\s*-\s*(?:\\lambda|λ|lambda)\s*\)",
-            text,
-            re.I,
-        ):
-            return None
-        sample_token = sample.group(1)
-        if sample_token.isdigit():
-            n = self.sp.Integer(sample_token)
-            if not 2 <= int(n) <= 1_000_000:
-                return None
-        else:
-            if not re.search(
-                rf"(?<![A-Za-z]){re.escape(sample_token)}\s*"
-                r"(?:>=|≥|\\geq?)\s*2",
-                text,
-                re.I,
-            ):
-                return None
-            n = self.sp.Symbol(sample_token, integer=True, positive=True)
-        base = self.sp.simplify((n - 1) / n)
-        if self.sp.simplify(n * (base - 1) + 1) != 0:
-            return None
-        base_text = self.symbolic._format(base)
-        zh = self._zh(text)
-        result = (
-            rf"令 $T=\sum_{{i=1}}^{{{n}}}X_i\sim\operatorname{{Poisson}}({n}\lambda)$。取 "
-            rf"$\widehat{{e^{{-\lambda}}}}=({base_text})^T$，由 Poisson 概率母函数，"
-            rf"$E[({base_text})^T]=\exp({n}\lambda(({base_text})-1))=e^{{-\lambda}}$。"
-            rf"$T$ 对该 Poisson 族充分；若 $E_\lambda g(T)=0$ 对所有 $\lambda>0$，"
-            rf"展开 $e^{{-{n}\lambda}}\sum_tg(t)({n}\lambda)^t/t!$ 可知每个系数均为 0，故 $T$ 完备。"
-            rf"因此由 Lehmann--Scheffé 定理，该估计量是 UMVU。"
-            if zh else
-            rf"Let $T=\sum_{{i=1}}^{{{n}}}X_i\sim\operatorname{{Poisson}}({n}\lambda)$. Set "
-            rf"$\widehat{{e^{{-\lambda}}}}=({base_text})^T$. The Poisson pgf gives "
-            rf"$E[({base_text})^T]=\exp({n}\lambda(({base_text})-1))=e^{{-\lambda}}$. "
-            rf"The statistic $T$ is sufficient, and if $E_\lambda g(T)=0$ for every $\lambda>0$, expansion of "
-            rf"$e^{{-{n}\lambda}}\sum_tg(t)({n}\lambda)^t/t!$ forces every coefficient to vanish, so $T$ is complete. "
-            rf"Lehmann--Scheffe therefore makes the estimator UMVU."
-        )
-        return self._result(
-            text,
-            "poisson_exponential_umvu",
-            result,
-            "umvu_estimator",
-            "poisson_pgf_and_complete_sufficient_sum",
-            (
-                "iid_poisson_sample_size_parsed",
-                "target_exponential_parsed",
-                "sum_distribution_recomputed",
-                "pgf_unbiasedness_identity_recomputed",
-                "factorization_sufficiency_argument",
-                "power_series_completeness_argument",
-            ),
-            ("result_present", "reasoning", "umvu_estimator"),
-            ("expression", "text"),
-        )
 
     def _full_covariance_gls(self, text: str) -> Optional[ToolResult]:
         if not re.search(

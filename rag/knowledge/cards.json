@@ -107,10 +107,10 @@
       "kind": "theorem",
       "domains": ["测度积分"],
       "topics": [],
-      "keywords": ["勒贝格可积", "可积性", "绝对可积", "有界可测函数", "可测函数", "绝对值的积分", "Lebesgue integrable", "integrability", "absolutely integrable", "bounded measurable function", "measurable function", "integral of the absolute value"],
+      "keywords": ["勒贝格可积", "可积性", "绝对可积", "Lebesgue integrable", "integrability", "absolutely integrable"],
       "theorem_name": "Lebesgue integrability criterion",
-      "text_zh": "实值函数在可测集上勒贝格可积，当且仅当它可测且绝对值的积分有限。有限测度集上的有界可测函数必可积，紧区间上的连续函数也必可积；若没有可测性，有界性单独并不足够。不要把黎曼可积的间断点判据当成任意函数勒贝格可积的充分必要条件。逐项判断时应分别核对可测性、测度是否有限与绝对积分有限性。",
-      "text_en": "A real-valued function on a measurable set is Lebesgue integrable exactly when it is measurable and its absolute integral is finite. A bounded measurable function on a finite-measure set is integrable, as is a continuous function on a compact interval; without measurability, boundedness alone is insufficient. Do not use the discontinuity-set criterion for Riemann integrability as a criterion for arbitrary Lebesgue integrability; check measurability, finiteness of the measure, and the absolute integral separately.",
+      "text_zh": "实值函数在可测集上勒贝格可积，当且仅当它可测且绝对值的积分有限。紧区间上的连续函数必可积；仅有有界性并不保证可测或可积。不要把黎曼可积的间断点判据当成任意函数勒贝格可积的充分必要条件。逐项判断时应分别核对可测性与绝对积分有限性。",
+      "text_en": "A real-valued function on a measurable set is Lebesgue integrable exactly when it is measurable and its absolute integral is finite. Continuity on a compact interval implies integrability, whereas boundedness alone does not imply measurability or integrability. Do not use the discontinuity-set criterion for Riemann integrability as a criterion for arbitrary Lebesgue integrability; check measurability and the absolute integral separately.",
       "provenance": "standard definition of Lebesgue integrability"
     },
     {
@@ -364,10 +364,10 @@
       "kind": "theorem",
       "domains": ["概率论", "统计推断"],
       "topics": [],
-      "keywords": ["正态分布", "高斯分布", "normal distribution", "Gaussian distribution"],
+      "keywords": ["正态分布的两个参数", "正态分布参数", "normal distribution parameters", "parameters of a normal distribution"],
       "theorem_name": "normal distribution parameters",
-      "text_zh": "按标准记号 N(mu,sigma^2)，正态分布的两个分布参数是均值 mu 与方差 sigma^2；标准差 sigma 是由方差唯一确定的正平方根，不是 N(mu,sigma^2) 记号中的第二参数。若题面明确改用 N(mu,sigma) 记号，再按其约定解释。",
-      "text_en": "Under the standard notation N(mu,sigma^2), the two distribution parameters are the mean mu and variance sigma^2. The standard deviation sigma is the positive square root determined by that variance, not the second parameter displayed in N(mu,sigma^2). Follow an explicitly different convention if the statement defines one.",
+      "text_zh": "正态分布 N(mu,sigma^2) 由均值 mu 与方差 sigma^2 唯一确定；标准差 sigma 是方差的正平方根。题目若问分布参数，应按采用的记号区分方差参数 sigma^2 与标准差 sigma。",
+      "text_en": "A normal distribution N(mu,sigma^2) is determined by its mean mu and variance sigma^2; the standard deviation sigma is the positive square root of the variance. Distinguish the variance parameter from the standard deviation according to the notation used.",
       "provenance": "standard normal distribution parametrization"
     },
     {
@@ -386,10 +386,10 @@
       "kind": "theorem",
       "domains": ["统计推断"],
       "topics": [],
-      "keywords": ["时间序列分解", "时间数列", "季节调整", "长期趋势", "季节变动", "time series decomposition", "seasonal adjustment", "long-term trend", "seasonal variation"],
+      "keywords": ["时间序列构成要素", "时间数列", "季节调整", "长期趋势", "季节变动", "time series components", "seasonal adjustment", "long-term trend", "seasonal variation"],
       "theorem_name": "classical time-series decomposition",
-      "text_zh": "经典时间序列分解包含长期趋势、季节变动、循环变动和不规则（随机）变动四类；不规则变动与随机变动通常是同一剩余成分的两个名称，不应重复计数，除非题面明确另行定义五成分体系。初等季节调整常用移动平均法和季节指数法；X-11 等是进一步的分解程序。",
-      "text_en": "Classical time-series decomposition has four components: trend, seasonal, cyclical, and irregular (random) variation. Irregular and random normally name the same residual component and must not be counted twice unless the statement explicitly defines a five-component convention. Elementary seasonal adjustment commonly uses moving averages and seasonal indices; X-11 is a further decomposition procedure.",
+      "text_zh": "经典时间序列分解包含长期趋势、季节变动、循环变动和不规则或随机变动。有些教材把不规则变动与随机变动作为同一剩余成分的两个名称，有些题目会按其给定分类分别列出；判断选项时应遵循题面术语而不要漏项。季节调整常用移动平均估计趋势季节项，也可用时间序列分解或 X-11 一类分解程序。",
+      "text_en": "Classical decomposition includes trend, seasonal, cyclical, and irregular or random variation. Some conventions use irregular and random for the same residual component, while an explicitly stated taxonomy may list them separately; follow the terminology in the question without omitting a listed component. Seasonal adjustment commonly uses moving averages and decomposition procedures such as X-11.",
       "provenance": "standard classical time-series decomposition"
     },
     {
@@ -408,7 +408,7 @@
       "kind": "method",
       "domains": ["线性回归", "统计推断"],
       "topics": [],
-      "keywords": ["逐步回归", "变量选择", "非线性回归", "参数估计", "stepwise regression", "variable selection", "nonlinear regression", "parameter estimation"],
+      "keywords": ["逐步回归", "变量应被剔除", "非线性回归", "参数估计", "stepwise regression", "remove a variable", "nonlinear regression", "parameter estimation"],
       "text_zh": "逐步回归每次加入或删除变量后都要重新检查已有变量的显著性、整体检验和调整拟合指标；新变量造成旧变量不显著时可触发剔除。非线性回归通常以非线性最小二乘估计参数，数值上可用 Gauss-Newton 或 Newton 类迭代；最大似然只有在给定概率误差模型后才是统一表述。",
       "text_en": "After every addition or deletion in stepwise regression, recheck existing-variable significance, the model test, and adjusted fit criteria; a newly added variable can make an old one removable. Nonlinear regression commonly uses nonlinear least squares, computed by Gauss-Newton or Newton-type iterations; maximum likelihood is a general formulation only after specifying an error distribution.",
       "provenance": "standard regression model-selection and estimation methods"

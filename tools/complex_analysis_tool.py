@@ -21,7 +21,6 @@ class ComplexAnalysisTool:
         if self.sp is None or not text:
             return []
         handlers = (
-            self._rouche_dominant_monomial_zero_count,
             self._contour_integral,
             self._holomorphic_power_real_part,
             self._residue_at_point,
@@ -38,103 +37,6 @@ class ComplexAnalysisTool:
             if item is not None and item.verified:
                 results.append(item)
         return results
-
-    def _rouche_dominant_monomial_zero_count(self, text: str) -> Optional[ToolResult]:
-        """Apply Rouche when one numeric monomial strictly dominates all others."""
-        if not re.search(r"Rouch[eé]|鲁歇|儒歇", text, re.I):
-            return None
-        if not re.search(r"零点|zeros?|roots?", text, re.I):
-            return None
-        polynomial_match = re.search(
-            r"(?:p|f)\s*\(\s*z\s*\)\s*=\s*\$?\s*([^$，,。;；\n]+)",
-            text,
-            re.I,
-        )
-        if polynomial_match is None:
-            return None
-        expression = self._expr(polynomial_match.group(1).strip())
-        z = self.sp.Symbol("z")
-        if expression is None or expression.free_symbols - {z}:
-            return None
-        try:
-            polynomial = self.sp.Poly(self.sp.expand(expression), z)
-        except Exception:
-            return None
-        if not 1 <= polynomial.degree() <= 30:
-            return None
-
-        radius = None
-        if re.search(r"(?:开)?单位圆盘|open\s+unit\s+disk|unit\s+disc", text, re.I):
-            radius = self.sp.Integer(1)
-        else:
-            radius_match = re.search(
-                r"(?:\|\s*z\s*\||\\lvert\s*z\s*\\rvert)\s*(?:=|<)\s*\$?\s*"
-                r"([-+]?\d+(?:/\d+)?|[-+]?0?\.\d+)",
-                text,
-            )
-            radius = self._expr(radius_match.group(1)) if radius_match else None
-        if radius is None or radius.free_symbols or radius.is_positive is not True:
-            return None
-
-        terms: list[tuple[int, object, object]] = []
-        for (degree,), coefficient in polynomial.terms():
-            magnitude = self.sp.simplify(self.sp.Abs(coefficient) * radius**degree)
-            if magnitude.is_real is not True or magnitude.is_nonnegative is not True:
-                return None
-            terms.append((int(degree), coefficient, magnitude))
-        dominant = []
-        for degree, coefficient, magnitude in terms:
-            remainder_bound = self.sp.simplify(
-                sum(other_magnitude for other_degree, _, other_magnitude in terms if other_degree != degree)
-            )
-            if self.sp.simplify(magnitude - remainder_bound).is_positive is True:
-                dominant.append((degree, coefficient, magnitude, remainder_bound))
-        if len(dominant) != 1:
-            return None
-        degree, coefficient, magnitude, remainder_bound = dominant[0]
-
-        # Independent numerical root count.  The strict positive dominance
-        # margin proves no root lies on the boundary, so a high-precision
-        # count is a safe postcondition rather than the certificate itself.
-        try:
-            roots = self.sp.nroots(polynomial, n=60, maxsteps=300)
-            numeric_radius = float(self.sp.N(radius, 50))
-            numeric_count = sum(abs(complex(root)) < numeric_radius for root in roots)
-        except Exception:
-            return None
-        if numeric_count != degree:
-            return None
-
-        dominant_text = self.symbolic._format(coefficient * z**degree)
-        magnitude_text = self.symbolic._format(magnitude)
-        remainder_text = self.symbolic._format(remainder_bound)
-        radius_text = self.symbolic._format(radius)
-        zh = self._zh(text)
-        result = (
-            rf"在 $|z|={radius_text}$ 上，$|{dominant_text}|={magnitude_text}$，而其余各项之和的模至多为 "
-            rf"${remainder_text}<{magnitude_text}$。由 Rouché 定理，原多项式与 ${dominant_text}$ 在圆盘内"
-            rf"零点数相同，故按重数计恰有 ${degree}$ 个零点。"
-            if zh else
-            rf"On $|z|={radius_text}$, $|{dominant_text}|={magnitude_text}$, while the modulus of the sum "
-            rf"of all remaining terms is at most ${remainder_text}<{magnitude_text}$. Rouche's theorem "
-            rf"therefore gives the same number of zeros as ${dominant_text}$, namely ${degree}$ counting multiplicity."
-        )
-        return self._result(
-            text,
-            "rouche_dominant_monomial_zero_count",
-            result,
-            "zero_count",
-            "strict_monomial_dominance_on_circle",
-            (
-                "numeric_polynomial_parsed",
-                "disk_radius_parsed",
-                "unique_strictly_dominant_monomial",
-                "triangle_remainder_bound_recomputed",
-                "high_precision_root_count_crosscheck",
-            ),
-            ("result_present", "numeric_result", "reasoning", "pole_location"),
-            ("count", "number", "expression", "text"),
-        )
 
     def _contour_integral(self, text: str) -> Optional[ToolResult]:
         if not re.search(r"(?:\\oint|∮)", text) or not re.search(r"围道|contour|\|\s*z\s*\|", text, re.I):
@@ -180,26 +82,14 @@ class ComplexAnalysisTool:
         value = self.sp.simplify(2 * self.sp.pi * self.sp.I * residue_sum)
         rendered = self.symbolic._format(value)
         pole_text = ",".join(self.symbolic._format(item) for item in inside) or "none"
-        residue_values = tuple(
-            (pole, self.sp.simplify(self.sp.residue(expression, z, pole)))
-            for pole in inside
-        )
-        residue_text_zh = "，".join(
-            rf"$\operatorname{{Res}}_{{z={self.symbolic._format(pole)}}}={self.symbolic._format(residue)}$"
-            for pole, residue in residue_values
-        )
-        residue_text_en = ", ".join(
-            rf"$\operatorname{{Res}}_{{z={self.symbolic._format(pole)}}}={self.symbolic._format(residue)}$"
-            for pole, residue in residue_values
-        )
         requested_cauchy = bool(re.search(r"柯西积分公式|Cauchy\s+integral\s+formula", text, re.I))
         theorem_zh = "柯西积分公式（等价地，留数定理）" if requested_cauchy else "留数定理"
         theorem_en = "the Cauchy integral formula (equivalently, the residue theorem)" if requested_cauchy else "the residue theorem"
         result = (
-            rf"极点 $z={pole_text}$ 位于围道内（其余极点在外）；逐点计算得 {residue_text_zh}。故由{theorem_zh}，"
+            rf"极点 $z={pole_text}$ 位于围道内（其余极点在外），故由{theorem_zh}，"
             rf"围道积分为 $2\pi i\sum\operatorname{{Res}}={rendered}$。"
             if self._zh(text) else
-            rf"The poles $z={pole_text}$ lie inside the contour (all other poles lie outside), with {residue_text_en}. Thus by "
+            rf"The poles $z={pole_text}$ lie inside the contour (all other poles lie outside), so by "
             rf"{theorem_en} the contour integral is $2\pi i\sum\operatorname{{Res}}={rendered}$."
         )
         return self._result(text, "contour_residue_integral", result, "contour_integral",
@@ -340,13 +230,9 @@ class ComplexAnalysisTool:
                             ("truth", "text"))
 
     def _contour_integrand(self, text: str) -> Optional[str]:
-        # Prefer a complete math span.  A display-space command such as
-        # ``\,`` contains a comma character and must not terminate extraction.
-        span = re.search(r"\$([^$]*(?:\\oint|∮)[^$]*)\$", text, re.I)
-        source = span.group(1) if span else text
         match = re.search(
-            r"(?:\\oint|∮)\s*(.+?)(?=，|(?<!\\),|。|;|；|\n|\.(?:\s|$)|$)",
-            source,
+            r"(?:\\oint|∮)\s*(.+?)(?=，|,|。|;|；|\n|\.(?:\s|$)|$)",
+            text,
             re.I,
         )
         if match is None:

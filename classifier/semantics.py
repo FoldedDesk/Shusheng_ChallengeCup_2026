@@ -120,16 +120,16 @@ _THEOREM_PATTERNS = (
     ("Fubini theorem", r"Fubini\s*定理|Fubini(?:'s)? theorem"),
     ("Tonelli theorem", r"Tonelli\s*定理|Tonelli(?:'s)? theorem"),
     ("Radon-Nikodym theorem", r"Radon.?Nikodym\s*定理|Radon[- ]Nikodym theorem"),
-    ("Gauss-Bonnet theorem", r"Gauss.?Bonnet\s*定理|高斯.?博内定理|Gauss[- ]Bonnet theorem"),
-    ("Sylow theorem", r"Sylow\s*定理|西罗定理|Sylow(?:'s)? theorem"),
+    ("Gauss-Bonnet theorem", r"Gauss.?Bonnet\s*定理|高斯.?博内定理"),
+    ("Sylow theorem", r"Sylow\s*定理|西罗定理"),
     ("isomorphism theorem", r"同构定理|isomorphism theorem"),
-    ("Hahn-Banach theorem", r"Hahn.?Banach\s*定理|Hahn[- ]Banach theorem"),
+    ("Hahn-Banach theorem", r"Hahn.?Banach\s*定理"),
     ("open mapping theorem", r"开映射定理|open mapping theorem"),
     ("closed graph theorem", r"闭图像定理|closed graph theorem"),
     ("central limit theorem", r"中心极限定理|central limit theorem"),
     ("law of large numbers", r"大数定律|law of large numbers"),
-    ("Stokes theorem", r"Stokes\s*定理|斯托克斯定理|Stokes(?:'s)? theorem"),
-    ("Green theorem", r"Green\s*定理|格林定理|Green(?:'s)? theorem"),
+    ("Stokes theorem", r"Stokes\s*定理|斯托克斯定理"),
+    ("Green theorem", r"Green\s*定理|格林定理"),
 )
 
 
