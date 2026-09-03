@@ -6,7 +6,7 @@ from typing import Any, Dict, List, Mapping, Optional, Union
 import requests
 
 from core.execution_limits import REQUEST_TIMEOUT_SECONDS
-from core.model_response import ModelCallResult
+from core.model_response import ModelCallResult, coerce_model_response
 
 
 DEFAULT_API_BASE = "https://chat.intern-ai.org.cn/api/v1/chat/completions"
@@ -64,7 +64,7 @@ class InternChatClient:
         )
         if "tool_calls" in message:
             return message
-        return str(message.get("content", ""))
+        return coerce_model_response(message).content
 
     def chat_result(
         self,
@@ -87,11 +87,11 @@ class InternChatClient:
         content = message.get("content", "")
         if "tool_calls" in message and not content:
             content = json.dumps(message, ensure_ascii=False)
-        return ModelCallResult(
-            content=str(content or ""),
-            finish_reason=finish_reason,
-            usage=usage,
-        )
+        return coerce_model_response({
+            "content": content,
+            "finish_reason": finish_reason,
+            "usage": usage,
+        })
 
     def _request(
         self,

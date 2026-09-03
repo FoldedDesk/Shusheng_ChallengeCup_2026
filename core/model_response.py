@@ -30,19 +30,37 @@ def _text_content(value: Any) -> str:
         return ""
     if isinstance(value, str):
         return value
+    if isinstance(value, Mapping):
+        if "value" in value:
+            return _text_content(value["value"])
+        if "text" in value:
+            return _text_content(value["text"])
     if isinstance(value, (list, tuple)):
         parts: list[str] = []
         for part in value:
             text = _read_field(part, "text", None)
-            if isinstance(text, Mapping):
-                text = text.get("value", "")
+            if text is None:
+                text = _read_field(part, "value", None)
             if text is None and isinstance(part, str):
                 text = part
             if text is not None:
-                parts.append(str(text))
+                parts.append(_text_content(text))
         if parts:
             return "".join(parts)
+    value_field = _read_field(value, "value", None)
+    if value_field is not None and value_field is not value:
+        return _text_content(value_field)
     return str(value)
+
+
+def _string_value(value: Any, default: str = "") -> str:
+    """Normalize enum-like SDK fields without exposing their object repr."""
+    if value is None:
+        return default
+    if isinstance(value, str):
+        return value
+    scalar = _read_field(value, "value", None)
+    return str(scalar if scalar is not None else value)
 
 
 def _coerce_usage(value: Any) -> Mapping[str, Any]:
@@ -77,9 +95,9 @@ def _tool_call(value: Any) -> dict[str, Any] | None:
         return None
     return {
         "id": str(_read_field(value, "id", "") or ""),
-        "type": str(_read_field(value, "type", "function") or "function"),
+        "type": _string_value(_read_field(value, "type", "function"), "function"),
         "function": {
-            "name": str(name),
+            "name": _string_value(name),
             "arguments": _text_content(arguments),
         },
     }
@@ -94,7 +112,7 @@ def _tool_message(value: Any) -> dict[str, Any] | None:
     if not normalized:
         return None
     return {
-        "role": str(_read_field(value, "role", "assistant") or "assistant"),
+        "role": _string_value(_read_field(value, "role", "assistant"), "assistant"),
         "content": _text_content(_read_field(value, "content", "")),
         "tool_calls": normalized,
     }
@@ -136,7 +154,7 @@ def coerce_model_response(response: Any) -> ModelCallResult:
                     else _read_field(choice, "content", "")
                 )
                 finish_reason = _read_field(choice, "finish_reason", finish_reason)
-        return ModelCallResult(_text_content(content), str(finish_reason or ""), usage)
+        return ModelCallResult(_text_content(content), _string_value(finish_reason), usage)
 
     content = getattr(response, "content", None)
     finish_reason = getattr(response, "finish_reason", "")
@@ -153,6 +171,6 @@ def coerce_model_response(response: Any) -> ModelCallResult:
             finish_reason = _read_field(choice, "finish_reason", finish_reason)
     return ModelCallResult(
         _text_content(content if content is not None else response),
-        str(finish_reason or ""),
+        _string_value(finish_reason),
         usage,
     )
