@@ -54,6 +54,8 @@ ANSWER_BEARING_KNOWLEDGE = re.compile(
 
 class ValidationClient:
     def chat(self, messages, temperature=0.2, max_tokens=4096):
+        if "给出一条理由" in messages[-1]["content"]:
+            return "FINAL: 正确。\n因为等式两边相同，所以命题成立。"
         if "CHOICE:" in messages[0]["content"]:
             return "CHOICE: 0\nREASON: 验证通过"
         return "【最终答案】验证答案"
@@ -471,6 +473,34 @@ def _knowledge_card_violations() -> list[str]:
     return violations
 
 
+def _answer_contract_violations() -> list[str]:
+    """Guard explicit support requests without promoting bare short answers."""
+    from classifier.problem_spec import build_problem_spec
+
+    violations: list[str] = []
+    support_cases = (
+        "判断命题真假并给出一条理由。",
+        "判断命题真假并给出简短理由。",
+        "判断命题真假并简要说明理由。",
+        "判断命题真假并说明依据。",
+        "判断命题真假并简述理由。",
+        "Decide whether the statement is true and state one reason.",
+    )
+    answer_only_cases = (
+        "判断命题真假。",
+        "选择下列说明正确的一项：A. 甲 B. 乙。",
+        "Decide whether the statement is true.",
+    )
+    for problem in support_cases:
+        contract = build_problem_spec(problem).answer_contract
+        if contract.mode == "answer_only" or "reasoning" not in contract.support_requirements:
+            violations.append(f"explicit support request lost its reasoning contract: {problem}")
+    for problem in answer_only_cases:
+        if build_problem_spec(problem).answer_contract.mode != "answer_only":
+            violations.append(f"bare short task was over-promoted: {problem}")
+    return violations
+
+
 def main() -> int:
     entry = ROOT / "user_agent.py"
     if not entry.is_file():
@@ -483,6 +513,12 @@ def main() -> int:
             print(f"- {violation}", file=sys.stderr)
         return 1
     sys.path.insert(0, str(ROOT))
+    contract_violations = _answer_contract_violations()
+    if contract_violations:
+        print("answer-contract validation failed:", file=sys.stderr)
+        for violation in contract_violations:
+            print(f"- {violation}", file=sys.stderr)
+        return 1
     module = importlib.import_module("user_agent")
     agent_class = module.ReasoningAgent
     init_parameters = list(inspect.signature(agent_class.__init__).parameters.values())
@@ -506,6 +542,15 @@ def main() -> int:
         print("invalid model-path response", file=sys.stderr)
         return 1
     json.dumps(model_result, ensure_ascii=False)
+    support_result = agent_class(client=ValidationClient()).solve(
+        "判断命题真假并给出一条理由：1+1=2。",
+        {"idx": 1000},
+    )
+    support_answer = str(support_result.get("final_response", ""))
+    if "正确" not in support_answer or "因为" not in support_answer:
+        print("explicit support was lost from final_response", file=sys.stderr)
+        return 1
+    json.dumps(support_result, ensure_ascii=False)
     print("submission validation passed")
     return 0
 
