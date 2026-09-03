@@ -103,6 +103,12 @@ class SubmissionAgent:
         self.parameterized_discrete = ParameterizedDiscreteTool(self.model_math_tools)
         self.retriever = CardRetriever()
         self.prompt = self._load_prompt()
+        # Keep the production sampling value explicit so local A/B runners
+        # can override the primary call without changing recovery stages.
+        self.primary_temperature = 0.2
+        # Subject protocol context is part of the established production
+        # path; local ablations may disable it without changing routing.
+        self.enable_subject_protocols = True
         # Kept behind a local A/B gate until a frozen replay demonstrates
         # that the extra method-search call improves accuracy rather than
         # merely adding plausible planning prose.
@@ -383,7 +389,7 @@ class SubmissionAgent:
             primary_request,
             stage="primary",
             max_tokens=budget.solve_tokens,
-            temperature=0.2,
+            temperature=self.primary_temperature,
             thinking_mode=hidden_thinking,
             trace=trace,
             model_tools=model_tools,
@@ -1879,6 +1885,7 @@ class SubmissionAgent:
             content = {
                 "stage": stage if not tool_round else f"{stage}_tool_followup",
                 "status": status,
+                "temperature": kwargs["temperature"],
                 "max_tokens": current_tokens,
                 "thinking_mode": kwargs.get("thinking_mode", "client_default"),
                 "finish_reason": result.finish_reason or "unavailable",
@@ -4791,8 +4798,8 @@ class SubmissionAgent:
         text = str(value or "")
         return text if len(text) <= limit else text[:limit] + "\n[content shortened]"
 
-    @staticmethod
     def _grounded_context(
+        self,
         spec: ProblemSpec,
         cards: RetrievalBundle,
         *,
@@ -4828,7 +4835,7 @@ class SubmissionAgent:
                 spec,
                 review=review,
                 subject_override=planned_subject,
-            ) if protocol_allowed else "",
+            ) if protocol_allowed and self.enable_subject_protocols else "",
             (
                 cards.review_context() if review else cards.solve_context()
             ) if cards_allowed else "",
