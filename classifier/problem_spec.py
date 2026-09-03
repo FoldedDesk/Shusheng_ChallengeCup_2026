@@ -1626,9 +1626,14 @@ def _requirements(text: str, target: str, profile: ProblemProfile) -> list[Requi
         or shape in {"choice", "truth"}
     )
     explicit_short_form_support = re.search(
-        r"说明(?:你的)?理由|解释(?:原因|理由)?|给出(?:完整|严格)?(?:证明|论证|理由)|"
+        r"说明(?:你的)?理由|解释(?:原因|理由)?|"
+        r"给出(?:一句|一个|简要(?:的)?|相应(?:的)?|你的)?"
+        r"(?:完整|严格)?(?:证明|论证|理由)|"
         r"证明|论证|推导|展示(?:计算|推导|证明)?(?:过程|步骤)|写出(?:计算|推导)?过程|"
-        r"\b(?:justify|explain|give|provide)\b[^.\n]{0,80}"
+        r"\b(?:justify|explain)\b|"
+        r"\bsupport\s+(?:(?:your|the)\s+)?(?:answer|conclusion|claim|assertion)\b|"
+        r"\bwith\s+(?:a\s+)?(?:brief\s+|complete\s+|rigorous\s+)?justification\b|"
+        r"\b(?:give|provide)\b[^.\n]{0,80}"
         r"\b(?:proof|argument|reason|justification|derivation)\b|"
         r"\bshow\s+(?:all\s+|your\s+)?work\b|"
         r"\b(?:prove|derive)\b",
