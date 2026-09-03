@@ -61,6 +61,30 @@ class ValidationClient:
         return "【最终答案】验证答案"
 
 
+class MetadataValidationClient:
+    def __init__(self) -> None:
+        self.chat_calls = 0
+        self.result_calls = 0
+
+    def chat(self, **kwargs):
+        del kwargs
+        self.chat_calls += 1
+        return "truncated text without metadata"
+
+    def chat_result(self, *, tools=None, **kwargs):
+        from core.model_response import ModelCallResult
+
+        del kwargs
+        self.result_calls += 1
+        if not tools:
+            raise AssertionError("model tools were not forwarded")
+        return ModelCallResult(
+            "truncated text with metadata",
+            "length",
+            {"completion_tokens": 128},
+        )
+
+
 def _active_runtime_files() -> list[Path]:
     files: list[Path] = []
     for relative in ACTIVE_RUNTIME_PATHS:
@@ -524,6 +548,31 @@ def _production_default_violations(agent: object) -> list[str]:
     return violations
 
 
+def _transport_metadata_violations(agent_class) -> list[str]:
+    client = MetadataValidationClient()
+    internal = agent_class(client=client).agent
+    trace: list[dict] = []
+    _, result = internal._call(
+        "compute",
+        stage="primary",
+        max_tokens=128,
+        temperature=0.2,
+        thinking_mode=True,
+        trace=trace,
+        model_tools=internal.model_math_tools,
+        model_tool_names=("calculate_expression",),
+        max_tool_rounds=1,
+    )
+    violations: list[str] = []
+    if client.result_calls != 1 or client.chat_calls != 0:
+        violations.append("tool-enabled call bypassed metadata-preserving adapter")
+    if not result.provider_truncated:
+        violations.append("provider length finish_reason was not preserved")
+    if result.usage.get("completion_tokens") != 128:
+        violations.append("provider usage was not preserved")
+    return violations
+
+
 def main() -> int:
     entry = ROOT / "user_agent.py"
     if not entry.is_file():
@@ -557,6 +606,12 @@ def main() -> int:
     if default_violations:
         print("production-default validation failed:", file=sys.stderr)
         for violation in default_violations:
+            print(f"- {violation}", file=sys.stderr)
+        return 1
+    transport_violations = _transport_metadata_violations(agent_class)
+    if transport_violations:
+        print("transport-metadata validation failed:", file=sys.stderr)
+        for violation in transport_violations:
             print(f"- {violation}", file=sys.stderr)
         return 1
     result = validation_agent.solve("计算 1+1。", {"idx": 0})

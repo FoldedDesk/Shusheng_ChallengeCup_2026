@@ -1813,10 +1813,18 @@ class SubmissionAgent:
         chat_result = getattr(self.client, "chat_result", None)
         result_call = chat_result if callable(chat_result) else self.client.chat
         message_call = getattr(self.client, "chat", result_call)
+        # Prefer the metadata-preserving adapter when it also supports tools.
+        # Falling back to a text-only ``chat`` response loses finish_reason and
+        # can make a provider-cut answer look complete when no tool is called.
+        tool_message_call = (
+            result_call
+            if self._supports_keyword(result_call, "tools")
+            else message_call
+        )
         tool_enabled = bool(
             model_tools is not None
             and max_tool_rounds > 0
-            and self._supports_keyword(message_call, "tools")
+            and self._supports_keyword(tool_message_call, "tools")
         )
         request_count = 0
         tool_round = 0
@@ -1828,7 +1836,7 @@ class SubmissionAgent:
             # messages. Some ``chat_result`` adapters intentionally expose
             # only text and transport metadata, which can discard a tool call
             # when the provider also emits nonempty reasoning content.
-            call = message_call if tool_enabled and tool_round == 0 else result_call
+            call = tool_message_call if tool_enabled and tool_round == 0 else result_call
             current_tokens = (
                 max(256, min(int(max_tokens), 4096))
                 if tool_round
