@@ -55,10 +55,23 @@ def _text_content(value: Any) -> str:
         # Do not turn that structured value into Python's repr and accidentally
         # submit it as mathematical prose.
         return "".join(parts)
-    value_field = _read_field(value, "value", None)
-    if value_field is not None and value_field is not value:
-        return _text_content(value_field)
+    # A few SDKs expose a single content block as an object rather than a
+    # one-element list.  Read its text/content field before falling back to
+    # ``str(value)``; the latter is usually an opaque object repr.
+    for field_name in ("text", "content", "value"):
+        nested = _read_field(value, field_name, None)
+        if nested is not None and nested is not value:
+            return _text_content(nested)
     return str(value)
+
+
+def _content_missing(value: Any) -> bool:
+    """Whether a content field is absent or contains only whitespace."""
+    if value is None:
+        return True
+    if isinstance(value, str):
+        return not value.strip()
+    return not _text_content(value).strip()
 
 
 def _string_value(value: Any, default: str = "") -> str:
@@ -154,6 +167,9 @@ def coerce_tool_call_message(response: Any) -> dict[str, Any] | None:
         message = _read_field(choice, "message", None)
         if message is not None:
             candidates.append(message)
+    message = _read_field(response, "message", None)
+    if message is not None:
+        candidates.append(message)
     for candidate in candidates:
         message = _tool_message(candidate)
         if message is not None:
@@ -167,37 +183,41 @@ def coerce_model_response(response: Any) -> ModelCallResult:
         return response
     if isinstance(response, str) or response is None:
         return ModelCallResult(str(response or ""))
-    if isinstance(response, Mapping):
-        content = response.get("content")
-        finish_reason = response.get("finish_reason", "")
-        usage = _coerce_usage(response.get("usage", {}))
-        if content is None:
-            choice = _first_choice(response)
-            if choice is not None:
-                message = _read_field(choice, "message", None)
-                content = (
-                    _read_field(message, "content", "")
-                    if message is not None
-                    else _read_field(choice, "content", "")
-                )
-                finish_reason = _read_field(choice, "finish_reason", finish_reason)
-        return ModelCallResult(_text_content(content), _string_value(finish_reason), usage)
-
-    content = getattr(response, "content", None)
-    finish_reason = getattr(response, "finish_reason", "")
-    usage = _coerce_usage(getattr(response, "usage", {}))
-    if content is None:
+    content = _read_field(response, "content", None)
+    finish_reason = _read_field(response, "finish_reason", "")
+    usage = _coerce_usage(_read_field(response, "usage", {}))
+    if _content_missing(content):
         choice = _first_choice(response)
         if choice is not None:
             message = _read_field(choice, "message", None)
             content = (
-                _read_field(message, "content", "")
+                _read_field(message, "content", None)
                 if message is not None
-                else _read_field(choice, "content", "")
+                else _read_field(choice, "content", None)
             )
             finish_reason = _read_field(choice, "finish_reason", finish_reason)
+    if _content_missing(content):
+        message = _read_field(response, "message", None)
+        if message is not None:
+            content = _read_field(message, "content", None)
+            if not finish_reason:
+                finish_reason = _read_field(message, "finish_reason", finish_reason)
+    if _content_missing(content):
+        # Responses-style clients commonly expose already-rendered text under
+        # ``output_text``; ``output`` is a compatible fallback for text blocks.
+        content = _read_field(response, "output_text", None)
+    if _content_missing(content):
+        content = _read_field(response, "output", None)
+    if _content_missing(content):
+        # Also accept a single SDK content block returned directly by a thin
+        # client wrapper, while still refusing opaque reasoning-only objects.
+        content = _read_field(response, "text", None)
+    if _content_missing(content):
+        content = _read_field(response, "value", None)
+    if _content_missing(content):
+        content = ""
     return ModelCallResult(
-        _text_content(content if content is not None else response),
+        _text_content(content),
         _string_value(finish_reason),
         usage,
     )

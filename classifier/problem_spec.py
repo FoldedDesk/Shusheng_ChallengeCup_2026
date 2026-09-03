@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass, replace
 import re
 
-from classifier.choice import answer_choice_labels, choice_stem, option_labels
+from classifier.choice import answer_choice_labels, choice_stem
 from classifier.profile import ProblemProfile, classify_profile
 from classifier.semantics import StatementSemantics, extract_statement_semantics
 from classifier.target import extract_target_clause

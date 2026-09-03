@@ -415,6 +415,7 @@ class ProbabilityStatisticsTool:
                 "coefficient_estimate",
             ),
             ("expression", "matrix"),
+            support=support,
         )
 
     def _labelled_matrix(self, text: str, label: str):
@@ -504,7 +505,7 @@ class ProbabilityStatisticsTool:
     @staticmethod
     def _result(problem: str, operation: str, result: str, result_kind: str,
                 method: str, checks: tuple[str, ...], requirements: tuple[str, ...],
-                shapes: tuple[str, ...]) -> ToolResult:
+                shapes: tuple[str, ...], support: str = "") -> ToolResult:
         return make_parameterized_tool_result(
             problem=problem,
             operation=operation,
@@ -514,7 +515,7 @@ class ProbabilityStatisticsTool:
             whole=True,
             written_support=True,
             checks=checks,
-            support=result,
+            support=support or result,
             requirements=requirements,
             answer_shapes=shapes,
         )
