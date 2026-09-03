@@ -13,7 +13,11 @@ from typing import Iterable, Mapping
 from classifier.choice import canonical_choice_answer
 from classifier.problem_spec import ProblemSpec, build_problem_spec
 from core.execution_limits import SUBMISSION_SOFT_ITEM_SECONDS
-from core.model_response import ModelCallResult, coerce_model_response
+from core.model_response import (
+    ModelCallResult,
+    coerce_model_response,
+    coerce_tool_call_message,
+)
 from core.runtime_failure import is_recoverable_runtime_failure
 from core.stage_budget import StageBudget, plan_stage_budget
 from rag.card_retriever import CardRetriever, RetrievalBundle
@@ -2015,16 +2019,9 @@ class SubmissionAgent:
 
     @staticmethod
     def _tool_call_message(raw_response, result: ModelCallResult) -> dict | None:
-        candidates = []
-        if isinstance(raw_response, Mapping):
-            candidates.append(raw_response)
-            choices = raw_response.get("choices")
-            if isinstance(choices, list) and choices:
-                choice = choices[0]
-                if isinstance(choice, Mapping):
-                    message = choice.get("message")
-                    if isinstance(message, Mapping):
-                        candidates.append(message)
+        message = coerce_tool_call_message(raw_response)
+        if message is not None:
+            return message
         text = str(result.content or "").strip()
         if text.startswith("{") and len(text) <= 20_000:
             try:
@@ -2032,11 +2029,9 @@ class SubmissionAgent:
             except (TypeError, ValueError, json.JSONDecodeError):
                 decoded = None
             if isinstance(decoded, dict):
-                candidates.append(decoded)
-        for candidate in candidates:
-            calls = candidate.get("tool_calls")
-            if isinstance(calls, list) and calls:
-                return dict(candidate)
+                message = coerce_tool_call_message(decoded)
+                if message is not None:
+                    return message
         return None
 
     @staticmethod

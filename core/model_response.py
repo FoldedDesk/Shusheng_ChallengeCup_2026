@@ -68,6 +68,54 @@ def _first_choice(value: Any) -> Any:
     return None
 
 
+def _tool_call(value: Any) -> dict[str, Any] | None:
+    """Normalize one SDK or mapping tool call to the chat wire shape."""
+    function = _read_field(value, "function", None)
+    name = _read_field(function, "name", None) if function is not None else None
+    arguments = _read_field(function, "arguments", None) if function is not None else None
+    if name is None:
+        return None
+    return {
+        "id": str(_read_field(value, "id", "") or ""),
+        "type": str(_read_field(value, "type", "function") or "function"),
+        "function": {
+            "name": str(name),
+            "arguments": _text_content(arguments),
+        },
+    }
+
+
+def _tool_message(value: Any) -> dict[str, Any] | None:
+    """Return a canonical assistant message when tool calls are present."""
+    calls = _read_field(value, "tool_calls", None)
+    if not isinstance(calls, (list, tuple)):
+        return None
+    normalized = [item for call in calls if (item := _tool_call(call)) is not None]
+    if not normalized:
+        return None
+    return {
+        "role": str(_read_field(value, "role", "assistant") or "assistant"),
+        "content": _text_content(_read_field(value, "content", "")),
+        "tool_calls": normalized,
+    }
+
+
+def coerce_tool_call_message(response: Any) -> dict[str, Any] | None:
+    """Extract tool calls from mapping and SDK-style chat responses."""
+    candidates: list[Any] = [response]
+    choice = _first_choice(response)
+    if choice is not None:
+        candidates.append(choice)
+        message = _read_field(choice, "message", None)
+        if message is not None:
+            candidates.append(message)
+    for candidate in candidates:
+        message = _tool_message(candidate)
+        if message is not None:
+            return message
+    return None
+
+
 def coerce_model_response(response: Any) -> ModelCallResult:
     """Accept the documented string response plus common structured variants."""
     if isinstance(response, ModelCallResult):
