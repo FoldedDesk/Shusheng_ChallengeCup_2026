@@ -1421,6 +1421,26 @@ def _requirements(text: str, target: str, profile: ProblemProfile) -> list[Requi
             Requirement("second_derivatives", strict=True),
             Requirement("harmonicity_judgement", strict=True),
         ))
+    pde_time_space_derivatives = bool(re.search(
+        r"(?:验证|检验|判断)[^。；;\n]{0,160}是否(?:为)?解|"
+        r"\b(?:verify|check|determine)\b[^.\n]{0,160}\bwhether\b"
+        r"[^.\n]{0,80}\b(?:solution|solves?)\b",
+        target,
+        re.IGNORECASE,
+    )) and bool(re.search(
+        r"(?:分别)?(?:求|计算)[^。；;\n]{0,60}(?:"
+        r"时间(?:导数|偏导数)[^。；;\n]{0,60}"
+        r"(?:空间|二阶空间)(?:导数|偏导数)|"
+        r"时间(?:和|与|及)(?:二阶)?空间(?:导数|偏导数))|"
+        r"\b(?:compute|calculate|find)\b[^.\n]{0,80}\btime\s+derivative\b"
+        r"[^.\n]{0,80}\b(?:spatial|space)\s+derivatives?\b",
+        target,
+        re.IGNORECASE,
+    ))
+    if pde_time_space_derivatives:
+        items.append(Requirement(
+            "pde_time_space_derivatives", strict=True, category="support"
+        ))
     planar_curve_derivatives = bool(re.search(
         r"(?:平面)?曲线|参数曲线|curve\s+(?:\\?gamma|gamma)|plane\s+curve",
         text,

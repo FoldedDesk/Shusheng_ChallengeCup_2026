@@ -522,6 +522,24 @@ def _answer_contract_violations() -> list[str]:
     for problem in answer_only_cases:
         if build_problem_spec(problem).answer_contract.mode != "answer_only":
             violations.append(f"bare short task was over-promoted: {problem}")
+    pde_problem = (
+        "对热方程u_t=u_{xx}，验证u(x,t)=e^{-t}sin x是否为解，"
+        "需分别求时间和空间导数。"
+    )
+    pde_spec = build_problem_spec(pde_problem)
+    pde_requirements = {
+        item.name
+        for goal in pde_spec.goals
+        for item in goal.requirements
+        if item.strict
+    }
+    if pde_spec.profile.answer_shape != "truth":
+        violations.append("PDE solution verification was not classified as truth")
+    if "pde_time_space_derivatives" not in pde_requirements:
+        violations.append("explicit PDE derivative support obligation was lost")
+    composite = build_problem_spec("判断矩阵A是否可逆，并计算det(A)。")
+    if composite.profile.answer_shape != "expression":
+        violations.append("binary-plus-calculation task was collapsed to truth")
     return violations
 
 

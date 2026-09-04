@@ -335,6 +335,22 @@ def _answer_shape(text: str, task_kind: str) -> str:
     ))
     if change_predicate_requested:
         return "text"
+    supporting_binary_check = bool(
+        truth_requested
+        and re.search(
+            r"(?:是否|能否|可否)[^。！？!?\n]{0,180}[,，;；]\s*"
+            r"(?:需|需要|要求)(?:分别)?(?:计算|求|检查|验证|代入)|"
+            r"\bwhether\b[^.!?\n]{0,180}[,;]\s*(?:must|required\s+to|"
+            r"needs?\s+to)\s+(?:compute|calculate|check|verify|substitute)\b",
+            target,
+            re.IGNORECASE,
+        )
+    )
+    if supporting_binary_check:
+        # A required derivative, substitution, or residual can be evidence
+        # for a yes/no conclusion rather than a separately requested result.
+        # Explicit conjunctions such as "and compute" remain composite below.
+        return "truth"
     if truth_requested and not explicit_nonbinary_result:
         # A matrix, polynomial, operator, or interval can be part of the
         # hypothesis. When the only requested result is whether a property
