@@ -732,13 +732,23 @@ def _normalize_numeric_syntax(value: str) -> str:
 
 def _named_scalar_revision_conflict(value: str) -> bool:
     text = str(value or "")
-    if not re.search(
-        r"修正|更正|重新|不符|矛盾|错误|有误|反复验证|"
-        r"\b(?:however|correction|corrected|recheck|re-evaluate|incorrect|wrong|conflict)\b",
-        text,
+    revision = re.compile(
+        r"修正|更正|重算|重新(?:计算|核算|推导|检查)|不符|矛盾|错误|有误|反复验证|"
+        r"\b(?:correction|corrected|incorrect|wrong|conflict)\b|"
+        r"\b(?:recheck(?:ed|ing)?|re-evaluat(?:e|ed|ing))\b"
+        r"(?=[^.\n]{0,60}\b(?:error|wrong|correct(?:ion|ed)?)\b)",
         re.IGNORECASE,
-    ):
+    )
+    if not revision.search(text):
         return False
+    conditional_prefix = re.compile(
+        r"(?:^|[.;；。!?\n])\s*(?:"
+        r"if\b|when\b|(?:(?:in|for)\s+)?case\s+\w+|suppose\b|assume\b|"
+        r"若|如果|假设|设若|当[^,，:：\n]{0,40}时|"
+        r"情形\s*\w*|分支\s*\w*|在(?:情形|情况|分支)[^,，:：\n]{0,30}(?:下|中)"
+        r")",
+        re.IGNORECASE,
+    )
     scalar = (
         r"(?:\\boxed\s*\{\s*)?"
         r"(?:\\(?:d?frac|tfrac)\s*\{[-+]?\d+\}\s*\{[-+]?\d+\}|"
@@ -754,13 +764,21 @@ def _named_scalar_revision_conflict(value: str) -> bool:
         rf"(?:^|=)\s*(?P<rhs>{scalar})\s*(?:\$|\\\]|[.。；;])*\s*$",
         re.IGNORECASE,
     )
-    assertions: dict[str, list[str]] = {}
-    for line in text.splitlines():
+    assertions: dict[str, list[tuple[str, int]]] = {}
+    offset = 0
+    for line in text.splitlines(keepends=True):
         match = assignment.search(line)
         if not match:
+            offset += len(line)
+            continue
+        # Values introduced only inside a case, hypothesis, or rejected
+        # branch are alternatives, not revisions of one asserted scalar.
+        if conditional_prefix.search(line[:match.start()]):
+            offset += len(line)
             continue
         terminal_match = terminal.search(match.group("rest"))
         if not terminal_match:
+            offset += len(line)
             continue
         lhs = re.sub(r"[\s{}\\]", "", match.group("lhs")).casefold()
         rhs = re.sub(
@@ -768,13 +786,20 @@ def _named_scalar_revision_conflict(value: str) -> bool:
             r"\1",
             terminal_match.group("rhs").strip(),
         )
-        assertions.setdefault(lhs, []).append(rhs)
+        end = offset + match.end()
+        assertions.setdefault(lhs, []).append((rhs, end))
+        offset += len(line)
     for values in assertions.values():
         if len(values) < 2:
             continue
-        first = values[0]
-        if any(not equivalent_answers(first, other) for other in values[1:]):
-            return True
+        for previous, current in zip(values, values[1:]):
+            previous_rhs, previous_end = previous
+            current_rhs, current_end = current
+            if equivalent_answers(previous_rhs, current_rhs):
+                continue
+            revision_context = text[previous_end:current_end]
+            if revision.search(revision_context):
+                return True
     return False
 
 
