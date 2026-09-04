@@ -1209,10 +1209,18 @@ class SympyTool:
             text,
             re.IGNORECASE,
         ))
-        if surface_context and not explicit_ambient and not circle_context:
-            # General surfaces require a metric parser.  The centered circle
-            # case below is the only intrinsic geometry certified here.
-            return None
+        explicit_intrinsic = bool(re.search(
+            r"内蕴|内在|拉普拉斯[-— ]?贝尔特拉米|"
+            r"\b(?:intrinsic\s+laplacian|Laplace[- ]Beltrami)\b",
+            text,
+            re.IGNORECASE,
+        ))
+        if surface_context and not explicit_ambient:
+            # An unqualified "Laplacian on a surface" is ambiguous between
+            # the ambient Euclidean operator and the induced Laplace-Beltrami
+            # operator.  Only certify the latter when the statement names it.
+            if not explicit_intrinsic or not circle_context:
+                return None
         definitions: list[tuple[tuple[str, ...], str]] = []
         function_name = "f"
         for found_name, variables, expression_text in self._function_definitions(text):
@@ -1500,6 +1508,23 @@ class SympyTool:
             text,
             re.IGNORECASE,
         ) or not re.search(r"一阶导数|first\s+derivative", text, re.IGNORECASE):
+            return None
+        if re.search(
+            r"误差|精度|准确度|收敛阶|有效数字|四舍五入|"
+            r"保留[^。；;\n]{0,20}(?:位|个)?小数|比较|对比|"
+            r"并(?:求|计算|判断|确定|验证)|"
+            r"\b(?:absolute|relative|truncation)\s+error\b|"
+            r"\berror\s+(?:bound|estimate)\b|"
+            r"\border\s+of\s+(?:accuracy|convergence)\b|"
+            r"\b(?:round|rounded)\b|\bdecimal\s+places?\b|"
+            r"\bsignificant\s+(?:figures?|digits?)\b|\bcompare\b|"
+            r"\band\s+(?:compute|determine|find|verify|estimate)\b",
+            text,
+            re.IGNORECASE,
+        ):
+            # The certificate below covers exactly one centered quotient.  It
+            # must not claim a requested error, order, comparison, or display
+            # precision that it did not compute and certify.
             return None
         definitions: list[tuple[str, str]] = []
         assignments: dict[str, str] = {}
