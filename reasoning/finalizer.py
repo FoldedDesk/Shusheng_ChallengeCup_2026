@@ -32,6 +32,24 @@ class Finalizer:
         r"\s*[.。!?！:：…]*|[.。…`'\"，,!?！:：]+)$",
         re.IGNORECASE,
     )
+    _UNFINISHED_PLACEHOLDER = re.compile(
+        r"\bthis\s+is\s+(?:only\s+)?(?:a\s+)?placeholder\b|"
+        r"\b(?:actual|full|remaining)\s+(?:calculation|computation|derivation|proof)\b"
+        r"[^.!?\n]{0,48}\b(?:requires?|needs?)\s+(?:more|further|additional)\s+"
+        r"(?:steps?|work|calculation|computation|derivation)\b|"
+        r"\b(?:calculation|computation|derivation|proof)\s+(?:is\s+)?"
+        r"(?:not\s+yet|still\s+needs?\s+to\s+be)\s+(?:completed|finished|done)\b|"
+        r"占位符|(?:实际|完整|剩余)(?:计算|推导|证明)(?:仍|还)?(?:需要|需)"
+        r"(?:更多|进一步|额外)?(?:步骤|工作|计算|推导)?|"
+        r"(?:计算|推导|证明)(?:尚未|还未|仍未)(?:完成|做完)",
+        re.IGNORECASE,
+    )
+    _CONCLUSION_AFTER_GAP = re.compile(
+        r"(?:^|[.!?。！？]\s*)(?:FINAL(?:\s+ANSWER)?|最终答案|最终结论|"
+        r"(?:corrected|revised)\s+(?:final\s+)?answer|(?:更正|修正)后(?:的)?(?:最终)?答案)"
+        r"\s*[:：=]",
+        re.IGNORECASE,
+    )
     _META = re.compile(
         r"(?:<think\b|thinking process|(?im:^\s*(?:analysis|drafting)\s*[:：])|"
         r"(?im:^\s*(?:\*{1,3}|_{1,3})?\s*(?:output\s+)?language\s*[:：])|"
@@ -406,6 +424,12 @@ class Finalizer:
         if not value:
             return ("empty",)
         if Finalizer._PLACEHOLDER.fullmatch(value):
+            reasons.append("placeholder")
+        unfinished = list(Finalizer._UNFINISHED_PLACEHOLDER.finditer(value))
+        if unfinished and not Finalizer._CONCLUSION_AFTER_GAP.search(
+            value,
+            unfinished[-1].end(),
+        ):
             reasons.append("placeholder")
         if re.fullmatch(r"<\s*(?:完整答案|最终答案|答案|完整结论)\s*>", value):
             reasons.append("placeholder")
