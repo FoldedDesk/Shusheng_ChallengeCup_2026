@@ -32,9 +32,9 @@ class Requirement:
             ))
         if self.name == "all_solutions":
             explicit_family = bool(re.search(
-                r"所有|全部|解集|无解|不存在|\\varnothing|\\?\{|"
+                r"所有|全部|解集|无解|不存在|再无其他|没有其他|\\varnothing|\\?\{|"
                 r"(?<![A-Za-z])[A-Za-z](?:\s*\([^)]*\))?\s*(?:=|\\in)|"
-                r"\ball\b|solution set|family|no solutions?",
+                r"\ball\b|solution set|family|no (?:other|further)s?\b|no solutions?",
                 value,
                 re.IGNORECASE,
             ))
@@ -52,8 +52,9 @@ class Requirement:
             return explicit_family or numeric_listing
         if self.name == "exhaustive_result":
             explicit = bool(re.search(
-                r"所有|全部|仅有|只有|恰为|解集|完整(?:集合|列表)|"
-                r"\ball\b|\bonly\b|exactly|complete\s+(?:set|list)|solution set",
+                r"所有|全部|仅有|只有|恰为|解集|再无其他|没有其他|完整(?:集合|列表)|"
+                r"\ball\b|\bonly\b|exactly|no (?:other|further)s?\b|"
+                r"complete\s+(?:set|list)|solution set",
                 value,
                 re.IGNORECASE,
             ))
@@ -1544,7 +1545,7 @@ def _requirements(text: str, target: str, profile: ProblemProfile) -> list[Requi
         target,
         re.IGNORECASE,
     ))
-    if (shape == "roots" or re.search(
+    explicit_all_solutions = bool(re.search(
         r"全部解|所有解|all solutions?|all roots?|"
         r"(?:求|确定|找出|列出|分类)[^。！？!?\n]{0,180}(?:所有|全部)"
         r"[^。！？!?\n]{0,100}(?:整数|实数|复数|有理数|多项式|函数|映射|矩阵|对象)|"
@@ -1553,12 +1554,15 @@ def _requirements(text: str, target: str, profile: ProblemProfile) -> list[Requi
         r"(?:integers?|numbers?|polynomials?|functions?|maps?|matrices|objects?)\b",
         target,
         re.IGNORECASE,
-    )) and not count_of_all and not re.search(
+    ))
+    if (shape == "roots" or explicit_all_solutions) and not count_of_all and not re.search(
         r"(?:全部|所有)\s*(?:Jordan|若尔当)\s*块|all\s+(?:the\s+)?Jordan\s+blocks?",
         target,
         re.IGNORECASE,
     ):
         items.append(Requirement("all_solutions", strict=True))
+        if explicit_all_solutions:
+            items.append(Requirement("exhaustive_result", strict=True))
     exhaustive_target = bool(re.search(
         r"(?:求|确定|找出|列出|分类)[^。！？!?\n]{0,180}(?:所有可能|全部可能|所有|全部)"
         r"[^。！？!?\n]{0,100}(?:取值|参数|数对|有序对|元组|配置|构型|走法|步骤|集合|点)|"

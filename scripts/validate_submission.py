@@ -553,6 +553,22 @@ def _answer_contract_violations() -> list[str]:
         for item in composite_requirements
     ):
         violations.append("complete invertibility and determinant answer was rejected")
+    exhaustive = build_problem_spec(
+        "Find all positive integers n satisfying the stated divisibility condition."
+    )
+    exhaustive_requirements = [
+        item
+        for goal in exhaustive.goals
+        for item in goal.requirements
+        if item.strict
+    ]
+    if all(item.matches("n=1") for item in exhaustive_requirements):
+        violations.append("single witness was accepted for an explicit find-all task")
+    if not all(
+        item.matches("The complete solution set is {1}.")
+        for item in exhaustive_requirements
+    ):
+        violations.append("explicit complete solution set was rejected")
     return violations
 
 
