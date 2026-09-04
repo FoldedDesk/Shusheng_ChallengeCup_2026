@@ -132,10 +132,21 @@ class Requirement:
                 r"是|否|正确|错误|成立|不成立|可|不可|收敛|发散|"
                 r"必胜|必败|先手胜|后手胜|"
                 r"位于|不在|属于|不属于|满足|不满足|等距|非等距|改变|不变|"
+                r"可逆|不可逆|"
                 r"true|false|yes|no|holds?|does\s+not|converg|diverg|"
                 r"\b(?:wins?|loses?|winning|losing)\b|"
                 r"lies?\s+(?:inside|within|outside)|belongs?|satisf(?:y|ies)|isometr|"
-                r"changes?|unchanged|invariant|is\s+(?:not\s+)?(?:an?\s+)?solution",
+                r"changes?|unchanged|invariant|invertible|singular|"
+                r"is\s+(?:not\s+)?(?:an?\s+)?solution",
+                value,
+                re.IGNORECASE,
+            ))
+        if self.name == "determinant_conclusion":
+            return bool(re.search(
+                r"(?:\\det\s*(?:\([^)]{1,80}\)|\{[^}]{1,80}\})|"
+                r"(?<![A-Za-z])det\s*\([^)]{1,80}\)|行列式)[^。；;\n]{0,60}"
+                r"(?:=|为|是|等于|is|equals?)\s*"
+                r"(?:[-+]?\d|\\(?:frac|sqrt)|[A-Za-z])",
                 value,
                 re.IGNORECASE,
             ))
@@ -1404,6 +1415,25 @@ def _requirements(text: str, target: str, profile: ProblemProfile) -> list[Requi
         items.extend((
             Requirement("membership_judgement", strict=True),
             Requirement("integral_conclusion", strict=True),
+        ))
+    invertibility_and_determinant = bool(re.search(
+        r"(?:是否|能否|可否)[^。；;\n]{0,80}可逆|"
+        r"\b(?:whether|determine\s+whether|decide\s+whether)\b"
+        r"[^.\n]{0,100}\binvertible\b",
+        target,
+        re.IGNORECASE,
+    )) and bool(re.search(
+        r"(?:并|且|同时|还)[^。；;\n]{0,40}(?:计算|求)[^。；;\n]{0,40}"
+        r"(?:行列式|\\det|(?<![A-Za-z])det\s*\()|"
+        r"\band\s+(?:also\s+)?(?:compute|calculate|find)\b"
+        r"[^.\n]{0,40}(?:determinant|\\det|\bdet\s*\()",
+        target,
+        re.IGNORECASE,
+    ))
+    if invertibility_and_determinant:
+        items.extend((
+            Requirement("judgement", strict=True),
+            Requirement("determinant_conclusion", strict=True),
         ))
     harmonic_second_derivatives = bool(re.search(
         r"是否调和|是不是调和|判断[^。；;\n]{0,50}调和|"

@@ -540,6 +540,19 @@ def _answer_contract_violations() -> list[str]:
     composite = build_problem_spec("判断矩阵A是否可逆，并计算det(A)。")
     if composite.profile.answer_shape != "expression":
         violations.append("binary-plus-calculation task was collapsed to truth")
+    composite_requirements = [
+        item
+        for goal in composite.goals
+        for item in goal.requirements
+        if item.strict
+    ]
+    if all(item.matches("矩阵可逆。") for item in composite_requirements):
+        violations.append("missing determinant was accepted in a composite answer")
+    if not all(
+        item.matches("矩阵可逆，且det(A)=2。")
+        for item in composite_requirements
+    ):
+        violations.append("complete invertibility and determinant answer was rejected")
     return violations
 
 
