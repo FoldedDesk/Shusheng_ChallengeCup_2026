@@ -74,6 +74,10 @@ class Finalizer:
     )
     _AMBIGUOUS_SELF_RETRACTION = re.compile(
         r"\b(?:this|that|it)\s+(?:is|was)\s+(?:incorrect|not\s+correct|wrong)\b|"
+        r"\b(?:this|that|my|our|the)\s+(?:answer|result|value|conclusion)\s+"
+        r"(?:is|was)\s+(?:bad|invalid)\b|"
+        r"\b[A-Za-z][A-Za-z0-9_]*\s*\$?\s+itself\s+(?:is|was)\s+"
+        r"(?:bad|invalid)\b|"
         r"(?:这个|这里|此处)不对",
         re.IGNORECASE,
     )
