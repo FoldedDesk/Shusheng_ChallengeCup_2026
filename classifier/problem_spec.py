@@ -198,8 +198,9 @@ class Requirement:
             ))
         if self.name == "convergence_domain":
             return bool(re.search(
-                r"(?:收敛域|收敛圆|domain\s+of\s+convergence|"
-                r"disk\s+of\s+convergence|circle\s+of\s+convergence)"
+                r"(?:收敛域|收敛圆|收敛区间|domain\s+of\s+convergence|"
+                r"disk\s+of\s+convergence|circle\s+of\s+convergence|"
+                r"interval\s+of\s+convergence)"
                 r"[^。；;\n]{0,120}(?:\\?[\[{]|<|≤|\\leq?|=|为|是|is)|"
                 r"(?:\\?lvert|\|)\s*z\s*(?:\\?rvert|\|)\s*"
                 r"(?:<|≤|\\leq?)\s*(?:[-+]?\d|\\frac|\\sqrt)",
@@ -2114,6 +2115,34 @@ def _requirements(text: str, target: str, profile: ProblemProfile) -> list[Requi
             items.append(Requirement(
                 "natural_boundary_classification", strict=True
             ))
+    power_series_problem = bool(re.search(
+        r"幂级数|power\s+series",
+        text,
+        re.IGNORECASE,
+    ))
+    convergence_pair_request = bool(re.search(
+        r"(?:求|计算|确定)[^。；;\n]{0,100}收敛半径[^。；;\n]{0,50}"
+        r"(?:和|与|及|并)[^。；;\n]{0,50}收敛(?:域|圆|区间)|"
+        r"\b(?:find|compute|determine)\b[^.\n]{0,100}"
+        r"radius(?:\s+of\s+convergence)?[^.\n]{0,50}\band\b[^.\n]{0,50}"
+        r"(?:interval|domain|disk|circle)\s+of\s+convergence",
+        text,
+        re.IGNORECASE,
+    ))
+    if power_series_problem and (convergence_pair_request or re.search(
+        r"收敛半径|radius\s+of\s+convergence|convergence\s+radius",
+        target,
+        re.IGNORECASE,
+    )):
+        items.append(Requirement("convergence_radius", strict=True))
+    if power_series_problem and (convergence_pair_request or re.search(
+        r"收敛域|收敛圆|收敛区间|domain\s+of\s+convergence|"
+        r"disk\s+of\s+convergence|circle\s+of\s+convergence|"
+        r"interval\s+of\s+convergence",
+        target,
+        re.IGNORECASE,
+    )):
+        items.append(Requirement("convergence_domain", strict=True))
     named_iterative_method = bool(re.search(
         r"牛顿法|二分法|割线法|欧拉法|"
         r"\b(?:newton(?:'s)?\s+method|bisection|secant(?:\s+method)?|euler\s+method)\b",

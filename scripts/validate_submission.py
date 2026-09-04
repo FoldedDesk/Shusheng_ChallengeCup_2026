@@ -617,6 +617,35 @@ def _answer_contract_violations() -> list[str]:
     }
     if "determinant_conclusion" not in determinant_names:
         violations.append("explicit mixed-language determinant request was lost")
+    power_series = build_problem_spec(
+        "求幂级数的收敛半径和收敛区间。"
+    )
+    power_series_requirements = [
+        item
+        for goal in power_series.goals
+        for item in goal.requirements
+        if item.strict
+    ]
+    power_series_names = {item.name for item in power_series_requirements}
+    if not {"convergence_radius", "convergence_domain"} <= power_series_names:
+        violations.append("power-series radius/domain obligations were not both retained")
+    if all(item.matches("收敛半径 R=1。") for item in power_series_requirements):
+        violations.append("power-series radius-only answer omitted the requested interval")
+    if not all(
+        item.matches("收敛半径 R=1，收敛区间为 [-1,1)。")
+        for item in power_series_requirements
+    ):
+        violations.append("complete power-series radius and interval answer was rejected")
+    english_series = build_problem_spec(
+        "Find the radius and interval of convergence of the power series."
+    )
+    english_series_names = {
+        item.name
+        for goal in english_series.goals
+        for item in goal.requirements
+    }
+    if not {"convergence_radius", "convergence_domain"} <= english_series_names:
+        violations.append("English power-series pair lost one requested obligation")
     return violations
 
 
