@@ -24,6 +24,12 @@ class Requirement:
         lowered = value.casefold()
         if self.name == "result_present":
             return bool(re.search(r"[\w\u4e00-\u9fff\\=<>≤≥+\-*/]", value))
+        if self.name.startswith("answer_items_"):
+            try:
+                required = int(self.name.rsplit("_", 1)[-1])
+            except ValueError:
+                return False
+            return _answer_item_count(value) >= required
         if self.name == "numeric_result":
             return bool(re.search(
                 r"[-+]?\d|\\frac|\\sqrt|\\pi|π|∞|\\infty|\\lambda|"
@@ -145,7 +151,8 @@ class Requirement:
         if self.name == "determinant_conclusion":
             return bool(re.search(
                 r"(?:\\det\s*(?:\([^)]{1,80}\)|\{[^}]{1,80}\})|"
-                r"(?<![A-Za-z])det\s*\([^)]{1,80}\)|行列式)[^。；;\n]{0,60}"
+                r"(?<![A-Za-z])det\s*\([^)]{1,80}\)|行列式|determinant)"
+                r"[^。；;\n]{0,60}"
                 r"(?:=|为|是|等于|is|equals?)\s*"
                 r"(?:[-+]?\d|\\(?:frac|sqrt)|[A-Za-z])",
                 value,
@@ -1307,6 +1314,9 @@ def build_problem_spec(problem: str) -> ProblemSpec:
 def _requirements(text: str, target: str, profile: ProblemProfile) -> list[Requirement]:
     items: list[Requirement] = [Requirement("result_present", strict=True)]
     shape = profile.answer_shape
+    blank_count = _explicit_blank_count(text)
+    if profile.task_kind == "fill_blank" and 2 <= blank_count <= 4:
+        items.append(Requirement(f"answer_items_{blank_count}", strict=True))
     if shape in {"number", "count", "probability"}:
         items.append(Requirement("numeric_result", strict=True))
     if shape == "count" or re.search(
@@ -1436,6 +1446,19 @@ def _requirements(text: str, target: str, profile: ProblemProfile) -> list[Requi
             Requirement("judgement", strict=True),
             Requirement("determinant_conclusion", strict=True),
         ))
+    determinant_requested = bool(re.search(
+        r"(?:求|计算|确定|写出)[^。；;\n]{0,60}"
+        r"(?:行列式|determinant|\\det|(?<![A-Za-z])det\s*\()|"
+        r"\b(?:compute|calculate|find|determine)\b[^.\n]{0,70}"
+        r"(?:determinant|\\det|\bdet\s*\()|"
+        r"(?:行列式|determinant)[^。.;\n]{0,30}"
+        r"(?:为|是|等于|is|equals?)?\s*"
+        r"(?:_{3,}|□+|\(\s*\\(?:quad|qquad)\s*\)|（\s*）)",
+        target,
+        re.IGNORECASE,
+    ))
+    if determinant_requested:
+        items.append(Requirement("determinant_conclusion", strict=True))
     harmonic_second_derivatives = bool(re.search(
         r"是否调和|是不是调和|判断[^。；;\n]{0,50}调和|"
         r"\b(?:whether|determine\s+whether|is)\b[^.\n]{0,60}\bharmonic\b",
@@ -1967,7 +1990,7 @@ def _requirements(text: str, target: str, profile: ProblemProfile) -> list[Requi
             items.append(Requirement("quadrature_error", strict=True))
     if re.search(
         r"(?:Gauss|高斯)?曲率函数|curvature\s+function|"
-        r"(?:求|find|determine)[^。.;\n]{0,100}K\s*\(\s*[A-Za-z]",
+        r"(?:求|find|determine)[^。.;\n]{0,100}(?<![A-Za-z])K\s*\(\s*[A-Za-z]",
         text,
         re.IGNORECASE,
     ):
@@ -2909,6 +2932,13 @@ def _requirement_description(item: Requirement, language: str) -> str:
             if language == "en"
             else f"结果中保留参数 {symbol} 的依赖关系"
         )
+    if item.name.startswith("answer_items_"):
+        count = item.name.rsplit("_", 1)[-1]
+        return (
+            f"all {count} explicitly requested answer items"
+            if language == "en"
+            else f"题目明确要求的全部 {count} 个答案项"
+        )
     if item.name.startswith("support_anchor_"):
         term = item.alternatives[0][0] if item.alternatives else ""
         return f"explicit use of {term}" if language == "en" else f"明确使用 {term}"
@@ -3088,6 +3118,93 @@ def _has_reasoning(value: str) -> bool:
 
 def _compact(value: str) -> str:
     return re.sub(r"[\s{}()\[\]\\,，。；;：:_]", "", str(value or "").casefold()).replace("−", "-")
+
+
+_EXPLICIT_BLANK_SLOT = re.compile(
+    r"(?<![A-Za-z0-9])_{3,}(?![A-Za-z0-9])|□+|"
+    r"\(\s*(?:\\(?:quad|qquad|;|,))?\s*\)|（\s*）",
+    re.IGNORECASE,
+)
+
+
+def _explicit_blank_count(value: str) -> int:
+    """Count only unambiguous answer slots, not generic fill-in wording."""
+    return len(_EXPLICIT_BLANK_SLOT.findall(str(value or "")))
+
+
+def _last_balanced_box(value: str) -> str:
+    marker = re.compile(r"\\boxed\s*\{")
+    result = ""
+    for match in marker.finditer(value):
+        depth = 1
+        cursor = match.end()
+        while cursor < len(value) and depth:
+            if value[cursor] == "{" and (cursor == 0 or value[cursor - 1] != "\\"):
+                depth += 1
+            elif value[cursor] == "}" and (cursor == 0 or value[cursor - 1] != "\\"):
+                depth -= 1
+            cursor += 1
+        if depth == 0:
+            result = value[match.end():cursor - 1].strip()
+    return result
+
+
+def _answer_item_count(value: str) -> int:
+    """Count top-level items in a concise terminal answer region."""
+    text = str(value or "").strip()
+    if not text:
+        return 0
+
+    boxed = _last_balanced_box(text)
+    if boxed:
+        text = boxed
+    else:
+        labels = list(re.finditer(
+            r"(?:final\s+answer|answer|conclusion|最终答案|答案|结论)\s*[:：为是]",
+            text,
+            re.IGNORECASE,
+        ))
+        if labels:
+            text = text[labels[-1].end():].strip()
+        elif len(text) > 800:
+            return 0
+
+    numbered = re.findall(
+        r"(?:^|\n)\s*(?:\(?\d+\)?[.、:：)]|第[一二三四1234]空\s*[:：])",
+        text,
+        re.MULTILINE,
+    )
+    if len(numbered) >= 2:
+        return len(numbered)
+
+    depths = {"(": 0, "[": 0, "{": 0}
+    closing = {")": "(", "]": "[", "}": "{"}
+    separator_positions: list[int] = []
+    for index, char in enumerate(text):
+        if char in depths and (index == 0 or text[index - 1] != "\\"):
+            depths[char] += 1
+        elif char in closing and (index == 0 or text[index - 1] != "\\"):
+            opener = closing[char]
+            depths[opener] = max(0, depths[opener] - 1)
+        elif char in ",，;；、" and not any(depths.values()):
+            separator_positions.append(index)
+    if separator_positions:
+        boundaries = [-1, *separator_positions, len(text)]
+        pieces = [
+            text[boundaries[index] + 1:boundaries[index + 1]].strip()
+            for index in range(len(boundaries) - 1)
+        ]
+        explanatory = re.compile(
+            r"^(?:因为|由于|所以|因此|从而|其中|即|也就是|"
+            r"(?:because|since|therefore|hence|thus|where|which)\b)",
+            re.IGNORECASE,
+        )
+        if any(explanatory.search(piece) for piece in pieces[1:]):
+            return 1
+        return sum(bool(piece) for piece in pieces)
+
+    conjunctions = re.findall(r"\s+(?:and|or)\s+", text, re.IGNORECASE)
+    return len(conjunctions) + 1 if conjunctions else 1
 
 
 def _support_anchor_matches(term: str, value: str) -> bool:

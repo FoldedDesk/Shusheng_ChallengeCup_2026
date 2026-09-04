@@ -569,6 +569,54 @@ def _answer_contract_violations() -> list[str]:
         for item in exhaustive_requirements
     ):
         violations.append("explicit complete solution set was rejected")
+    two_blanks = build_problem_spec("填空：矩阵 A 的秩为____，行列式为____。")
+    two_blank_requirements = [
+        item
+        for goal in two_blanks.goals
+        for item in goal.requirements
+        if item.strict
+    ]
+    if all(item.matches("秩为 2。") for item in two_blank_requirements):
+        violations.append("one answer item was accepted for an explicit two-blank task")
+    if not all(
+        item.matches("rank(A)=2, det(A)=3")
+        for item in two_blank_requirements
+    ):
+        violations.append("complete rank and determinant fill-in answer was rejected")
+    english_blanks = build_problem_spec(
+        "Fill in the blanks: the rank is ____, and the determinant is ____."
+    )
+    english_requirements = [
+        item
+        for goal in english_blanks.goals
+        for item in goal.requirements
+        if item.strict
+    ]
+    if all(item.matches("rank = 2") for item in english_requirements):
+        violations.append("English two-blank task accepted only one answer item")
+    if not all(
+        item.matches("rank = 2; determinant = 3")
+        for item in english_requirements
+    ):
+        violations.append("complete English two-blank answer was rejected")
+    rank_only = build_problem_spec(
+        "Given determinant(A)=2, find rank(A)."
+    )
+    rank_names = {
+        item.name
+        for goal in rank_only.goals
+        for item in goal.requirements
+    }
+    if "curvature_function" in rank_names:
+        violations.append("rank(A) was misclassified as a curvature function K(A)")
+    determinant_only = build_problem_spec("计算矩阵 A 的 determinant。")
+    determinant_names = {
+        item.name
+        for goal in determinant_only.goals
+        for item in goal.requirements
+    }
+    if "determinant_conclusion" not in determinant_names:
+        violations.append("explicit mixed-language determinant request was lost")
     return violations
 
 
