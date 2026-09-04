@@ -539,7 +539,7 @@ def _conclusion_assignments(value: str) -> dict[str, str]:
         r"(?:[A-Za-z](?:\s*_\s*\{?[^=,，]{1,30}\}?|\s*\([^=,，]{1,40}\)|"
         r"\s*\[[^=,，]{1,40}\])?|\\?[A-Za-z]+\s*[\[(][^=,，]{1,40}[\])])"
     )
-    for part in re.split(r"[,，]", text):
+    for part in re.split(r"[,，;；]|\b(?:and)\b|且", text, flags=re.IGNORECASE):
         match = re.search(
             rf"(?P<lhs>{lhs})\s*=\s*(?P<rhs>.+)$",
             part.strip(),
@@ -596,7 +596,11 @@ def _conclusion_signature(value: str) -> tuple[str, str] | None:
         return name, result.strip("$ ")
     equality_count = len(re.findall(r"(?<![<>=])=(?!=)", text))
     if equality_count:
-        if equality_count > 1 and re.search(r"[,，]", text):
+        if equality_count > 1 and re.search(
+            r"[,，;；]|\b(?:and)\b|且",
+            text,
+            re.IGNORECASE,
+        ):
             return "__multi__", text
         parts = re.split(r"(?<![<>=])=(?!=)", text)
         name = re.sub(r"[\s{}\\]", "", parts[0]).casefold()
