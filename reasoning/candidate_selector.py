@@ -662,6 +662,18 @@ def _authoritative_binary_property_conflict(value: str, spec=None) -> bool:
 def _numeric_identity_conflict(value: str) -> bool:
     text = str(value or "")
     delimiters = "\n,，;；:：$="
+
+    def is_delimiter(position: int) -> bool:
+        character = text[position]
+        if character not in delimiters:
+            return False
+        if character != "," or position == 0 or not text[position - 1].isdigit():
+            return True
+        # Keep standard thousands-grouping commas inside a numeric expression.
+        # Treating them as clause boundaries turns a valid identity such as
+        # 4,100,625-1,822,500=2,278,125 into the spurious comparison 500=2.
+        return re.match(r"\d{3}(?:\D|$)", text[position + 1:]) is None
+
     depths: list[int] = []
     depth = 0
     for character in text:
@@ -674,12 +686,12 @@ def _numeric_identity_conflict(value: str) -> bool:
         equality_depth = depths[equality.start()]
         left_positions = [
             position for position, character in enumerate(text[:equality.start()])
-            if character in delimiters and depths[position] == equality_depth
+            if is_delimiter(position) and depths[position] == equality_depth
         ]
         left_boundary = max(left_positions) if left_positions else -1
         right_positions = [
             position for position in range(equality.end(), len(text))
-            if text[position] in delimiters and depths[position] == equality_depth
+            if is_delimiter(position) and depths[position] == equality_depth
         ]
         right_boundary = min(right_positions) if right_positions else len(text)
         left = _normalize_numeric_syntax(
@@ -724,6 +736,7 @@ def _numeric_identity_conflict(value: str) -> bool:
 def _normalize_numeric_syntax(value: str) -> str:
     text = str(value or "")
     text = re.sub(r"\\(?:left|right)", "", text)
+    text = re.sub(r"(?<=\d),(?=\d{3}(?:\D|$))", "", text)
     text = re.sub(
         r"\\(?:d?frac|tfrac)\s*\{\s*([-+]?\d+)\s*\}\s*\{\s*([-+]?\d+)\s*\}",
         r"(\1)/(\2)",
